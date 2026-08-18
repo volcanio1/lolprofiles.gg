@@ -18,8 +18,8 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
       },
       overallAverageKda: 3.07,
       topChampions: [
-        { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16 },
-        { championName: 'Caitlyn', gamesPlayed: 3, winRatePercent: 67, averageKda: 3.17 },
+        { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
+        { championName: 'Caitlyn', gamesPlayed: 3, winRatePercent: 67, averageKda: 3.17, averageCs: 165.33, averageCsPerMinute: 5.51 },
       ],
       mostPlayedRole: 'BOTTOM',
     },
@@ -37,6 +37,7 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
       },
     ],
     averageMatchDurationMinutes: 30.38,
+    recentMatches: [],
     lastUpdated: null,
     partialDataWarning: false,
     ...overrides,
@@ -166,6 +167,77 @@ describe('Requirement 6.4 — top champions', () => {
   it('says so when there are no champions to rank', () => {
     render(<ProfileReportView report={report({ stats: { ...report().stats, topChampions: [] } })} />);
     expect(screen.getByTestId('no-champions')).toBeInTheDocument();
+  });
+
+  it('shows average CS/min with the raw average CS in brackets', () => {
+    render(<ProfileReportView report={report()} />);
+    expect(screen.getByTestId('champion-Vayne-avg-cs')).toHaveTextContent('5.8(172.50)');
+  });
+});
+
+describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane opponent', () => {
+  function reportWithMatch(opponent: ProfileReport['recentMatches'][number]['opponent']) {
+    return report({
+      recentMatches: [
+        {
+          matchId: 'NA1_1',
+          championName: 'Vayne',
+          role: 'BOTTOM',
+          win: true,
+          kills: 8,
+          deaths: 2,
+          assists: 6,
+          cs: 210,
+          csPerMinute: 7,
+          visionScore: 24,
+          startTimestamp: 1_700_000_000_000,
+          durationSeconds: 1800,
+          opponent,
+        },
+      ],
+    });
+  }
+
+  it('shows the player’s own line stats for the match', () => {
+    render(<ProfileReportView report={reportWithMatch(null)} />);
+    const card = screen.getByTestId('recent-match-NA1_1');
+
+    expect(card).toHaveTextContent('Victory');
+    expect(card).toHaveTextContent('Vayne');
+    expect(card).toHaveTextContent('8/2/6');
+    expect(card).toHaveTextContent('7.0(210)');
+    expect(card).toHaveTextContent('24');
+  });
+
+  it('shows the opposing laner’s stats when one was identified', () => {
+    render(
+      <ProfileReportView
+        report={reportWithMatch({
+          championName: 'Jinx',
+          kills: 3,
+          deaths: 7,
+          assists: 1,
+          cs: 175,
+          csPerMinute: 5.83,
+          visionScore: 11,
+        })}
+      />,
+    );
+    const card = screen.getByTestId('recent-match-NA1_1');
+
+    expect(card).toHaveTextContent('Jinx');
+    expect(card).toHaveTextContent('3/7/1');
+    expect(card).toHaveTextContent('5.8(175)');
+  });
+
+  it('says so when no lane opponent could be identified', () => {
+    render(<ProfileReportView report={reportWithMatch(null)} />);
+    expect(screen.getByTestId('recent-match-NA1_1-no-opponent')).toBeInTheDocument();
+  });
+
+  it('says so when there are no recent matches', () => {
+    render(<ProfileReportView report={report({ recentMatches: [] })} />);
+    expect(screen.getByTestId('no-recent-matches')).toBeInTheDocument();
   });
 });
 

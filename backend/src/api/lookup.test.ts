@@ -64,7 +64,9 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     stats: {
       rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60 } },
       overallAverageKda: 3.5,
-      topChampions: [{ championName: 'Ahri', gamesPlayed: 6, winRatePercent: 50, averageKda: 3.5 }],
+      topChampions: [
+        { championName: 'Ahri', gamesPlayed: 6, winRatePercent: 50, averageKda: 3.5, averageCs: 180.25, averageCsPerMinute: 6.01 },
+      ],
       mostPlayedRole: 'MIDDLE',
     },
     funFacts: [{ category: 'rolePreference', text: 'Favourite role: MIDDLE.' }],
@@ -73,6 +75,7 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
       { category: 'visionControl', text: 'Improve vision control.', metricName: 'averageVisionScorePerMatch', metricValue: 12.5 },
     ],
     averageMatchDurationMinutes: 30,
+    recentMatches: [],
     lastUpdated: null,
     partialDataWarning: false,
     ...overrides,

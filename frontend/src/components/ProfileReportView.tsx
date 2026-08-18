@@ -44,7 +44,7 @@
  *    where locale belongs.
  */
 
-import type { ProfileReport, RankedQueueStanding } from '../api/types';
+import type { OpponentSummary, ProfileReport, RankedQueueStanding, RecentMatchSummary } from '../api/types';
 
 export interface ProfileReportViewProps {
   report: ProfileReport;
@@ -87,6 +87,101 @@ export function formatWinRate(winRatePercent: number | 'N/A'): string {
 function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString();
+}
+
+/** Renders an epoch-ms match timestamp the same way as `formatTimestamp`. */
+function formatMatchDate(epochMs: number): string {
+  const parsed = new Date(epochMs);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+}
+
+function formatKda3(kills: number, deaths: number, assists: number): string {
+  return `${String(kills)}/${String(deaths)}/${String(assists)}`;
+}
+
+/** CS/min with the raw CS count in brackets, e.g. `5.6(124)`. */
+export function formatCsPerMinute(csPerMinute: number, cs: number): string {
+  const rate = Number.isFinite(csPerMinute) ? csPerMinute.toFixed(1) : '0.0';
+  const raw = Number.isInteger(cs) ? String(cs) : cs.toFixed(2);
+  return `${rate}(${raw})`;
+}
+
+function LaneStatsRow({ label, championName, kills, deaths, assists, cs, csPerMinute, visionScore }: {
+  label: string;
+  championName: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  csPerMinute: number;
+  visionScore: number;
+}) {
+  return (
+    <tr>
+      <th scope="row">{label}</th>
+      <td>{championName}</td>
+      <td>{formatKda3(kills, deaths, assists)}</td>
+      <td>{formatCsPerMinute(csPerMinute, cs)}</td>
+      <td>{visionScore}</td>
+    </tr>
+  );
+}
+
+function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
+  const opponent: OpponentSummary | null = match.opponent;
+  return (
+    <li data-testid={`recent-match-${match.matchId}`}>
+      <p>
+        <strong>{match.win ? 'Victory' : 'Defeat'}</strong> — {match.championName} ({match.role}) —{' '}
+        {formatMatchDate(match.startTimestamp)}
+      </p>
+      <table>
+        <caption>
+          {match.championName} vs {opponent === null ? 'unknown opponent' : opponent.championName}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" />
+            <th scope="col">Champion</th>
+            <th scope="col">K/D/A</th>
+            <th scope="col">CS/min</th>
+            <th scope="col">Vision</th>
+          </tr>
+        </thead>
+        <tbody>
+          <LaneStatsRow
+            label="You"
+            championName={match.championName}
+            kills={match.kills}
+            deaths={match.deaths}
+            assists={match.assists}
+            cs={match.cs}
+            csPerMinute={match.csPerMinute}
+            visionScore={match.visionScore}
+          />
+          {opponent === null ? (
+            <tr>
+              <th scope="row">Opponent</th>
+              <td colSpan={4} data-testid={`recent-match-${match.matchId}-no-opponent`}>
+                No lane opponent could be identified for this match.
+              </td>
+            </tr>
+          ) : (
+            <LaneStatsRow
+              label="Opponent"
+              championName={opponent.championName}
+              kills={opponent.kills}
+              deaths={opponent.deaths}
+              assists={opponent.assists}
+              cs={opponent.cs}
+              csPerMinute={opponent.csPerMinute}
+              visionScore={opponent.visionScore}
+            />
+          )}
+        </tbody>
+      </table>
+    </li>
+  );
 }
 
 const FUN_FACT_LABELS: Readonly<Record<string, string>> = {
@@ -191,6 +286,7 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
                 <th scope="col">Games</th>
                 <th scope="col">Win rate</th>
                 <th scope="col">KDA</th>
+                <th scope="col">Avg CS/min</th>
               </tr>
             </thead>
             <tbody>
@@ -200,10 +296,26 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
                   <td>{champion.gamesPlayed}</td>
                   <td>{champion.winRatePercent}%</td>
                   <td>{formatKda(champion.averageKda)}</td>
+                  <td data-testid={`champion-${champion.championName}-avg-cs`}>
+                    {formatCsPerMinute(champion.averageCsPerMinute, champion.averageCs)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+      </section>
+
+      <section aria-labelledby="recent-matches-heading">
+        <h3 id="recent-matches-heading">Recent matches</h3>
+        {report.recentMatches.length === 0 ? (
+          <p data-testid="no-recent-matches">No recent matches available.</p>
+        ) : (
+          <ul>
+            {report.recentMatches.map((match) => (
+              <RecentMatchCard key={match.matchId} match={match} />
+            ))}
+          </ul>
         )}
       </section>
 

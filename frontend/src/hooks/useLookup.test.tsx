@@ -20,6 +20,7 @@ function sampleReport(): ProfileReport {
     limitedDataNotice: false,
     recommendations: [],
     averageMatchDurationMinutes: 30.38,
+    recentMatches: [],
     lastUpdated: null,
     partialDataWarning: false,
   };

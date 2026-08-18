@@ -104,6 +104,8 @@ describe('toIncludedMatch', () => {
       deaths: 3,
       assists: 9,
       visionScore: 21,
+      cs: 0,
+      opponent: undefined,
     });
   });
 
@@ -202,6 +204,66 @@ describe('toIncludedMatch', () => {
       PUUID,
     );
     expect(included?.win).toBe(false);
+  });
+
+  it('sums minion and neutral-monster kills into cs', () => {
+    const included = toIncludedMatch(
+      matchDto({ participants: [participant({ totalMinionsKilled: 180, neutralMinionsKilled: 12 })] }),
+      PUUID,
+    );
+    expect(included?.cs).toBe(192);
+  });
+
+  it('finds the opposing participant in the same lane as the opponent', () => {
+    const match = matchDto({
+      participants: [
+        participant({ teamId: 100, teamPosition: 'MIDDLE', kills: 7 }),
+        participant({
+          puuid: 'rival',
+          teamId: 200,
+          teamPosition: 'MIDDLE',
+          championName: 'Zed',
+          kills: 4,
+          deaths: 5,
+          assists: 2,
+          visionScore: 15,
+          totalMinionsKilled: 150,
+          neutralMinionsKilled: 0,
+        }),
+        participant({ puuid: 'other-lane', teamId: 200, teamPosition: 'TOP', championName: 'Darius' }),
+      ],
+    });
+
+    const included = toIncludedMatch(match, PUUID);
+    expect(included?.opponent).toEqual({
+      championName: 'Zed',
+      kills: 4,
+      deaths: 5,
+      assists: 2,
+      cs: 150,
+      csPerMinute: 4.97,
+      visionScore: 15,
+    });
+  });
+
+  it('reports no opponent when no other participant shares the lane on a different team', () => {
+    const match = matchDto({
+      participants: [
+        participant({ teamId: 100, teamPosition: 'MIDDLE' }),
+        participant({ puuid: 'teammate', teamId: 100, teamPosition: 'TOP' }),
+      ],
+    });
+    expect(toIncludedMatch(match, PUUID)?.opponent).toBeUndefined();
+  });
+
+  it('reports no opponent when teamId is missing or malformed', () => {
+    const match = matchDto({
+      participants: [
+        participant({ teamPosition: 'MIDDLE' }),
+        participant({ puuid: 'rival', teamPosition: 'MIDDLE', teamId: undefined }),
+      ],
+    });
+    expect(toIncludedMatch(match, PUUID)?.opponent).toBeUndefined();
   });
 });
 

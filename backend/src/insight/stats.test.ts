@@ -146,6 +146,8 @@ describe('topChampions (Requirement 6.4)', () => {
       gamesPlayed: 2,
       winRatePercent: 100,
       averageKda: 5,
+      averageCs: 0,
+      averageCsPerMinute: 0,
     });
   });
 
@@ -220,6 +222,36 @@ describe('topChampions (Requirement 6.4)', () => {
     const matches = [match({ championName: 'Ahri', kills: 4, deaths: 0, assists: 6 })];
 
     expect(computeStats(matches, [], 'p').topChampions[0].averageKda).toBe(10);
+  });
+
+  it('averages cs per champion to 2 decimal places', () => {
+    const matches = [
+      match({ championName: 'Ahri', cs: 180 }),
+      match({ championName: 'Ahri', cs: 201 }),
+    ];
+
+    expect(computeStats(matches, [], 'p').topChampions[0].averageCs).toBe(190.5);
+  });
+
+  it('averages each game’s own cs/min per champion', () => {
+    const matches = [
+      match({ championName: 'Ahri', cs: 300, durationSeconds: 1800 }), // 10/min
+      match({ championName: 'Ahri', cs: 150, durationSeconds: 1800 }), // 5/min
+    ];
+
+    expect(computeStats(matches, [], 'p').topChampions[0].averageCsPerMinute).toBe(7.5);
+  });
+
+  it('treats a non-positive duration as a 0 cs/min game rather than dividing by zero', () => {
+    const matches = [match({ championName: 'Ahri', cs: 180, durationSeconds: 0 })];
+
+    expect(computeStats(matches, [], 'p').topChampions[0].averageCsPerMinute).toBe(0);
+  });
+
+  it('treats a missing cs as 0 rather than excluding the match from the average', () => {
+    const matches = [match({ championName: 'Ahri', cs: undefined })];
+
+    expect(computeStats(matches, [], 'p').topChampions[0].averageCs).toBe(0);
   });
 });
 

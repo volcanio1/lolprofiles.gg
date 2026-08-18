@@ -98,6 +98,18 @@ export const UNKNOWN_ROLE = 'Unknown';
  * already filtered to an allowed queue type (Requirement 3.5). See decision 1 for
  * where the `MatchDto` -> `IncludedMatch` flattening lives.
  */
+/** The opposing participant in the same lane, for a lane-matchup comparison. */
+export interface OpponentSummary {
+  championName: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  /** 2 decimal places, using the shared match duration. */
+  csPerMinute: number;
+  visionScore: number;
+}
+
 export interface RawMatch {
   matchId: string;
   queueType: string;
@@ -111,6 +123,10 @@ export interface RawMatch {
   deaths: number;
   assists: number;
   visionScore: number;
+  /** Minion + neutral-monster kills. Optional so existing fixtures need no change; absent reads as 0. */
+  cs?: number;
+  /** `undefined` when no opposing participant shares this player's lane. */
+  opponent?: OpponentSummary;
 }
 
 export type IncludedMatch = RawMatch;
@@ -143,6 +159,10 @@ export interface ChampionSummary {
   winRatePercent: number;
   /** 2 decimal places, zero-deaths rule of Requirement 6.7 applied. */
   averageKda: number;
+  /** 2 decimal places. */
+  averageCs: number;
+  /** Average of each game's own CS/min, 2 decimal places. */
+  averageCsPerMinute: number;
 }
 
 export interface ProfileStats {
@@ -254,6 +274,29 @@ export function standingForQueue(stats: ProfileStats, queueType: string): Ranked
     : 'Unranked';
 }
 
+/** Average CS (minion + neutral-monster kills) per match, to 2 decimal places. */
+export function averageCsOf(matches: readonly IncludedMatch[]): number {
+  if (matches.length === 0) {
+    return 0;
+  }
+  const totalCs = matches.reduce((total, match) => total + (match.cs ?? 0), 0);
+  return round2(totalCs / matches.length);
+}
+
+/** A single game's CS/min; 0 for a non-positive duration rather than a division blow-up. */
+export function csPerMinuteOf(cs: number, durationSeconds: number): number {
+  return durationSeconds > 0 ? round2(cs / (durationSeconds / 60)) : 0;
+}
+
+/** Average, across matches, of each game's own CS/min (decision matches `averageCsOf`'s per-game averaging). */
+export function averageCsPerMinuteOf(matches: readonly IncludedMatch[]): number {
+  if (matches.length === 0) {
+    return 0;
+  }
+  const total = matches.reduce((sum, match) => sum + csPerMinuteOf(match.cs ?? 0, match.durationSeconds), 0);
+  return round2(total / matches.length);
+}
+
 // ---------------------------------------------------------------------------
 // Top champions (Requirement 6.4)
 // ---------------------------------------------------------------------------
@@ -308,6 +351,8 @@ export function topChampionsOf(matches: readonly IncludedMatch[]): ChampionSumma
       // the 'N/A' branch of `winRatePercentOf` is unreachable here.
       winRatePercent: roundHalfUp((100 * wins) / championMatches.length),
       averageKda: averageKdaOf(championMatches),
+      averageCs: averageCsOf(championMatches),
+      averageCsPerMinute: averageCsPerMinuteOf(championMatches),
     });
   }
   summaries.sort(compareChampionSummaries);

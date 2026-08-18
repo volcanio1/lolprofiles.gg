@@ -93,8 +93,8 @@
  *    a blank role name rather than emitting a sentence about nothing.
  */
 
-import type { IncludedMatch, LeagueEntry } from '../insight/stats';
-import type { LeagueEntryDto, MatchDto } from '../riotApiClient';
+import { csPerMinuteOf, type IncludedMatch, type LeagueEntry, type OpponentSummary } from '../insight/stats';
+import type { LeagueEntryDto, MatchDto, MatchParticipantDto } from '../riotApiClient';
 
 /** The exact set Requirement 3.5 permits. */
 export const ALLOWED_QUEUE_TYPES = ['ranked solo/duo', 'ranked flex', 'normal'] as const;
@@ -143,6 +143,50 @@ function roleOf(participant: { teamPosition?: string; role?: string }): string {
   return role;
 }
 
+/** Minion + neutral-monster kills, coerced per decision 5. */
+function csOf(participant: { totalMinionsKilled?: unknown; neutralMinionsKilled?: unknown }): number {
+  return finiteOrZero(participant.totalMinionsKilled) + finiteOrZero(participant.neutralMinionsKilled);
+}
+
+/**
+ * The opposing participant in `player`'s lane, or `undefined` when none can be
+ * identified — no lane could be determined for `player`, `teamId` is missing or
+ * malformed on either side, or no other participant shares both the lane and a
+ * different team.
+ */
+function opponentOf(
+  participants: readonly MatchParticipantDto[],
+  player: MatchParticipantDto,
+  durationSeconds: number,
+): OpponentSummary | undefined {
+  const lane = roleOf(player);
+  if (lane === '' || typeof player.teamId !== 'number') {
+    return undefined;
+  }
+  const rival = participants.find(
+    (candidate) =>
+      candidate !== player &&
+      candidate !== null &&
+      typeof candidate === 'object' &&
+      typeof candidate.teamId === 'number' &&
+      candidate.teamId !== player.teamId &&
+      roleOf(candidate) === lane,
+  );
+  if (rival === undefined) {
+    return undefined;
+  }
+  const rivalCs = csOf(rival);
+  return {
+    championName: typeof rival.championName === 'string' ? rival.championName : '',
+    kills: finiteOrZero(rival.kills),
+    deaths: finiteOrZero(rival.deaths),
+    assists: finiteOrZero(rival.assists),
+    cs: rivalCs,
+    csPerMinute: csPerMinuteOf(rivalCs, durationSeconds),
+    visionScore: finiteOrZero(rival.visionScore),
+  };
+}
+
 /**
  * Flattens a Match-V5 match detail into the analyzed player's own
  * `IncludedMatch`, or returns `undefined` when the match must be EXCLUDED:
@@ -179,7 +223,8 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
   if (!Array.isArray(participants)) {
     return undefined;
   }
-  const participant = (participants as MatchDto['info']['participants']).find(
+  const typedParticipants = participants as MatchDto['info']['participants'];
+  const participant = typedParticipants.find(
     (candidate) => candidate !== null && typeof candidate === 'object' && candidate.puuid === puuid,
   );
   if (participant === undefined) {
@@ -192,11 +237,13 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
       ? (metadata as MatchDto['metadata']).matchId
       : '';
 
+  const durationSeconds = finiteOrZero(typedInfo.gameDuration);
+
   return {
     matchId,
     queueType,
     startTimestamp,
-    durationSeconds: finiteOrZero(typedInfo.gameDuration),
+    durationSeconds,
     championName: typeof participant.championName === 'string' ? participant.championName : '',
     role: roleOf(participant),
     win: participant.win === true,
@@ -204,6 +251,8 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
     deaths: finiteOrZero(participant.deaths),
     assists: finiteOrZero(participant.assists),
     visionScore: finiteOrZero(participant.visionScore),
+    cs: csOf(participant),
+    opponent: opponentOf(typedParticipants, participant, durationSeconds),
   };
 }
 

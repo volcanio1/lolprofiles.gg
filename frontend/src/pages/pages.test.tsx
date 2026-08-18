@@ -23,13 +23,16 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     stats: {
       rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 } },
       overallAverageKda: 3.07,
-      topChampions: [{ championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16 }],
+      topChampions: [
+        { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
+      ],
       mostPlayedRole: 'BOTTOM',
     },
     funFacts: [{ category: 'rolePreference', text: 'Favourite role: BOTTOM.' }],
     limitedDataNotice: false,
     recommendations: [],
     averageMatchDurationMinutes: 30.38,
+    recentMatches: [],
     lastUpdated: null,
     partialDataWarning: false,
     ...overrides,

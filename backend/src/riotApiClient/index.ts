@@ -140,11 +140,15 @@ export interface MatchParticipantDto {
   /** Riot's normalized lane assignment; preferred over `role` when present. */
   teamPosition?: string;
   role?: string;
+  /** 100 or 200; used to find the opposing participant in the same lane. */
+  teamId?: number;
   win: boolean;
   kills: number;
   deaths: number;
   assists: number;
   visionScore: number;
+  totalMinionsKilled?: number;
+  neutralMinionsKilled?: number;
 }
 
 /** Match-V5 match detail, in Riot's metadata/info shape. */

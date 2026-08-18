@@ -34,6 +34,8 @@ export interface ChampionSummary {
   gamesPlayed: number;
   winRatePercent: number;
   averageKda: number;
+  averageCs: number;
+  averageCsPerMinute: number;
 }
 
 export interface ProfileStats {
@@ -41,6 +43,35 @@ export interface ProfileStats {
   overallAverageKda: number;
   topChampions: ChampionSummary[];
   mostPlayedRole: string;
+}
+
+/** The opposing participant in the same lane, for a lane-matchup comparison. */
+export interface OpponentSummary {
+  championName: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  csPerMinute: number;
+  visionScore: number;
+}
+
+export interface RecentMatchSummary {
+  matchId: string;
+  championName: string;
+  role: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  csPerMinute: number;
+  visionScore: number;
+  /** Epoch ms. */
+  startTimestamp: number;
+  durationSeconds: number;
+  /** `null` when no opposing participant shared this player's lane. */
+  opponent: OpponentSummary | null;
 }
 
 /** Requirement 7.4's four categories. */
@@ -69,6 +100,8 @@ export interface ProfileReport {
   recommendations: Recommendation[];
   /** Requirement 7.3. */
   averageMatchDurationMinutes: number;
+  /** Newest-first; each carries the lane opponent's stats when known. */
+  recentMatches: RecentMatchSummary[];
   /** Requirements 11.4/11.5: `null` means "being retrieved for the first time". */
   lastUpdated: string | null;
   /** Requirement 11.3: some data may be outdated. */

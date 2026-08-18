@@ -165,6 +165,7 @@ import {
   type CacheStore,
 } from '../cache';
 import { computeFunFacts, isLimitedData, averageMatchDurationMinutesOf, type FunFact } from '../insight/funFacts';
+import { computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
 import { computeRecommendations, type Recommendation } from '../insight/recommendations';
 import { computeStats, type IncludedMatch, type ProfileStats } from '../insight/stats';
 import { isValidRegion, resolvePlatform, type PlatformRoutingValue, type RegionalRoutingValue } from '../region';
@@ -254,6 +255,8 @@ export interface ProfileReport {
   recommendations: Recommendation[];
   /** Requirement 7.3, in minutes to 2 decimal places (decision 1). */
   averageMatchDurationMinutes: number;
+  /** Newest-first, capped at `RECENT_MATCH_LIMIT`; each carries the lane opponent's stats when known. */
+  recentMatches: RecentMatchSummary[];
   /** Requirements 11.4 / 11.5: ISO timestamp, or `null` on a first retrieval. */
   lastUpdated: string | null;
   /** Requirement 11.3: this report came from the cached fallback (decision 8). */
@@ -701,6 +704,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
       recommendations: computeRecommendations(matches, stats), // Requirements 8.1-8.5
       averageMatchDurationMinutes: averageMatchDurationMinutesOf(matches), // Requirement 7.3
+      recentMatches: computeRecentMatches(matches),
       lastUpdated: lastUpdatedOf(ages), // Requirements 11.4 / 11.5
       partialDataWarning,
     };
