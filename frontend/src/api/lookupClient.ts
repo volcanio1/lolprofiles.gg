@@ -1,0 +1,256 @@
+/**
+ * Backend API client.
+ *
+ * The only module that performs network I/O. It calls lolprofiles.gg's own
+ * backend — never Riot directly, which is what makes Requirement 4.2 hold by
+ * construction: the browser has no credential and no Riot endpoint to call.
+ *
+ * Implements the client side of:
+ *  - 9.1-9.5, 9.8, 9.9: every response, including a total transport failure, is
+ *    narrowed to a typed outcome carrying an `ErrorCode`, so the UI never has to
+ *    interpret a status code or a raw body.
+ *  - 9.7: it always settles. There is no path on which the returned promise
+ *    neither resolves nor rejects, which is what lets the caller clear the loading
+ *    indicator in a `finally`.
+ *
+ * ---------------------------------------------------------------------------
+ * DOCUMENTED DECISIONS
+ * ---------------------------------------------------------------------------
+ *
+ * 1. IT NEVER REJECTS. Every failure — non-2xx, unparseable body, DNS failure,
+ *    abort — becomes `{ kind: 'error', error: ApiErrorPayload }`. A thrown
+ *    exception and a returned error would be two channels for one condition, and
+ *    the caller would have to handle both to satisfy Requirement 9.7.
+ *
+ * 2. THE CLIENT TIMEOUT IS LONGER THAN THE BACKEND'S BUDGET. Requirement 11.2
+ *    allows the backend 15 seconds for a fresh lookup, and Requirement 2.6 allows
+ *    each Riot call 10 seconds within that. A client timeout at or below 15s would
+ *    abort lookups the backend was about to complete successfully, converting
+ *    slow-but-working into broken. `REQUEST_TIMEOUT_MS` is therefore 20s: long
+ *    enough to never pre-empt the backend, short enough that a hung connection
+ *    still resolves into Requirement 9.4's timeout state rather than spinning
+ *    forever.
+ *
+ * 3. THE ERROR ENVELOPE IS VALIDATED, NOT TRUSTED. A response that is not the
+ *    expected shape — an HTML error page from a proxy, an empty 502, a JSON body
+ *    without `error.code` — is mapped onto a synthesized payload derived from the
+ *    HTTP status. Rendering `undefined` as a message is worse than rendering a
+ *    generic one, and the frontend cannot assume it is always talking to a healthy
+ *    instance of our own backend.
+ *
+ * 4. A 200 WITH AN UNREADABLE BODY IS AN ERROR, NOT AN EMPTY REPORT. The UI would
+ *    otherwise render a report-shaped blank, which looks like a player with no
+ *    data rather than a failure.
+ */
+
+import { apiBaseUrl } from '../config';
+import type { ApiErrorPayload, ErrorCode, ProfileReport } from './types';
+
+/** Decision 2. */
+export const REQUEST_TIMEOUT_MS = 20_000;
+
+/** Requirement 9.8's floor, applied when the backend does not state one. */
+export const DEFAULT_COOLDOWN_SECONDS = 5;
+
+export interface LookupRequest {
+  riotId: string;
+  region: string;
+  platform?: string;
+}
+
+export type LookupOutcome =
+  | { kind: 'success'; report: ProfileReport }
+  | { kind: 'error'; error: ApiErrorPayload };
+
+/** The subset of `fetch` this module needs, so tests inject a plain function. */
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+
+export interface LookupClientOptions {
+  fetch?: FetchLike;
+  baseUrl?: string;
+  timeoutMs?: number;
+}
+
+/** Fallback messages for statuses the backend did not describe (decision 3). */
+const SYNTHESIZED_MESSAGES: Readonly<Record<ErrorCode, string>> = {
+  VALIDATION_FAILED: 'That request could not be understood. Check the Riot ID and try again.',
+  UNSUPPORTED_REGION: 'That region is not supported.',
+  PLAYER_NOT_FOUND: 'No player was found for that Riot ID.',
+  PLAYER_NOT_ON_PLATFORM:
+    'That player exists, but has no League of Legends profile on the selected region. Select a different region and search again.',
+  RIOT_UNAVAILABLE: "Riot's services are temporarily unavailable. Please try again in a moment.",
+  TIMEOUT: 'The lookup timed out before Riot responded. Please try again.',
+  RATE_LIMITED: `This lookup was rate-limited. Please wait ${String(DEFAULT_COOLDOWN_SECONDS)} seconds and try again.`,
+  AUTH_FAILURE: 'This service is temporarily unavailable. Please try again later.',
+  NETWORK_ERROR: 'A connection error occurred. Please check your connection and try again.',
+  MATCH_HISTORY_UNAVAILABLE: 'Match history could not be retrieved for this player.',
+};
+
+/** Decision 3: infer a code from the status when the body cannot tell us. */
+export function errorCodeForStatus(status: number): ErrorCode {
+  switch (status) {
+    case 400:
+      return 'VALIDATION_FAILED';
+    case 404:
+      return 'PLAYER_NOT_FOUND';
+    case 429:
+      return 'RATE_LIMITED';
+    case 502:
+      return 'NETWORK_ERROR';
+    case 504:
+      return 'TIMEOUT';
+    default:
+      return 'RIOT_UNAVAILABLE';
+  }
+}
+
+/** Which synthesized codes are worth offering a retry for (Requirements 9.3/9.8/9.9). */
+function retriableByDefault(code: ErrorCode): boolean {
+  return code === 'RIOT_UNAVAILABLE' || code === 'RATE_LIMITED' || code === 'NETWORK_ERROR' || code === 'MATCH_HISTORY_UNAVAILABLE';
+}
+
+export function synthesizedError(code: ErrorCode): ApiErrorPayload {
+  const error: ApiErrorPayload = {
+    code,
+    message: SYNTHESIZED_MESSAGES[code],
+    retriable: retriableByDefault(code),
+  };
+  if (code === 'RATE_LIMITED') {
+    error.retryAfterSeconds = DEFAULT_COOLDOWN_SECONDS;
+  }
+  return error;
+}
+
+/** Narrows an untrusted parsed body to an `ApiErrorPayload` (decision 3). */
+export function readErrorPayload(body: unknown, status: number): ApiErrorPayload {
+  const fallback = synthesizedError(errorCodeForStatus(status));
+  if (body === null || typeof body !== 'object') {
+    return fallback;
+  }
+  const candidate = (body as { error?: unknown }).error;
+  if (candidate === null || typeof candidate !== 'object') {
+    return fallback;
+  }
+  const raw = candidate as Record<string, unknown>;
+  const code = typeof raw.code === 'string' ? (raw.code as ErrorCode) : fallback.code;
+  const known = Object.prototype.hasOwnProperty.call(SYNTHESIZED_MESSAGES, code);
+  const resolvedCode = known ? code : fallback.code;
+
+  const payload: ApiErrorPayload = {
+    code: resolvedCode,
+    message:
+      typeof raw.message === 'string' && raw.message.trim().length > 0
+        ? raw.message
+        : SYNTHESIZED_MESSAGES[resolvedCode],
+    retriable: typeof raw.retriable === 'boolean' ? raw.retriable : retriableByDefault(resolvedCode),
+  };
+
+  if (typeof raw.retryAfterSeconds === 'number' && Number.isFinite(raw.retryAfterSeconds)) {
+    payload.retryAfterSeconds = raw.retryAfterSeconds;
+  } else if (resolvedCode === 'RATE_LIMITED') {
+    payload.retryAfterSeconds = DEFAULT_COOLDOWN_SECONDS;
+  }
+  if (typeof raw.maxRetries === 'number' && Number.isFinite(raw.maxRetries)) {
+    payload.maxRetries = raw.maxRetries;
+  }
+  if (typeof raw.gameName === 'string') {
+    payload.gameName = raw.gameName;
+  }
+  if (typeof raw.tagLine === 'string') {
+    payload.tagLine = raw.tagLine;
+  }
+  // Requirement 9.10: which region and platform were actually searched.
+  if (typeof raw.region === 'string') {
+    payload.region = raw.region;
+  }
+  if (typeof raw.platform === 'string') {
+    payload.platform = raw.platform;
+  }
+  if (typeof raw.validationRule === 'string') {
+    payload.validationRule = raw.validationRule;
+  }
+  if (typeof raw.field === 'string') {
+    payload.field = raw.field;
+  }
+  return payload;
+}
+
+/** True when a parsed 200 body is shaped enough like a report to render. */
+export function isProfileReport(body: unknown): body is ProfileReport {
+  if (body === null || typeof body !== 'object') {
+    return false;
+  }
+  const candidate = body as Partial<ProfileReport>;
+  return (
+    typeof candidate.puuid === 'string' &&
+    typeof candidate.summonerLevel === 'number' &&
+    candidate.stats !== null &&
+    typeof candidate.stats === 'object' &&
+    Array.isArray(candidate.funFacts) &&
+    Array.isArray(candidate.recommendations)
+  );
+}
+
+/**
+ * `POST /api/lookup`. Never rejects (decision 1) and always settles, which is what
+ * Requirement 9.7 relies on.
+ */
+export async function lookupProfile(
+  request: LookupRequest,
+  options: LookupClientOptions = {},
+): Promise<LookupOutcome> {
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const body: LookupRequest = { riotId: request.riotId, region: request.region };
+    if (request.platform !== undefined && request.platform.length > 0) {
+      body.platform = request.platform;
+    }
+
+    let response: Response;
+    try {
+      response = await doFetch(`${baseUrl}/api/lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch {
+      // Requirement 9.4 vs 9.9: our own abort is a timeout; anything else is a
+      // transport failure with no response at all.
+      return { kind: 'error', error: synthesizedError(timedOut ? 'TIMEOUT' : 'NETWORK_ERROR') };
+    }
+
+    let parsed: unknown;
+    let parseFailed = false;
+    try {
+      parsed = await response.json();
+    } catch {
+      parseFailed = true;
+    }
+
+    if (response.ok) {
+      // Decision 4.
+      if (parseFailed || !isProfileReport(parsed)) {
+        return { kind: 'error', error: synthesizedError('RIOT_UNAVAILABLE') };
+      }
+      return { kind: 'success', report: parsed };
+    }
+
+    return {
+      kind: 'error',
+      error: parseFailed ? synthesizedError(errorCodeForStatus(response.status)) : readErrorPayload(parsed, response.status),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}

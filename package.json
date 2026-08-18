@@ -1,0 +1,17 @@
+{
+  "name": "lolprofiles-gg",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "build:backend": "npm run build --workspace backend",
+    "test:backend": "npm run test --workspace backend",
+    "lint:backend": "npm run lint --workspace backend",
+    "build:frontend": "npm run build --workspace frontend",
+    "test:frontend": "npm run test --workspace frontend",
+    "lint:frontend": "npm run lint --workspace frontend"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+coverage/
+
+# Local Claude Code settings. settings.local.json records approved commands
+# verbatim, which can include secrets passed as environment variables.
+.claude/settings.local.json
+
+# Ad-hoc log files from local runs.
+*.log

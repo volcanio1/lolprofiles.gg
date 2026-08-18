@@ -1,0 +1,442 @@
+{
+  "pbtResults": {
+    "2.2 Write property test for Riot ID Validator": {
+      "status": "passed",
+      "lastRunTimestamp": 1786976407268
+    },
+    "3.2 Write property test for Region Router": {
+      "status": "passed",
+      "lastRunTimestamp": 1787036912770
+    },
+    "5.2 Write property test for cache key determinism": {
+      "status": "passed",
+      "lastRunTimestamp": 1787037479251
+    },
+    "5.3 Write property test for cache TTL staleness": {
+      "status": "passed",
+      "lastRunTimestamp": 1787037480249
+    },
+    "6.2 Write property test for Rate Limit Manager": {
+      "status": "passed",
+      "lastRunTimestamp": 1787038524678
+    },
+    "7.3 Write property test for 429 retry bounds": {
+      "status": "passed",
+      "lastRunTimestamp": 1787039085294
+    },
+    "7.4 Write property test for API key non-exposure": {
+      "status": "passed",
+      "lastRunTimestamp": 1787039085880
+    },
+    "9.2 Write property test for win rate and KDA formulas": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040197116
+    },
+    "9.3 Write property test for top-champion ranking": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040198061
+    },
+    "9.4 Write property test for most-played role tie-break": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040198921
+    },
+    "10.2 Write property test for time-of-day window derivation": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040889356
+    },
+    "10.3 Write property test for streak computation": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040890226
+    },
+    "10.4 Write property test for fun fact eligibility and category uniqueness": {
+      "status": "passed",
+      "lastRunTimestamp": 1787040891137
+    },
+    "11.2 Write property test for recommendation triggers": {
+      "status": "passed",
+      "lastRunTimestamp": 1787041729365
+    }
+  },
+  "executionHistory": {
+    "1.1 Scaffold backend Node.js/TypeScript API project": [
+      {
+        "executionId": "de1847a8-49d3-4d7c-95a1-f7a05038cd6c",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786975841251
+      }
+    ],
+    "1.2 Scaffold frontend React application": [
+      {
+        "executionId": "de1847a8-49d3-4d7c-95a1-f7a05038cd6c",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786975847604
+      },
+      {
+        "executionId": "de1847a8-49d3-4d7c-95a1-f7a05038cd6c",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976242426
+      }
+    ],
+    "1. Set up project scaffolding": [
+      {
+        "executionId": "de1847a8-49d3-4d7c-95a1-f7a05038cd6c",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976242504
+      }
+    ],
+    "2.1 Implement `validateRiotId`": [
+      {
+        "executionId": "92b34160-5cf3-45fe-9bb3-88f12cbfb1c7",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976284133
+      },
+      {
+        "executionId": "92b34160-5cf3-45fe-9bb3-88f12cbfb1c7",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976429580
+      }
+    ],
+    "2.2 Write property test for Riot ID Validator": [
+      {
+        "executionId": "92b34160-5cf3-45fe-9bb3-88f12cbfb1c7",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976288248
+      },
+      {
+        "executionId": "92b34160-5cf3-45fe-9bb3-88f12cbfb1c7",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976432738
+      }
+    ],
+    "2. Implement Riot ID Validator": [
+      {
+        "executionId": "92b34160-5cf3-45fe-9bb3-88f12cbfb1c7",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1786976429697
+      }
+    ],
+    "3.1 Implement `isValidRegion`, `platformsFor`, `resolvePlatform` and the closed `REGION_TO_PLATFORMS` mapping": [
+      {
+        "executionId": "8dd651ce-52b0-4971-a2ef-ccd8f25977a4",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036717964
+      },
+      {
+        "executionId": "8dd651ce-52b0-4971-a2ef-ccd8f25977a4",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036932498
+      }
+    ],
+    "3.2 Write property test for Region Router": [
+      {
+        "executionId": "8dd651ce-52b0-4971-a2ef-ccd8f25977a4",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036721094
+      },
+      {
+        "executionId": "8dd651ce-52b0-4971-a2ef-ccd8f25977a4",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036935567
+      }
+    ],
+    "3. Implement Region Router": [
+      {
+        "executionId": "8dd651ce-52b0-4971-a2ef-ccd8f25977a4",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036932584
+      }
+    ],
+    "4. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "eb025d13-2a0d-48cb-9352-86644304415b",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787036972549
+      },
+      {
+        "executionId": "eb025d13-2a0d-48cb-9352-86644304415b",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037230799
+      }
+    ],
+    "5.1 Implement `CacheStore` interface, `CacheKey`/`CacheEntry` types, and an in-memory implementation with deterministic key hashing and TTL/staleness logic": [
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037272197
+      },
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037506546
+      }
+    ],
+    "5.2 Write property test for cache key determinism": [
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037275021
+      },
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037509417
+      }
+    ],
+    "5.3 Write property test for cache TTL staleness": [
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037278070
+      },
+      {
+        "executionId": "cd8298f3-166a-4ae5-8fd3-d135705619a8",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037512277
+      }
+    ],
+    "5.4 Implement `deleteByPuuid` with match-detail PUUID scrubbing": [
+      {
+        "executionId": "0902f176-9fe0-4b44-8725-ef96bd3243f1",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037596043
+      },
+      {
+        "executionId": "0902f176-9fe0-4b44-8725-ef96bd3243f1",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037978882
+      }
+    ],
+    "5.5 Write property test for deletion idempotency and scrubbing completeness": [
+      {
+        "executionId": "0902f176-9fe0-4b44-8725-ef96bd3243f1",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037599209
+      },
+      {
+        "executionId": "0902f176-9fe0-4b44-8725-ef96bd3243f1",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037982115
+      }
+    ],
+    "5. Implement Cache Store": [
+      {
+        "executionId": "0902f176-9fe0-4b44-8725-ef96bd3243f1",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787037978978
+      }
+    ],
+    "6.1 Implement `RateLimitManager.reserveSlot` and `recordResponseHeaders`": [
+      {
+        "executionId": "3bcfc2e3-bb2e-4396-b3e8-3463eb0cdff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038164546
+      },
+      {
+        "executionId": "3bcfc2e3-bb2e-4396-b3e8-3463eb0cdff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038552876
+      }
+    ],
+    "6.2 Write property test for Rate Limit Manager": [
+      {
+        "executionId": "3bcfc2e3-bb2e-4396-b3e8-3463eb0cdff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038169447
+      },
+      {
+        "executionId": "3bcfc2e3-bb2e-4396-b3e8-3463eb0cdff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038556099
+      }
+    ],
+    "6. Implement Rate Limit Manager": [
+      {
+        "executionId": "3bcfc2e3-bb2e-4396-b3e8-3463eb0cdff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038552924
+      }
+    ],
+    "7.1 Implement `RiotApiClient` methods for Account-V1, Summoner-V4, League-V4, Match-V5 (match-ids-by-puuid and match-by-id)": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038608645
+      },
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039112833
+      }
+    ],
+    "7.2 Implement 429 retry-with-backoff logic": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787038612009
+      },
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039116232
+      }
+    ],
+    "7. Implement Riot API Client": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039116274
+      }
+    ],
+    "7.3 Write property test for 429 retry bounds": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039119405
+      }
+    ],
+    "7.4 Write property test for API key non-exposure": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039122635
+      }
+    ],
+    "7.5 Write integration tests for endpoint wiring against a mocked Riot API": [
+      {
+        "executionId": "205a9bdf-1550-454c-bb51-ffc51c9a0373",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039125758
+      }
+    ],
+    "8. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "0102cdfc-51e8-4bec-b946-fcdfaba707ce",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039196472
+      },
+      {
+        "executionId": "0102cdfc-51e8-4bec-b946-fcdfaba707ce",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039595243
+      }
+    ],
+    "9.1 Implement `computeStats` (ranked-by-queue with Unranked fallback, win rate, average KDA, top champions, most-played role)": [
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787039843236
+      },
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040230303
+      }
+    ],
+    "9. Implement Insight Engine: Stats": [
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040230357
+      }
+    ],
+    "9.2 Write property test for win rate and KDA formulas": [
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040233618
+      }
+    ],
+    "9.3 Write property test for top-champion ranking": [
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040237854
+      }
+    ],
+    "9.4 Write property test for most-played role tie-break": [
+      {
+        "executionId": "7f55255f-5e84-4326-8cf1-b711856562aa",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040241109
+      }
+    ],
+    "10.1 Implement `computeFunFacts` (time-of-day windows, win/loss streaks, champion loyalty, role preference, limited-data eligibility rules)": [
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040488477
+      },
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040933457
+      }
+    ],
+    "10. Implement Insight Engine: Fun Facts": [
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040933501
+      }
+    ],
+    "10.2 Write property test for time-of-day window derivation": [
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040938880
+      }
+    ],
+    "10.3 Write property test for streak computation": [
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040942090
+      }
+    ],
+    "10.4 Write property test for fun fact eligibility and category uniqueness": [
+      {
+        "executionId": "cf2fe19b-525a-4210-bcb7-319c32d66ff9",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787040945529
+      }
+    ],
+    "11.1 Implement `computeRecommendations` (survivability, champion selection, vision control triggers, with metric name/value attached)": [
+      {
+        "executionId": "a46889d0-7eb5-4f98-9959-de97bf9611c3",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787041393811
+      },
+      {
+        "executionId": "a46889d0-7eb5-4f98-9959-de97bf9611c3",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787041765860
+      }
+    ],
+    "11. Implement Insight Engine: Recommendations": [
+      {
+        "executionId": "a46889d0-7eb5-4f98-9959-de97bf9611c3",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787041765966
+      }
+    ],
+    "11.2 Write property test for recommendation triggers": [
+      {
+        "executionId": "a46889d0-7eb5-4f98-9959-de97bf9611c3",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787041769363
+      }
+    ],
+    "12. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "97662175-72c8-46e8-9619-acc33e16032a",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787041909718
+      },
+      {
+        "executionId": "97662175-72c8-46e8-9619-acc33e16032a",
+        "chatSessionId": "sess_052fb38e-d519-497f-a327-e20da21c5a5b",
+        "timestamp": 1787042417114
+      }
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint \"src/**/*.{ts,tsx}\""
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.24.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.4.6",
+    "@testing-library/react": "15.0.7",
+    "@testing-library/user-event": "14.5.2",
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "@typescript-eslint/eslint-plugin": "7.16.1",
+    "@typescript-eslint/parser": "7.16.1",
+    "@vitejs/plugin-react": "4.3.1",
+    "eslint": "8.57.0",
+    "eslint-plugin-react-hooks": "4.6.2",
+    "jsdom": "24.1.0",
+    "typescript": "5.5.3",
+    "vite": "5.3.4",
+    "vitest": "1.6.0"
+  }
+}
