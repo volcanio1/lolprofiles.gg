@@ -32,6 +32,11 @@ export interface RiotDataPageProps {
   title: string;
   children: ReactNode;
   /**
+   * Hero layout centers the wordmark and content for the search landing page;
+   * the default layout puts a compact masthead above a left-aligned page.
+   */
+  hero?: boolean;
+  /**
    * Requirement 12.3's override. Defaults to the single module-level agreement,
    * which is `undefined` under Riot's standard terms. Injectable so the exception
    * path is testable without editing the policy module.
@@ -39,13 +44,21 @@ export interface RiotDataPageProps {
   advertisingAgreement?: AdvertisingAgreement | undefined;
 }
 
-export function RiotDataPage({ title, children, advertisingAgreement }: RiotDataPageProps) {
+export function RiotDataPage({ title, children, hero = false, advertisingAgreement }: RiotDataPageProps) {
   const agreement = advertisingAgreement ?? approvedAdvertisingAgreement;
   const adsAllowed = advertisingPermitted(agreement);
 
   return (
-    <main>
-      <h1>{title}</h1>
+    <main className={hero ? 'page page--hero' : 'page'}>
+      <header className="masthead">
+        {/* Plain anchor rather than a router Link so this template stays usable
+            outside a Router (it is rendered standalone in tests). */}
+        <a className="brand" href="/">
+          LOLPROFILES<span className="brand-gg">.GG</span>
+        </a>
+      </header>
+
+      <h1 className="page-title">{title}</h1>
 
       {children}
 
@@ -54,14 +67,16 @@ export function RiotDataPage({ title, children, advertisingAgreement }: RiotData
         an advertising slot, and it is unreachable without an approved agreement.
       */}
       {adsAllowed && agreement !== undefined ? (
-        <aside aria-label="Advertisement" data-testid="advertising-slot">
+        <aside aria-label="Advertisement" data-testid="advertising-slot" className="ad-slot">
           <p>Advertising slot authorized by agreement {agreement.agreementReference}.</p>
         </aside>
       ) : null}
 
       {/* Requirement 12.1 */}
-      <footer>
-        <p data-testid="riot-attribution">{RIOT_ATTRIBUTION_TEXT}</p>
+      <footer className="site-foot">
+        <p data-testid="riot-attribution" className="attribution">
+          {RIOT_ATTRIBUTION_TEXT}
+        </p>
       </footer>
     </main>
   );

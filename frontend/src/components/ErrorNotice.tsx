@@ -76,11 +76,15 @@ export function ErrorNotice({
   const showRetry = error.retriable && retriesRemaining > 0;
 
   return (
-    <section role="alert" aria-labelledby="lookup-error-heading" data-testid="error-notice">
-      <h2 id="lookup-error-heading">{HEADINGS[error.code] ?? 'Something went wrong'}</h2>
+    <section role="alert" aria-labelledby="lookup-error-heading" data-testid="error-notice" className="error-notice">
+      <h2 id="lookup-error-heading" className="error-heading">
+        {HEADINGS[error.code] ?? 'Something went wrong'}
+      </h2>
 
       {/* Decision 1: the backend's message, which the requirements constrain. */}
-      <p data-testid="error-message">{error.message}</p>
+      <p data-testid="error-message" className="error-body">
+        {error.message}
+      </p>
 
       {/*
         Requirement 9.10. The visitor's next action is to change the region in the
@@ -89,37 +93,38 @@ export function ErrorNotice({
         outage, which gave them nothing to act on.
       */}
       {error.code === 'PLAYER_NOT_ON_PLATFORM' ? (
-        <p data-testid="wrong-region-hint">
+        <p data-testid="wrong-region-hint" className="error-hint">
           Use the Region selector above to pick where this player plays, then search again.
         </p>
       ) : null}
 
       {showRetry ? (
-        <div>
+        <div className="error-actions">
           <button
             type="button"
             // Decision 3 / Requirement 9.8.
             disabled={!canRetry}
             onClick={onRetry}
             data-testid="retry-button"
+            className="btn btn-ghost"
           >
             Try again
           </button>
           {cooldownActive ? (
-            <p data-testid="cooldown-notice">
+            <p data-testid="cooldown-notice" className="error-meta">
               You can try again in {cooldownSecondsRemaining} second
               {cooldownSecondsRemaining === 1 ? '' : 's'}.
             </p>
           ) : null}
           {/* Requirement 9.3's cap, stated so the visitor is not surprised when it runs out. */}
-          <p data-testid="retries-remaining">
+          <p data-testid="retries-remaining" className="error-meta">
             {retriesRemaining} retr{retriesRemaining === 1 ? 'y' : 'ies'} remaining.
           </p>
         </div>
       ) : null}
 
       {error.retriable && retriesRemaining === 0 ? (
-        <p data-testid="retries-exhausted">
+        <p data-testid="retries-exhausted" className="error-meta">
           You have used all available retries for this lookup. Start a new search to try again.
         </p>
       ) : null}

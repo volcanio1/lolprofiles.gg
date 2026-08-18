@@ -43,8 +43,8 @@ export function SearchPage() {
   const navigate = useNavigate();
 
   return (
-    <RiotDataPage title="Search a player">
-      <p>
+    <RiotDataPage title="Search a player" hero>
+      <p className="lede">
         Enter a Riot ID to see ranked standing, recent form, habits and improvement suggestions.
       </p>
       <SearchForm

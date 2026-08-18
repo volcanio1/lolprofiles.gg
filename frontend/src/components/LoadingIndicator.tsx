@@ -12,7 +12,7 @@
  */
 export function LoadingIndicator({ label = 'Looking up this player…' }: { label?: string }) {
   return (
-    <p role="status" aria-live="polite" data-testid="loading-indicator">
+    <p role="status" aria-live="polite" data-testid="loading-indicator" className="loader">
       {label}
     </p>
   );

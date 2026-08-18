@@ -42,6 +42,11 @@
  *    displayed and does not fix a format, and unlike the Insight Engine — which had
  *    to avoid locale entirely to stay pure and testable — presentation is exactly
  *    where locale belongs.
+ *
+ * 5. THE CHAMPIONS TABLE IS THE ONLY TABLE IN A DEFAULT RENDER. Ranked standings
+ *    and the recent-form stats are styled lists, not tables, so tests that address
+ *    "the table" by role keep meaning the champions table; per-match matchup tables
+ *    appear only when recent matches exist.
  */
 
 import type { OpponentSummary, ProfileReport, RankedQueueStanding, RecentMatchSummary } from '../api/types';
@@ -118,7 +123,9 @@ function LaneStatsRow({ label, championName, kills, deaths, assists, cs, csPerMi
 }) {
   return (
     <tr>
-      <th scope="row">{label}</th>
+      <th scope="row" className="side-label">
+        {label}
+      </th>
       <td>{championName}</td>
       <td>{formatKda3(kills, deaths, assists)}</td>
       <td>{formatCsPerMinute(csPerMinute, cs)}</td>
@@ -130,56 +137,67 @@ function LaneStatsRow({ label, championName, kills, deaths, assists, cs, csPerMi
 function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
   const opponent: OpponentSummary | null = match.opponent;
   return (
-    <li data-testid={`recent-match-${match.matchId}`}>
-      <p>
-        <strong>{match.win ? 'Victory' : 'Defeat'}</strong> — {match.championName} ({match.role}) —{' '}
-        {formatMatchDate(match.startTimestamp)}
+    <li
+      data-testid={`recent-match-${match.matchId}`}
+      className={match.win ? 'match-card match-card--win' : 'match-card'}
+    >
+      <p className="match-head">
+        <span className="match-outcome">{match.win ? 'Victory' : 'Defeat'}</span>
+        <span className="match-champion">{match.championName}</span>
+        <span className="match-role">{match.role}</span>
+        <span className="match-date">{formatMatchDate(match.startTimestamp)}</span>
       </p>
-      <table>
-        <caption>
-          {match.championName} vs {opponent === null ? 'unknown opponent' : opponent.championName}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col" />
-            <th scope="col">Champion</th>
-            <th scope="col">K/D/A</th>
-            <th scope="col">CS/min</th>
-            <th scope="col">Vision</th>
-          </tr>
-        </thead>
-        <tbody>
-          <LaneStatsRow
-            label="You"
-            championName={match.championName}
-            kills={match.kills}
-            deaths={match.deaths}
-            assists={match.assists}
-            cs={match.cs}
-            csPerMinute={match.csPerMinute}
-            visionScore={match.visionScore}
-          />
-          {opponent === null ? (
+      <div className="table-scroll">
+        <table className="data-table matchup-table">
+          <caption className="sr-only">
+            {match.championName} vs {opponent === null ? 'unknown opponent' : opponent.championName}
+          </caption>
+          <thead>
             <tr>
-              <th scope="row">Opponent</th>
-              <td colSpan={4} data-testid={`recent-match-${match.matchId}-no-opponent`}>
-                No lane opponent could be identified for this match.
-              </td>
+              <th scope="col">
+                <span className="sr-only">Side</span>
+              </th>
+              <th scope="col">Champion</th>
+              <th scope="col">K/D/A</th>
+              <th scope="col">CS/min</th>
+              <th scope="col">Vision</th>
             </tr>
-          ) : (
+          </thead>
+          <tbody>
             <LaneStatsRow
-              label="Opponent"
-              championName={opponent.championName}
-              kills={opponent.kills}
-              deaths={opponent.deaths}
-              assists={opponent.assists}
-              cs={opponent.cs}
-              csPerMinute={opponent.csPerMinute}
-              visionScore={opponent.visionScore}
+              label="You"
+              championName={match.championName}
+              kills={match.kills}
+              deaths={match.deaths}
+              assists={match.assists}
+              cs={match.cs}
+              csPerMinute={match.csPerMinute}
+              visionScore={match.visionScore}
             />
-          )}
-        </tbody>
-      </table>
+            {opponent === null ? (
+              <tr>
+                <th scope="row" className="side-label">
+                  Opponent
+                </th>
+                <td colSpan={4} data-testid={`recent-match-${match.matchId}-no-opponent`} className="matchup-note">
+                  No lane opponent could be identified for this match.
+                </td>
+              </tr>
+            ) : (
+              <LaneStatsRow
+                label="Opponent"
+                championName={opponent.championName}
+                kills={opponent.kills}
+                deaths={opponent.deaths}
+                assists={opponent.assists}
+                cs={opponent.cs}
+                csPerMinute={opponent.csPerMinute}
+                visionScore={opponent.visionScore}
+              />
+            )}
+          </tbody>
+        </table>
+      </div>
     </li>
   );
 }
@@ -201,33 +219,37 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
   const queueTypes = orderedQueueTypes(report.stats.rankedByQueue);
 
   return (
-    <div data-testid="profile-report">
-      <header>
-        <h2 data-testid="report-riot-id">
-          {report.riotId.gameName}#{report.riotId.tagLine}
+    <div data-testid="profile-report" className="report">
+      <header className="report-identity">
+        <h2 data-testid="report-riot-id" className="rid">
+          <span>{report.riotId.gameName}</span>
+          <span className="rid-tag">#{report.riotId.tagLine}</span>
         </h2>
-        <p data-testid="summoner-level">Level {report.summonerLevel}</p>
+
+        <div className="report-meta">
+          <p data-testid="summoner-level">Level {report.summonerLevel}</p>
+
+          {/* Requirements 11.4 / 11.5 */}
+          {report.lastUpdated === null ? (
+            <p data-testid="first-retrieval-notice">This data is being retrieved for the first time.</p>
+          ) : (
+            <p data-testid="last-updated">
+              Last updated <time dateTime={report.lastUpdated}>{formatTimestamp(report.lastUpdated)}</time>
+            </p>
+          )}
+        </div>
 
         {/* Requirement 11.3 */}
         {report.partialDataWarning ? (
-          <p role="status" data-testid="partial-data-warning">
+          <p role="status" data-testid="partial-data-warning" className="notice-warning">
             Some of this data may be outdated or unavailable — it was served from the last successful
             retrieval because a fresh update did not complete.
           </p>
         ) : null}
 
-        {/* Requirements 11.4 / 11.5 */}
-        {report.lastUpdated === null ? (
-          <p data-testid="first-retrieval-notice">This data is being retrieved for the first time.</p>
-        ) : (
-          <p data-testid="last-updated">
-            Last updated <time dateTime={report.lastUpdated}>{formatTimestamp(report.lastUpdated)}</time>
-          </p>
-        )}
-
         {/* Requirements 3.4 / 7.5 */}
         {report.limitedDataNotice ? (
-          <p data-testid="limited-data-notice">
+          <p data-testid="limited-data-notice" className="notice-muted">
             Stats and insights are based on limited data, and additional fun facts require more match
             history.
           </p>
@@ -235,23 +257,30 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
       </header>
 
       {/* Requirements 6.1, 6.2, 6.6 */}
-      <section aria-labelledby="ranked-heading">
-        <h3 id="ranked-heading">Ranked standing</h3>
+      <section className="rsec" aria-labelledby="ranked-heading">
+        <h3 id="ranked-heading" className="rsec-title">
+          Ranked standing
+        </h3>
         {queueTypes.length === 0 ? (
-          <p data-testid="no-ranked-entries">Unranked in every queue.</p>
+          <p data-testid="no-ranked-entries" className="empty-note">
+            Unranked in every queue.
+          </p>
         ) : (
-          <ul>
+          <ul className="queue-grid" role="list">
             {queueTypes.map((queueType) => {
               const standing = report.stats.rankedByQueue[queueType];
               return (
-                <li key={queueType} data-testid={`queue-${queueType}`}>
-                  <span>{queueLabel(queueType)}: </span>
+                <li key={queueType} data-testid={`queue-${queueType}`} className="queue-card">
+                  <span className="queue-card-label">{queueLabel(queueType)}</span>
                   {standing === 'Unranked' ? (
-                    <span>Unranked</span>
+                    <span className="queue-card-tier queue-card-tier--none">Unranked</span>
                   ) : (
-                    <span>
-                      {standing.tier} {standing.division} — {formatWinRate(standing.winRatePercent)} win rate
-                    </span>
+                    <>
+                      <span className="queue-card-tier">
+                        {standing.tier} {standing.division}
+                      </span>
+                      <span className="queue-card-wr">{formatWinRate(standing.winRatePercent)} win rate</span>
+                    </>
                   )}
                 </li>
               );
@@ -261,57 +290,78 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
       </section>
 
       {/* Requirements 6.3, 6.5, 7.3 */}
-      <section aria-labelledby="overview-heading">
-        <h3 id="overview-heading">Recent form</h3>
-        <ul>
-          <li data-testid="overall-kda">Average KDA: {formatKda(report.stats.overallAverageKda)}</li>
-          <li data-testid="most-played-role">Most-played role: {report.stats.mostPlayedRole}</li>
-          <li data-testid="average-duration">
-            Average match duration: {formatKda(report.averageMatchDurationMinutes)} minutes
+      <section className="rsec" aria-labelledby="overview-heading">
+        <h3 id="overview-heading" className="rsec-title">
+          Recent form
+        </h3>
+        <ul className="stat-tiles" role="list">
+          <li data-testid="overall-kda" className="stat-tile">
+            <span className="stat-tile-label">Average KDA</span>
+            <strong className="stat-tile-value">{formatKda(report.stats.overallAverageKda)}</strong>
+          </li>
+          <li data-testid="most-played-role" className="stat-tile">
+            <span className="stat-tile-label">Most-played role</span>
+            <strong className="stat-tile-value">{report.stats.mostPlayedRole}</strong>
+          </li>
+          <li data-testid="average-duration" className="stat-tile">
+            <span className="stat-tile-label">Average match duration</span>
+            <strong className="stat-tile-value">
+              {formatKda(report.averageMatchDurationMinutes)} <span className="stat-tile-unit">minutes</span>
+            </strong>
           </li>
         </ul>
       </section>
 
       {/* Requirement 6.4 */}
-      <section aria-labelledby="champions-heading">
-        <h3 id="champions-heading">Top champions</h3>
+      <section className="rsec" aria-labelledby="champions-heading">
+        <h3 id="champions-heading" className="rsec-title">
+          Top champions
+        </h3>
         {report.stats.topChampions.length === 0 ? (
-          <p data-testid="no-champions">No matches available to rank champions.</p>
+          <p data-testid="no-champions" className="empty-note">
+            No matches available to rank champions.
+          </p>
         ) : (
-          <table>
-            <caption>Most-played champions in the recent match window</caption>
-            <thead>
-              <tr>
-                <th scope="col">Champion</th>
-                <th scope="col">Games</th>
-                <th scope="col">Win rate</th>
-                <th scope="col">KDA</th>
-                <th scope="col">Avg CS/min</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.stats.topChampions.map((champion) => (
-                <tr key={champion.championName} data-testid={`champion-${champion.championName}`}>
-                  <th scope="row">{champion.championName}</th>
-                  <td>{champion.gamesPlayed}</td>
-                  <td>{champion.winRatePercent}%</td>
-                  <td>{formatKda(champion.averageKda)}</td>
-                  <td data-testid={`champion-${champion.championName}-avg-cs`}>
-                    {formatCsPerMinute(champion.averageCsPerMinute, champion.averageCs)}
-                  </td>
+          <div className="table-scroll">
+            <table className="data-table">
+              <caption className="sr-only">Most-played champions in the recent match window</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Champion</th>
+                  <th scope="col">Games</th>
+                  <th scope="col">Win rate</th>
+                  <th scope="col">KDA</th>
+                  <th scope="col">Avg CS/min</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {report.stats.topChampions.map((champion) => (
+                  <tr key={champion.championName} data-testid={`champion-${champion.championName}`}>
+                    <th scope="row">{champion.championName}</th>
+                    <td>{champion.gamesPlayed}</td>
+                    <td>{champion.winRatePercent}%</td>
+                    <td>{formatKda(champion.averageKda)}</td>
+                    <td data-testid={`champion-${champion.championName}-avg-cs`}>
+                      {formatCsPerMinute(champion.averageCsPerMinute, champion.averageCs)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
-      <section aria-labelledby="recent-matches-heading">
-        <h3 id="recent-matches-heading">Recent matches</h3>
+      <section className="rsec" aria-labelledby="recent-matches-heading">
+        <h3 id="recent-matches-heading" className="rsec-title">
+          Recent matches
+        </h3>
         {report.recentMatches.length === 0 ? (
-          <p data-testid="no-recent-matches">No recent matches available.</p>
+          <p data-testid="no-recent-matches" className="empty-note">
+            No recent matches available.
+          </p>
         ) : (
-          <ul>
+          <ul className="match-list" role="list">
             {report.recentMatches.map((match) => (
               <RecentMatchCard key={match.matchId} match={match} />
             ))}
@@ -319,47 +369,60 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
         )}
       </section>
 
-      {/* Requirements 7.1, 7.2, 7.4 */}
-      <section aria-labelledby="fun-facts-heading">
-        <h3 id="fun-facts-heading">Fun facts</h3>
-        {report.funFacts.length === 0 ? (
-          <p data-testid="no-fun-facts">Not enough match history to derive fun facts yet.</p>
-        ) : (
-          <ul>
-            {report.funFacts.map((fact) => (
-              <li key={fact.category} data-testid={`fun-fact-${fact.category}`}>
-                <strong>{FUN_FACT_LABELS[fact.category] ?? fact.category}: </strong>
-                {fact.text}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="rsec-duo">
+        {/* Requirements 7.1, 7.2, 7.4 */}
+        <section className="rsec" aria-labelledby="fun-facts-heading">
+          <h3 id="fun-facts-heading" className="rsec-title">
+            Fun facts
+          </h3>
+          {report.funFacts.length === 0 ? (
+            <p data-testid="no-fun-facts" className="empty-note">
+              Not enough match history to derive fun facts yet.
+            </p>
+          ) : (
+            <ul className="fact-list" role="list">
+              {report.funFacts.map((fact) => (
+                <li key={fact.category} data-testid={`fun-fact-${fact.category}`} className="fact-item">
+                  <strong className="fact-label">{FUN_FACT_LABELS[fact.category] ?? fact.category}</strong>
+                  <span className="fact-text">{fact.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-      {/* Requirement 8.5 */}
-      <section aria-labelledby="recommendations-heading">
-        <h3 id="recommendations-heading">Improvement recommendations</h3>
-        {report.recommendations.length === 0 ? (
-          // Decision 3: zero is valid under the amended Requirement 8.1.
-          <p data-testid="no-recommendations">
-            No improvement recommendations were triggered by this match history.
-          </p>
-        ) : (
-          <ul>
-            {report.recommendations.map((recommendation) => (
-              <li key={recommendation.category} data-testid={`recommendation-${recommendation.category}`}>
-                <strong>{RECOMMENDATION_LABELS[recommendation.category] ?? recommendation.category}: </strong>
-                {recommendation.text}
-                {/* Requirement 8.5: the metric name and the value that triggered it. */}
-                <span data-testid={`metric-${recommendation.category}`}>
-                  {' '}
-                  ({recommendation.metricName}: {recommendation.metricValue})
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        {/* Requirement 8.5 */}
+        <section className="rsec" aria-labelledby="recommendations-heading">
+          <h3 id="recommendations-heading" className="rsec-title">
+            Improvement recommendations
+          </h3>
+          {report.recommendations.length === 0 ? (
+            // Decision 3: zero is valid under the amended Requirement 8.1.
+            <p data-testid="no-recommendations" className="empty-note">
+              No improvement recommendations were triggered by this match history.
+            </p>
+          ) : (
+            <ul className="reco-list" role="list">
+              {report.recommendations.map((recommendation) => (
+                <li
+                  key={recommendation.category}
+                  data-testid={`recommendation-${recommendation.category}`}
+                  className="reco-item"
+                >
+                  <strong className="reco-label">
+                    {RECOMMENDATION_LABELS[recommendation.category] ?? recommendation.category}
+                  </strong>
+                  <span className="reco-text">{recommendation.text}</span>
+                  {/* Requirement 8.5: the metric name and the value that triggered it. */}
+                  <span data-testid={`metric-${recommendation.category}`} className="reco-metric">
+                    {recommendation.metricName}: {recommendation.metricValue}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

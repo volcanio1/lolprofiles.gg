@@ -103,7 +103,9 @@ export function ProfileReportPage({ lookupOptions }: ProfileReportPageProps = {}
 
       {/* Decision 3 */}
       {riotId.length === 0 ? (
-        <p data-testid="no-riot-id-prompt">Enter a Riot ID above to see a profile report.</p>
+        <p data-testid="no-riot-id-prompt" className="prompt">
+          Enter a Riot ID above to see a profile report.
+        </p>
       ) : null}
 
       {/* Requirement 9.6 */}

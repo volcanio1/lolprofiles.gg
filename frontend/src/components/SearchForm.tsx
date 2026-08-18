@@ -116,9 +116,11 @@ export function SearchForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="Player search" noValidate>
-      <div>
-        <label htmlFor={riotIdInputId}>Riot ID</label>
+    <form onSubmit={handleSubmit} aria-label="Player search" noValidate className="search-form">
+      <div className="field">
+        <label htmlFor={riotIdInputId} className="field-label">
+          Riot ID
+        </label>
         <input
           id={riotIdInputId}
           name="riotId"
@@ -126,6 +128,7 @@ export function SearchForm({
           value={riotId}
           placeholder="gameName#tagLine"
           autoComplete="off"
+          className="field-input"
           // Decision 4.
           aria-invalid={errorMessage !== undefined}
           aria-describedby={errorMessage !== undefined ? riotIdErrorId : undefined}
@@ -138,19 +141,22 @@ export function SearchForm({
           }}
         />
         {errorMessage !== undefined ? (
-          <p id={riotIdErrorId} role="alert">
+          <p id={riotIdErrorId} role="alert" className="field-error">
             {errorMessage}
           </p>
         ) : null}
       </div>
 
       {/* Requirement 1.7 */}
-      <div>
-        <label htmlFor={regionSelectId}>Region</label>
+      <div className="field">
+        <label htmlFor={regionSelectId} className="field-label">
+          Region
+        </label>
         <select
           id={regionSelectId}
           name="region"
           value={region}
+          className="field-select"
           onChange={(event) => {
             handleRegionChange(event.target.value as RegionalRoutingValue);
           }}
@@ -164,12 +170,15 @@ export function SearchForm({
       </div>
 
       {/* Requirement 5.3: exactly the selected region's platforms */}
-      <div>
-        <label htmlFor={platformSelectId}>Platform</label>
+      <div className="field">
+        <label htmlFor={platformSelectId} className="field-label">
+          Platform
+        </label>
         <select
           id={platformSelectId}
           name="platform"
           value={platform}
+          className="field-select"
           onChange={(event) => {
             setPlatform(event.target.value);
           }}
@@ -183,7 +192,7 @@ export function SearchForm({
         </select>
       </div>
 
-      <button type="submit" disabled={busy}>
+      <button type="submit" disabled={busy} className="btn btn-primary">
         {busy ? 'Searching…' : 'Search'}
       </button>
     </form>
