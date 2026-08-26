@@ -284,4 +284,4 @@ Property 2's generators must include the empty string, `null`, `0`, negative val
 
 **Live verification** (manual, one run, task 1.1): confirm Data_Dragon serves `Access-Control-Allow-Origin: *` on `champion.json` and `item.json`, and confirm the `champion.json` entry shape that maps a Champion_Key to its display name. The provider's location — frontend versus backend — depends on the first, so it is checked before the provider is written rather than after.
 
-**Out of scope**: item purchase order and build timing, which require Match-V5's timeline endpoint rather than the participant record and would carry their own payload-size and caching consequences; champion splash art and loading screens; and rune and summoner-spell icons, which use the same provider and can be added to it without changing this design.
+**Out of scope**: item purchase order and build timing, which require Match-V5's timeline endpoint rather than the participant record and are specified separately by the `item-timeline` feature; champion splash art and loading screens; and rune and summoner-spell icons, which use the same provider and can be added to it without changing this design.
