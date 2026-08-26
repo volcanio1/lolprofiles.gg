@@ -29,6 +29,7 @@ function makeApp(allowedOrigins?: readonly string[]) {
   app.use(
     '/api',
     createApiRouter({
+      dataDragonVersion: '16.17.1',
       orchestrator: stubOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,

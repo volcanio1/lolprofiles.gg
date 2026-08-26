@@ -11,20 +11,20 @@ Two things are built as pure, total functions before anything renders them: `ite
 ## Tasks
 
 - [ ] 1. Confirm the CDN contract and expose the pinned version
-  - [ ] 1.1 Verify Data Dragon's metadata contract
+  - [x] 1.1 Verify Data Dragon's metadata contract
     - Fetch `champion.json` and `item.json` for a current version and record whether `Access-Control-Allow-Origin: *` is served; the Static_Data_Provider is specified as a frontend component on this assumption and moves behind the backend if it fails
     - Record the `champion.json` entry shape that maps a Champion_Key to its display name, and confirm `MonkeyKing` resolves to `Wukong`
     - Confirm `img/profileicon/0.png` exists, since the design rests on `0` being a valid icon rather than a sentinel
     - Write the findings into design.md, replacing the "must be confirmed" note with the observed behavior
     - _Requirements: 4.4, 2.2, 1.3_
 
-  - [ ] 1.2 Add the pinned version to configuration and expose it
+  - [x] 1.2 Add the pinned version to configuration and expose it
     - Add `DDRAGON_VERSION` to backend config with no "latest" fallback, so a missing value fails fast rather than resolving to a moving alias
     - Implement `GET /api/static-data` returning `{ dataDragonVersion }`; no Riot call, no cache entry, no rate-limit reservation
     - _Requirements: 4.1, 4.2, 4.3_
 
 - [ ] 2. Build the Static Data Provider
-  - [ ] 2.1 Implement the provider and its accessors
+  - [x] 2.1 Implement the provider and its accessors
     - Seed from `GET /api/static-data`, then fetch `champion.json` and `item.json` once and retain for at least 24 hours
     - Implement `championDisplayName`, `championIconUrl`, `profileIconUrl`, `itemIconUrl`, `itemDisplayName`, and `ready`
     - Make every accessor total: a URL or `null`, a name or a documented fallback — never an empty string, never a URL containing `undefined`, never a throw, before or after metadata loads
@@ -36,12 +36,14 @@ Two things are built as pure, total functions before anything renders them: `ite
     - **Property 2: Asset URL resolution is total**
     - **Validates: Requirements 4.1, 4.2, 5.3, 5.4**
     - Include the empty string, `null`, `0`, negatives, and identifiers absent from the metadata, and run the property both before and after the provider is ready
+    - Also generate **prototype-chain keys** (`constructor`, `toString`, `__proto__`, `hasOwnProperty`). A plain-object map resolves these through `Object.prototype`, and a review of task 2.1 found they produced a URL ending in the literal `undefined`; the hand-written sweep in `provider.test.ts` omitted them and missed it
+    - `fast-check` is a **backend** devDependency only — add it to the frontend workspace before writing this
 
   - [ ]* 2.3 Write property test for display name fallback
     - **Property 4: Champion display names fall back without ever being empty**
     - **Validates: Requirements 1.3, 1.4, 6.2**
 
-  - [ ] 2.4 Implement the Asset Placeholder
+  - [x] 2.4 Implement the Asset Placeholder
     - Render at the same dimensions as the asset it replaces, so a missing image never reflows the page
     - Give it a text alternative describing what could not be loaded
     - _Requirements: 5.1, 6.4_
@@ -50,17 +52,18 @@ Two things are built as pure, total functions before anything renders them: `ite
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 4. Render champion icons and the profile icon
-  - [ ] 4.1 Make `profileIconId` nullable end to end
+  - [x] 4.1 Make `profileIconId` nullable end to end
     - Remove the `finiteOrZero` coercion in the orchestrator so an absent value is `null` rather than `0`; `0` is a valid icon and must stay distinguishable from missing
     - Mirror the nullable type in the frontend contract
     - _Requirements: 2.2_
 
-  - [ ] 4.2 Implement `ChampionIcon` and `ProfileIcon`
+  - [x] 4.2 Implement `ChampionIcon` and `ProfileIcon`
     - Render the icon when the provider resolves a URL and the Asset_Placeholder when it does not, at identical dimensions in both cases
+    - Swap to the Asset_Placeholder on the image's `error` event as well. This is the ONLY mechanism Requirement 2.4 has: the provider fetches `champion.json` and `item.json` but never `profileicon.json`, so it cannot tell a valid icon id from one added after the pinned release, and an unresolvable profile icon reaches the page as a live URL that 404s
     - Render the Champion_Display_Name beside the icon, falling back to the raw Champion_Key
     - _Requirements: 1.1, 1.3, 1.4, 1.5, 2.1, 2.3, 2.4, 5.1_
 
-  - [ ] 4.3 Place the icons in the report
+  - [x] 4.3 Place the icons in the report
     - Champion icons in the top-champions list, in every match history row, and on the Enemy_Laner in every row where one was identified
     - The profile icon adjacent to the analyzed player's Riot ID
     - Keep every icon accompanied by its name in text rather than replacing the name with the image, so no information is carried by an image alone
@@ -78,13 +81,13 @@ Two things are built as pure, total functions before anything renders them: `ite
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. Capture item builds on the backend
-  - [ ] 6.1 Implement `itemBuildOf`
+  - [x] 6.1 Implement `itemBuildOf`
     - Total and never throwing, matching the existing mapping module's contract: a malformed, absent or non-numeric slot becomes `0`
     - Preserve zeros rather than filtering them, so slot positions stay stable
     - Return items 0–5 as a fixed-length tuple and slot 6 as a separate `trinket` field, so the trinket distinction is not re-derived at each call site
     - _Requirements: 3.1, 3.5, 3.6_
 
-  - [ ] 6.2 Attach builds to both sides of the matchup
+  - [x] 6.2 Attach builds to both sides of the matchup
     - Add `build` to the analyzed player's match summary, and to `OpponentSummary` using the same participant row `opponentOf` already selects — never a different one
     - Leave `opponentOf`'s selection logic untouched; it already returns nothing when no lane could be determined
     - _Requirements: 3.1, 3.2, 3.9_
@@ -98,7 +101,7 @@ Two things are built as pure, total functions before anything renders them: `ite
     - _Requirements: 3.1_
 
 - [ ] 7. Render item builds in the match history
-  - [ ] 7.1 Implement `ItemBuildRow`
+  - [x] 7.1 Implement `ItemBuildRow`
     - Render six item positions and one trinket position in slot order, with the trinket visually distinct
     - Render an empty slot for identifier `0` without constructing an image source or issuing a request
     - Return nothing at all for a null build, so a match with no Enemy_Laner renders no opposing slots
@@ -109,7 +112,7 @@ Two things are built as pure, total functions before anything renders them: `ite
     - **Validates: Requirements 3.3, 3.5, 3.6**
     - Generate every arrangement of zeros and non-zeros across the seven slots, including interleaved empties, so the position-shifting bug cannot hide behind trailing-empty examples
 
-  - [ ] 7.3 Place both builds in each match history row
+  - [x] 7.3 Place both builds in each match history row
     - The analyzed player's build, and the Enemy_Laner's build where one was identified, laid out so the two are readable as a comparison
     - Label the display as the final build; do not describe it as a purchase order
     - _Requirements: 3.3, 3.4, 3.7, 3.8_
@@ -122,12 +125,12 @@ Two things are built as pure, total functions before anything renders them: `ite
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Resilience, compliance and documentation
-  - [ ] 9.1 Verify and harden the degraded path
+  - [x] 9.1 Verify and harden the degraded path
     - Confirm the report renders in full with every image a placeholder when `GET /api/static-data` fails and when the metadata fetch fails, without blanking or blocking
     - Ensure no image element is rendered whose source could not be constructed
     - _Requirements: 5.2, 5.3_
 
-  - [ ] 9.2 Apply the Riot compliance template and content policy
+  - [x] 9.2 Apply the Riot compliance template and content policy
     - Render every page displaying assets through the existing `RiotDataPage` wrapper (`frontend/src/compliance/RiotDataPage.tsx`) so attribution and the no-advertising default apply without being re-implemented
     - Serve assets from Riot's distribution unmodified; do not rehost, alter or re-brand them
     - If a Content-Security-Policy is present or later added, allow `ddragon.leagueoflegends.com` as an image and connect source
@@ -137,7 +140,7 @@ Two things are built as pure, total functions before anything renders them: `ite
     - A report containing a match with a full six-item build plus trinket, a match with three empty slots interleaved among items, a match with no Enemy_Laner, and a match whose `championName` is empty — asserting correct slot positions, an absent opposing build, and placeholders where expected
     - _Requirements: 1.5, 3.3, 3.6, 3.7_
 
-  - [ ] 9.4 Update the README
+  - [x] 9.4 Update the README
     - Document `GET /api/static-data`, the `DDRAGON_VERSION` config value and how to bump it on a patch, and the fact that assets are hot-linked from Riot's CDN rather than proxied or rehosted
     - _Requirements: 4.1, 4.3, 4.6, 7.3_
 

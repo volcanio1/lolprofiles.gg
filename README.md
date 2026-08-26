@@ -14,6 +14,7 @@ The interesting constraint here isn't the stats. It's that Riot's rate limits ar
 - [Environment variables](#environment-variables)
 - [Scripts](#scripts)
 - [API](#api)
+- [Assets](#assets)
 - [Regions](#regions)
 - [Caching](#caching)
 - [Testing](#testing)
@@ -105,6 +106,7 @@ The Vite dev server proxies `/api` to `http://localhost:3001`, which makes brows
 | `RIOT_API_KEY` | Yes | — | Server-side only. Never commit a real key. |
 | `PORT` | No | `3001` | |
 | `CORS_ALLOWED_ORIGINS` | No | *(unset)* | Comma-separated list of **exact** origins. |
+| `DDRAGON_VERSION` | Yes | — | Exact Data Dragon release pinned for champion/item/profile-icon assets, e.g. `16.17.1`. No `"latest"` alias — a moving version would change rendered assets without a deploy, so a missing or `"latest"` value fails fast at startup. Bump it by editing this value and redeploying; see [Assets](#assets) for what depends on it. |
 
 There is deliberately no wildcard CORS option. `/api/lookup` is unauthenticated and spends the shared Riot rate-limit budget on a cache miss, so `*` would let any page on the internet consume it. Leave `CORS_ALLOWED_ORIGINS` unset for local development and same-origin deployments.
 
@@ -169,9 +171,27 @@ Validation happens before the orchestrator is invoked, so a malformed Riot ID or
 
 Takes a `puuid`, evicts its cached data and scrubs its participant rows from retained match details. Returns `{ found, deletedAt }`. A PUUID with nothing cached returns `found: false` with a 200 — not an error. See [Known gaps](#known-gaps) before exposing this publicly.
 
+### `GET /api/static-data`
+
+```jsonc
+// response
+{ "dataDragonVersion": "16.17.1" }
+```
+
+Returns the pinned `DDRAGON_VERSION`. No Riot API call, no cache entry, and no rate-limit reservation — Data Dragon is a public CDN, not a rate-limited game API. The frontend uses the version to build champion, item and profile-icon URLs itself; see [Assets](#assets).
+
 ### `GET /health`
 
 `{ "status": "ok" }`.
+
+## Assets
+
+Champion icons, the profile icon, and item build images come straight from Data Dragon, keyed to the version this deployment has pinned in `DDRAGON_VERSION`:
+
+- The frontend calls `GET /api/static-data` once for the pinned version, then fetches `champion.json` and `item.json` **directly from Data Dragon** and holds them in `localStorage` for 24 hours.
+- Every image tag points straight at `https://ddragon.leagueoflegends.com/...` — **assets are hot-linked, never proxied or rehosted** through this backend. Data Dragon calls never touch the Rate Limit Manager, since it doesn't govern Riot's CDN.
+- Every icon degrades to a same-sized placeholder rather than a broken image: an unresolved id, a `0` item slot (which is a real "empty" encoding, not a missing image), or a live CDN 404 all render an `AssetPlaceholder` instead of a torn `<img>`. This holds even if `GET /api/static-data` or the Data Dragon fetch fails outright — the report still renders in full, with placeholders in place of pictures.
+- To bump the game version after a patch, update `DDRAGON_VERSION` and redeploy the backend; there is no automatic "latest" fallback, by design.
 
 ## Regions
 
@@ -227,10 +247,12 @@ backend/src
 
 frontend/src
 ├─ pages/          # SearchPage, ProfileReportPage
-├─ components/     # SearchForm, ProfileReportView, LoadingIndicator, ErrorNotice
+├─ components/     # SearchForm, ProfileReportView, ChampionIcon, ProfileIcon,
+│                  #   ItemBuildRow, AssetPlaceholder, LoadingIndicator, ErrorNotice
 ├─ hooks/          # useLookup
 ├─ api/            # lookupClient + wire types
 ├─ domain/         # Riot ID + region (mirrors backend, parity-tested)
+├─ staticData/     # Static Data Provider — Data Dragon version/metadata, asset URLs
 └─ compliance/     # RiotDataPage template, advertising policy
 
 .kiro/specs/lolprofiles-gg/   # requirements, design, tasks, implementation log
@@ -255,5 +277,6 @@ Riot ToS obligations are enforced at the service layer rather than left to page 
 - **Attribution** — `RiotDataPage` renders the required disclaimer for the whole time it displays Riot data, and every page showing Riot data uses that template.
 - **No advertising** — the policy is inverted so it fails safe. `RiotDataPage` renders no ad slot unless handed an approved agreement, and there is exactly one place in the codebase where such an agreement can be introduced (hardcoded to `undefined`). Adding advertising requires a deliberate, reviewable edit to that file.
 - **Bounded retention and deletion on request** — TTLs are the single source of truth in the cache store; deletion runs through `/api/privacy/delete`.
+- **Assets served unmodified from Riot's own distribution** — champion, item and profile icons are hot-linked from Data Dragon (see [Assets](#assets)) and never rehosted, altered or re-branded.
 
 lolprofiles.gg isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing League of Legends. League of Legends and Riot Games are trademarks or registered trademarks of Riot Games, Inc.

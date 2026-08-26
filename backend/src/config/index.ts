@@ -11,6 +11,13 @@ export interface AppConfig {
    * allowlist rather than a wildcard.
    */
   allowedOrigins: string[];
+  /**
+   * The single Data Dragon release every asset URL and display name is resolved
+   * against, from `DDRAGON_VERSION`. Required, and deliberately has no default:
+   * a moving alias would make a Riot patch change what the site renders without
+   * any deploy, and would let a cached response and a live one disagree.
+   */
+  dataDragonVersion: string;
 }
 
 /**
@@ -35,9 +42,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  const dataDragonVersion = env.DDRAGON_VERSION?.trim();
+
+  if (!dataDragonVersion || dataDragonVersion.length === 0) {
+    throw new Error(
+      'Missing required environment variable DDRAGON_VERSION. Set it to an exact Data Dragon release (e.g. "16.17.1"); see https://ddragon.leagueoflegends.com/api/versions.json.'
+    );
+  }
+
+  // A moving alias is rejected rather than merely undocumented. Accepting it would
+  // make a Riot patch silently change every rendered asset, and would let two
+  // requests seconds apart resolve to different releases.
+  if (dataDragonVersion.toLowerCase() === 'latest') {
+    throw new Error(
+      'Invalid DDRAGON_VERSION value "latest". Pin an exact Data Dragon release (e.g. "16.17.1"); a moving alias would change rendered assets without a deploy.'
+    );
+  }
+
   return {
     riotApiKey,
     port,
     allowedOrigins: parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+    dataDragonVersion,
   };
 }

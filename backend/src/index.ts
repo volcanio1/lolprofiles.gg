@@ -28,7 +28,7 @@ import { createInMemoryCacheStore } from './cache';
 import { createLookupOrchestrator } from './orchestrator';
 import { createRateLimitManager } from './rateLimit';
 import { createRiotApiClient, type RiotHttpTransport } from './riotApiClient';
-
+import 'dotenv/config';
 // Load config first so misconfiguration fails fast, before the app starts.
 // This is also the only read of the API key; it is passed to the Riot API Client
 // and never travels anywhere else.
@@ -51,7 +51,13 @@ const riotApiClient = createRiotApiClient({
 
 const orchestrator = createLookupOrchestrator({ cache, riotApiClient, now });
 
-const app = createApp({ orchestrator, cache, now, allowedOrigins: config.allowedOrigins });
+const app = createApp({
+  orchestrator,
+  cache,
+  now,
+  allowedOrigins: config.allowedOrigins,
+  dataDragonVersion: config.dataDragonVersion,
+});
 
 app.listen(config.port, () => {
   // eslint-disable-next-line no-console

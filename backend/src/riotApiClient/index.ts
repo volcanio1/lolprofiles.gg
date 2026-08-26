@@ -149,6 +149,15 @@ export interface MatchParticipantDto {
   visionScore: number;
   totalMinionsKilled?: number;
   neutralMinionsKilled?: number;
+  /** Item_Slots 0-5, final inventory at game end. */
+  item0?: number;
+  item1?: number;
+  item2?: number;
+  item3?: number;
+  item4?: number;
+  item5?: number;
+  /** Item_Slot 6, the trinket. */
+  item6?: number;
 }
 
 /** Match-V5 match detail, in Riot's metadata/info shape. */

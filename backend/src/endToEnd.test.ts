@@ -156,6 +156,7 @@ function makeHarness(): Harness {
     logger: { authFailure: () => undefined },
   });
   const app = createApp({
+    dataDragonVersion: '16.17.1',
     orchestrator,
     cache,
     now,

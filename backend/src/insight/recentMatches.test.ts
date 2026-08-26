@@ -42,7 +42,16 @@ describe('computeRecentMatches', () => {
   });
 
   it('carries the opponent summary through when present', () => {
-    const opponent = { championName: 'Zed', kills: 4, deaths: 5, assists: 2, cs: 150, csPerMinute: 5, visionScore: 15 };
+    const opponent = {
+      championName: 'Zed',
+      kills: 4,
+      deaths: 5,
+      assists: 2,
+      cs: 150,
+      csPerMinute: 5,
+      visionScore: 15,
+      build: { items: [1, 2, 3, 0, 0, 0] as const, trinket: 3340 },
+    };
     const [entry] = computeRecentMatches([match({ opponent })]);
 
     expect(entry.opponent).toEqual(opponent);
@@ -58,6 +67,19 @@ describe('computeRecentMatches', () => {
     const [entry] = computeRecentMatches([match({ cs: undefined })]);
 
     expect(entry.cs).toBe(0);
+  });
+
+  it('defaults a missing build to all-empty slots', () => {
+    const [entry] = computeRecentMatches([match({ build: undefined })]);
+
+    expect(entry.build).toEqual({ items: [0, 0, 0, 0, 0, 0], trinket: 0 });
+  });
+
+  it('carries the build through when present', () => {
+    const build = { items: [1038, 0, 0, 0, 0, 0], trinket: 3340 } as const;
+    const [entry] = computeRecentMatches([match({ build })]);
+
+    expect(entry.build).toEqual(build);
   });
 
   it('does not mutate its input', () => {

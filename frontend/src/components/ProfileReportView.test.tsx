@@ -193,6 +193,7 @@ describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane 
           startTimestamp: 1_700_000_000_000,
           durationSeconds: 1800,
           opponent,
+          build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
         },
       ],
     });
@@ -220,6 +221,7 @@ describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane 
           cs: 175,
           csPerMinute: 5.83,
           visionScore: 11,
+          build: { items: [0, 0, 0, 0, 0, 0], trinket: 3364 },
         })}
       />,
     );
@@ -345,5 +347,51 @@ describe('report identity', () => {
     const { container } = render(<ProfileReportView report={report({ puuid: 'secret-puuid-value' })} />);
 
     expect(container.innerHTML).not.toContain('secret-puuid-value');
+  });
+});
+
+describe('Requirement 5.2/5.3 — degraded rendering with no Static Data Provider', () => {
+  it('renders the full report as placeholders, with no <img> whose source could not be constructed', () => {
+    const { container } = render(
+      <ProfileReportView
+        report={report({
+          recentMatches: [
+            {
+              matchId: 'NA1_1',
+              championName: 'Vayne',
+              role: 'BOTTOM',
+              win: true,
+              kills: 8,
+              deaths: 2,
+              assists: 6,
+              cs: 210,
+              csPerMinute: 7,
+              visionScore: 24,
+              startTimestamp: 1_700_000_000_000,
+              durationSeconds: 1800,
+              opponent: {
+                championName: 'Jinx',
+                kills: 3,
+                deaths: 7,
+                assists: 1,
+                cs: 175,
+                csPerMinute: 5.83,
+                visionScore: 11,
+                build: { items: [0, 0, 0, 0, 0, 0], trinket: 3364 },
+              },
+              build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
+            },
+          ],
+        })}
+      />,
+    );
+
+    // The Static_Data_Provider is not seeded here, so `useStaticData()` falls back
+    // to the not-ready context default — every icon and item slot must resolve to
+    // an Asset_Placeholder, never a live <img> pointed at an unconstructed URL.
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelectorAll('[data-testid="asset-placeholder"]').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('report-riot-id')).toBeInTheDocument();
+    expect(screen.getByTestId('recent-match-NA1_1')).toBeInTheDocument();
   });
 });

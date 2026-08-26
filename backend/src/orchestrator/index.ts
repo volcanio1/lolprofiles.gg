@@ -247,7 +247,20 @@ export interface ProfileReport {
   riotId: RiotIdParts;
   puuid: string;
   summonerLevel: number;
-  profileIconId: number;
+  /**
+   * Null when the summoner payload carried no usable icon id.
+   *
+   * Nullable for two independent reasons, and BOTH must hold for this to stay
+   * nullable — do not revert it if one of them goes away:
+   *  1. `0` is a real profile icon (Data Dragon serves `profileicon/0.png` with a
+   *     200, verified in the visual-assets spec's task 1.1), so coercing an absent
+   *     value to `0` renders a specific picture nobody chose. Absent must be
+   *     distinguishable from icon zero.
+   *  2. The lookup-pipeline-fixes spec demotes Summoner-V4 to a non-blocking
+   *     enrichment call, whose failure leaves this field absent on an otherwise
+   *     successful report.
+   */
+  profileIconId: number | null;
   stats: ProfileStats;
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5: fewer than 5 included matches. */
@@ -698,7 +711,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       riotId: canonicalRiotId(ctx),
       puuid,
       summonerLevel: finiteOrZero(summoner?.summonerLevel),
-      profileIconId: finiteOrZero(summoner?.profileIconId),
+      profileIconId: finiteOrNull(summoner?.profileIconId), // see ProfileReport
       stats,
       funFacts: computeFunFacts(matches), // Requirements 7.1-7.6
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
@@ -848,6 +861,15 @@ function canonicalRiotId(ctx: LookupContext): RiotIdParts {
 
 function finiteOrZero(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * For fields where zero is a MEANINGFUL value rather than a safe default.
+ * `finiteOrZero` on `profileIconId` made a missing icon indistinguishable from
+ * icon 0, which is a real icon; absent data must read as absent.
+ */
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 export function createLookupOrchestrator(options: LookupOrchestratorOptions): LookupOrchestrator {

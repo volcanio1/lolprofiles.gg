@@ -7,7 +7,7 @@
  * where an opponent could be identified (see `orchestrator/mapping.ts`).
  */
 
-import { csPerMinuteOf, type IncludedMatch, type OpponentSummary } from './stats';
+import { EMPTY_ITEM_BUILD, csPerMinuteOf, type IncludedMatch, type ItemBuild, type OpponentSummary } from './stats';
 
 /** How many recent matches the report surfaces. */
 export const RECENT_MATCH_LIMIT = 10;
@@ -29,6 +29,8 @@ export interface RecentMatchSummary {
   durationSeconds: number;
   /** `null` when no opposing participant shared this player's lane. */
   opponent: OpponentSummary | null;
+  /** Requirement 3.1. Final inventory at game end, not a purchase sequence. */
+  build: ItemBuild;
 }
 
 /**
@@ -53,5 +55,6 @@ export function computeRecentMatches(matches: readonly IncludedMatch[]): RecentM
       startTimestamp: match.startTimestamp,
       durationSeconds: match.durationSeconds,
       opponent: match.opponent ?? null,
+      build: match.build ?? EMPTY_ITEM_BUILD,
     }));
 }

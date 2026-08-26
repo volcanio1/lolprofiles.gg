@@ -50,6 +50,9 @@
  */
 
 import type { OpponentSummary, ProfileReport, RankedQueueStanding, RecentMatchSummary } from '../api/types';
+import { ChampionIcon } from './ChampionIcon';
+import { ItemBuildRow } from './ItemBuildRow';
+import { ProfileIcon } from './ProfileIcon';
 
 export interface ProfileReportViewProps {
   report: ProfileReport;
@@ -126,7 +129,9 @@ function LaneStatsRow({ label, championName, kills, deaths, assists, cs, csPerMi
       <th scope="row" className="side-label">
         {label}
       </th>
-      <td>{championName}</td>
+      <td className="champion-col">
+        <ChampionIcon championKey={championName} size={24} className="lane-champion-icon" />
+      </td>
       <td>{formatKda3(kills, deaths, assists)}</td>
       <td>{formatCsPerMinute(csPerMinute, cs)}</td>
       <td>{visionScore}</td>
@@ -143,7 +148,9 @@ function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
     >
       <p className="match-head">
         <span className="match-outcome">{match.win ? 'Victory' : 'Defeat'}</span>
-        <span className="match-champion">{match.championName}</span>
+        <span className="match-champion">
+          <ChampionIcon championKey={match.championName} size={32} className="match-champion-icon" />
+        </span>
         <span className="match-role">{match.role}</span>
         <span className="match-date">{formatMatchDate(match.startTimestamp)}</span>
       </p>
@@ -157,7 +164,7 @@ function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
               <th scope="col">
                 <span className="sr-only">Side</span>
               </th>
-              <th scope="col">Champion</th>
+              <th scope="col" className="champion-col">Champion</th>
               <th scope="col">K/D/A</th>
               <th scope="col">CS/min</th>
               <th scope="col">Vision</th>
@@ -198,6 +205,19 @@ function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
           </tbody>
         </table>
       </div>
+      {/* Requirements 3.3, 3.4, 3.7, 3.8: final inventory at game end, never a purchase order. */}
+      <div className="build-compare" data-testid={`recent-match-${match.matchId}-builds`}>
+        <div className="build-compare-side">
+          <span className="build-compare-label">Your final build</span>
+          <ItemBuildRow build={match.build} size={24} />
+        </div>
+        {opponent === null ? null : (
+          <div className="build-compare-side">
+            <span className="build-compare-label">Opponent's final build</span>
+            <ItemBuildRow build={opponent.build} size={24} />
+          </div>
+        )}
+      </div>
     </li>
   );
 }
@@ -221,10 +241,13 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
   return (
     <div data-testid="profile-report" className="report">
       <header className="report-identity">
-        <h2 data-testid="report-riot-id" className="rid">
-          <span>{report.riotId.gameName}</span>
-          <span className="rid-tag">#{report.riotId.tagLine}</span>
-        </h2>
+        <div className="rid-row">
+          <ProfileIcon profileIconId={report.profileIconId} size={48} className="rid-icon" />
+          <h2 data-testid="report-riot-id" className="rid">
+            <span>{report.riotId.gameName}</span>
+            <span className="rid-tag">#{report.riotId.tagLine}</span>
+          </h2>
+        </div>
 
         <div className="report-meta">
           <p data-testid="summoner-level">Level {report.summonerLevel}</p>
@@ -337,7 +360,9 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
               <tbody>
                 {report.stats.topChampions.map((champion) => (
                   <tr key={champion.championName} data-testid={`champion-${champion.championName}`}>
-                    <th scope="row">{champion.championName}</th>
+                    <th scope="row">
+                      <ChampionIcon championKey={champion.championName} size={32} className="top-champion-icon" />
+                    </th>
                     <td>{champion.gamesPlayed}</td>
                     <td>{champion.winRatePercent}%</td>
                     <td>{formatKda(champion.averageKda)}</td>

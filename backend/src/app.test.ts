@@ -17,6 +17,7 @@ const stubOrchestrator: LookupOrchestrator = {
 function makeApp() {
   const now = () => 1_000;
   return createApp({
+    dataDragonVersion: '16.17.1',
     orchestrator: stubOrchestrator,
     cache: createInMemoryCacheStore({ now }),
     now,

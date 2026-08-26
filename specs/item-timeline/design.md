@@ -191,7 +191,7 @@ GET /api/match/:matchId/build-path?gameName=<name>&tagLine=<tag>
 
 ### Frontend: BuildPathView
 
-Rendered inside an expanded match history row. Item images and the Component_Item classification both come from the `visual-assets` Static_Data_Provider — `item.json`'s existing depth and build-tree fields already distinguish components from completed items, so Requirement 3.2's prohibition on a second classification source costs nothing.
+Rendered inside an expanded match history row. Item images and the Component_Item classification both come from the `visual-assets` Static_Data_Provider, whose `isCompletedItem` accessor pins the rule. That rule is not the obvious one: `depth` is absent on 520 of `item.json`'s 868 entries including finished items like Doran's Blade, and "has no `into`" wrongly excludes Berserker's Greaves. The verified composite rule lives in `visual-assets`' design, which is why Requirement 3.2's prohibition on a second classification source matters here rather than being a formality.
 
 Defaults to the completed-items view (Requirement 3.3) with a toggle for the full path including components. Timestamps render as `M:SS` from match start (Requirement 3.4).
 

@@ -45,6 +45,17 @@ export interface ProfileStats {
   mostPlayedRole: string;
 }
 
+/**
+ * Item_Slots 0-6 at game end — the final inventory, not a purchase sequence.
+ * `items` is fixed-length so an empty slot (`0`) stays at its own position
+ * rather than shifting later items left; `trinket` is `items[6]` pulled out as
+ * its own field since every render site needs the trinket distinguished.
+ */
+export interface ItemBuild {
+  items: readonly [number, number, number, number, number, number];
+  trinket: number;
+}
+
 /** The opposing participant in the same lane, for a lane-matchup comparison. */
 export interface OpponentSummary {
   championName: string;
@@ -54,6 +65,8 @@ export interface OpponentSummary {
   cs: number;
   csPerMinute: number;
   visionScore: number;
+  /** From the same participant row as the rest of this summary. */
+  build: ItemBuild;
 }
 
 export interface RecentMatchSummary {
@@ -72,6 +85,8 @@ export interface RecentMatchSummary {
   durationSeconds: number;
   /** `null` when no opposing participant shared this player's lane. */
   opponent: OpponentSummary | null;
+  /** Final inventory at game end, not a purchase order. */
+  build: ItemBuild;
 }
 
 /** Requirement 7.4's four categories. */
@@ -92,7 +107,12 @@ export interface ProfileReport {
   riotId: RiotIdParts;
   puuid: string;
   summonerLevel: number;
-  profileIconId: number;
+  /**
+   * Null when no usable icon id was retrieved. `0` is a REAL icon (Data Dragon
+   * serves it), so null — never zero — is the absence encoding; render a
+   * placeholder for null and a real image for 0.
+   */
+  profileIconId: number | null;
   stats: ProfileStats;
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5. */

@@ -52,11 +52,17 @@ import { createCorsMiddleware } from './cors';
 import { internalError, malformedRequestError } from './errors';
 import { createLookupHandler } from './lookup';
 import { createPrivacyDeleteHandler } from './privacy';
+import { createStaticDataHandler } from './staticData';
 
 export * from './errors';
 export { createCorsMiddleware, parseAllowedOrigins, type CorsOptions } from './cors';
 export { createLookupHandler, isJsonObject, parseLookupRequest, readOptionalString } from './lookup';
 export { createPrivacyDeleteHandler, type DeletionConfirmation } from './privacy';
+export {
+  createStaticDataHandler,
+  type StaticDataResponse,
+  type StaticDataHandlerDependencies,
+} from './staticData';
 
 /** Decision 1. */
 export const REQUEST_BODY_LIMIT = '16kb';
@@ -90,6 +96,12 @@ export interface ApiDependencies {
    * for why this is an allowlist rather than a wildcard.
    */
   allowedOrigins?: readonly string[];
+  /**
+   * The pinned Data Dragon release served by `GET /api/static-data`. Required
+   * rather than defaulted: the frontend resolves every asset against it, and a
+   * silently-defaulted version would render assets from a release nobody chose.
+   */
+  dataDragonVersion: string;
 }
 
 /** True when Express's body parser rejected the payload rather than the app failing. */
@@ -122,6 +134,10 @@ export function createApiRouter(deps: ApiDependencies): Router {
 
   router.post('/lookup', createLookupHandler({ orchestrator: deps.orchestrator }));
   router.post('/privacy/delete', createPrivacyDeleteHandler({ cache: deps.cache, now }));
+  router.get(
+    '/static-data',
+    createStaticDataHandler({ dataDragonVersion: deps.dataDragonVersion }),
+  );
 
   // Decision 4: registered last, so it sees both parse and route failures.
   const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {

@@ -106,6 +106,7 @@ describe('toIncludedMatch', () => {
       visionScore: 21,
       cs: 0,
       opponent: undefined,
+      build: { items: [0, 0, 0, 0, 0, 0], trinket: 0 },
     });
   });
 
@@ -243,6 +244,7 @@ describe('toIncludedMatch', () => {
       cs: 150,
       csPerMinute: 4.97,
       visionScore: 15,
+      build: { items: [0, 0, 0, 0, 0, 0], trinket: 0 },
     });
   });
 

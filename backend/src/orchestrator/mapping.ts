@@ -93,7 +93,7 @@
  *    a blank role name rather than emitting a sentence about nothing.
  */
 
-import { csPerMinuteOf, type IncludedMatch, type LeagueEntry, type OpponentSummary } from '../insight/stats';
+import { csPerMinuteOf, type IncludedMatch, type ItemBuild, type LeagueEntry, type OpponentSummary } from '../insight/stats';
 import type { LeagueEntryDto, MatchDto, MatchParticipantDto } from '../riotApiClient';
 
 /** The exact set Requirement 3.5 permits. */
@@ -149,6 +149,37 @@ function csOf(participant: { totalMinionsKilled?: unknown; neutralMinionsKilled?
 }
 
 /**
+ * Requirement 3.1 / 3.5 / 3.6. Total and never throwing, matching this module's
+ * existing contract: a malformed, absent or non-numeric slot becomes `0`, which is
+ * already the encoding for "empty". Zeros are preserved rather than filtered, so a
+ * gap in the inventory does not shift a later item into the wrong slot position.
+ * `item6` is split into its own `trinket` field (design.md: "modelled as a slot,
+ * not special-cased at the render site") so every call site gets the trinket
+ * distinction for free instead of re-deriving it.
+ */
+export function itemBuildOf(participant: {
+  item0?: unknown;
+  item1?: unknown;
+  item2?: unknown;
+  item3?: unknown;
+  item4?: unknown;
+  item5?: unknown;
+  item6?: unknown;
+}): ItemBuild {
+  return {
+    items: [
+      finiteOrZero(participant.item0),
+      finiteOrZero(participant.item1),
+      finiteOrZero(participant.item2),
+      finiteOrZero(participant.item3),
+      finiteOrZero(participant.item4),
+      finiteOrZero(participant.item5),
+    ],
+    trinket: finiteOrZero(participant.item6),
+  };
+}
+
+/**
  * The opposing participant in `player`'s lane, or `undefined` when none can be
  * identified — no lane could be determined for `player`, `teamId` is missing or
  * malformed on either side, or no other participant shares both the lane and a
@@ -184,6 +215,9 @@ function opponentOf(
     cs: rivalCs,
     csPerMinute: csPerMinuteOf(rivalCs, durationSeconds),
     visionScore: finiteOrZero(rival.visionScore),
+    // Requirement 3.2/3.9: the SAME participant row this summary describes, never
+    // a different one — `rival` is what `opponentOf`'s selection already chose.
+    build: itemBuildOf(rival),
   };
 }
 
@@ -253,6 +287,7 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
     visionScore: finiteOrZero(participant.visionScore),
     cs: csOf(participant),
     opponent: opponentOf(typedParticipants, participant, durationSeconds),
+    build: itemBuildOf(participant),
   };
 }
 

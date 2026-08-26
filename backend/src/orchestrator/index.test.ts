@@ -573,6 +573,37 @@ describe('runLookup — report contents', () => {
     }
     expect(result.report.riotId).toEqual({ gameName: 'DoFFy', tagLine: 'SMILE' });
   });
+
+  it('reports profileIconId 0 as 0, never conflating a real icon with absence', async () => {
+    const harness = makeHarness({
+      summoner: { kind: 'ok', data: { puuid: PUUID, id: 'sid', summonerLevel: 30, profileIconId: 0 } },
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    // Data Dragon serves profileicon/0.png with a 200: zero is a real icon.
+    expect(result.report.profileIconId).toBe(0);
+  });
+
+  it('reports profileIconId as null when the summoner payload carries no usable id', async () => {
+    const malformed = { puuid: PUUID, id: 'sid', summonerLevel: 30 } as unknown as SummonerDto;
+    const harness = makeHarness({ summoner: { kind: 'ok', data: malformed } });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    // Absent must be null — the old finiteOrZero coercion rendered icon 0 here.
+    expect(result.report.profileIconId).toBeNull();
+    // summonerLevel keeps its existing finiteOrZero handling (and here is simply
+    // present); only profileIconId changes encoding, because only there does zero
+    // collide with a real value.
+    expect(result.report.summonerLevel).toBe(30);
+  });
 });
 
 describe('runLookup — last-updated timestamp (Requirements 11.4, 11.5)', () => {

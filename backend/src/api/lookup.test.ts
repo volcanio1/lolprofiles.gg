@@ -49,7 +49,7 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
   const app = express();
   app.use(
     '/api',
-    createApiRouter({ orchestrator, cache: createInMemoryCacheStore({ now }), now, logger }),
+    createApiRouter({ orchestrator, cache: createInMemoryCacheStore({ now }), now, logger, dataDragonVersion: '16.17.1' }),
   );
 
   return { app, inputs, calls: () => inputs.length, logged };

@@ -110,6 +110,8 @@ interface StaticDataProvider {
   itemIconUrl(id: number): string | null;
   /** Falls back to the numeric id as a string (Requirement 6.3). */
   itemDisplayName(id: number): string;
+  /** Serves `item-timeline`'s Requirement 3.2. See the classification rule below. */
+  isCompletedItem(id: number): boolean;
   /** False until metadata has loaded; the report renders regardless. */
   readonly ready: boolean;
 }
@@ -131,7 +133,41 @@ Seeded with the version from `GET /api/static-data`, then fetches `champion.json
 
 `{base}` is `https://ddragon.leagueoflegends.com`.
 
-Two facts this design depends on and which **must be confirmed against the live CDN before the provider is built** (task 1.1): that Data_Dragon serves `Access-Control-Allow-Origin: *` on the metadata JSON files, without which the frontend cannot fetch them directly and the design needs a backend fetch instead; and that `champion.json`'s entries key the Champion_Key to a display `name`. Both are long-standing behaviours, but neither is verified in this document, and the provider's shape depends on the first.
+### Verified against the live CDN (task 1.1, version 16.17.1)
+
+Every assumption below was confirmed by request rather than assumed. The provider's shape depends on the first, and the last invalidated a rule this design originally sketched.
+
+| Assumption | Result |
+|---|---|
+| `Access-Control-Allow-Origin: *` on `champion.json` and `item.json` | **Confirmed** — both return `*` with `Access-Control-Allow-Methods: GET, HEAD`. The provider stays on the frontend; no backend fetch is needed. |
+| `champion.json` maps a Champion_Key to a display name | **Confirmed** — `data['MonkeyKing'].name === 'Wukong'`. The `data` key always equals the entry's own `id` (checked across all 173 entries). |
+| `img/profileicon/0.png` exists | **Confirmed, 200.** `0` is a real icon, so coercing an absent value to `0` renders a real picture — Requirement 2.2's nullable change is load-bearing, not cosmetic. |
+| `img/item/0.png` | **403.** Requesting an empty item slot is an error, which is precisely what Requirement 3.6 prevents. |
+| Metadata size | `champion.json` 159 KB, `item.json` 687 KB — 846 KB fetched once and held for 24 hours. |
+
+Two details worth carrying into the implementation. A champion entry's `key` field is the **numeric** champion id **as a string** (`'62'` for MonkeyKing), and numeric keys are unique across all entries — that is the reverse index `live-game` needs, and it needs a string-to-number conversion. And each entry carries `image.full` (`MonkeyKing.png`) explicitly, so the filename should be read from the metadata rather than constructed as `{key}.png`; the two agree today, and reading it removes the assumption that they always will.
+
+### Item classification: components versus completed items
+
+Not a requirement of this feature, but the `item-timeline` feature needs it and Requirement 3.2 there forbids a second source for it — so the provider owns it, and the rule is pinned here because task 1.1 found the obvious ones wrong.
+
+**`depth` alone does not work**: it is absent on 520 of 868 entries, including Doran's Blade, which is a finished item. **"Has no `into`" alone does not work either**: it excludes Berserker's Greaves, which builds into tier-3 boots but is unquestionably a completed item a player finishes and uses.
+
+The rule that does work, verified against representative items across every category:
+
+```typescript
+function isCompletedItem(entry: ItemEntry): boolean {
+  const tags = new Set(entry.tags ?? []);
+  if (tags.has('Consumable') || tags.has('Trinket')) return false;
+  if (entry.gold.total <= 0) return false;
+  if ((entry.depth ?? 0) >= 2) return true;   // built from components
+  // An `into` that is present but EMPTY builds into nothing, so it counts as
+  // completed; `!entry.into` alone would misread `[]`, which is truthy.
+  return !Array.isArray(entry.into) || entry.into.length === 0;
+}
+```
+
+It classifies 646 of 868 entries as completed, and resolves every representative case correctly: Doran's Blade, Infinity Edge, Blade of the Ruined King and Berserker's Greaves are completed; Long Sword, B.F. Sword, tier-1 Boots, Health Potion, Control Ward and Warding Totem are not.
 
 ### Frontend: rendering components
 

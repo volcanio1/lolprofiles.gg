@@ -48,7 +48,7 @@ function makeHarness(cache?: CacheStore): Harness {
   };
 
   const app = express();
-  app.use('/api', createApiRouter({ orchestrator: stubOrchestrator, cache: store, now, logger }));
+  app.use('/api', createApiRouter({ orchestrator: stubOrchestrator, cache: store, now, logger, dataDragonVersion: '16.17.1' }));
 
   return { app, cache: store, logged };
 }

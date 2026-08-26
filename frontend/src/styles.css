@@ -673,7 +673,13 @@ figure {
 .match-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  /* Was `baseline`. The champion cell now holds an icon+text unit, and a flex
+     item with no natural text baseline gets a browser-synthesized one (varies
+     by implementation) rather than lining up with the plain-text siblings —
+     that's what made per-item align-self overrides push it the wrong way.
+     `center` sidesteps baseline math entirely and is predictable for mixed
+     icon/text content. */
+  align-items: center;
   gap: 0.35rem 0.9rem;
 }
 
@@ -708,6 +714,17 @@ figure {
 
 .matchup-table {
   font-size: 0.9rem;
+}
+
+/*
+ * The champion column isn't first-child in this table (the side label is), so
+ * it inherits the table's right-align default meant for numeric columns. A
+ * name+icon right-anchored in a variable-width cell shifts position row to row
+ * depending on the name's length, so the icons never line up vertically —
+ * left-aligning gives the column a fixed left edge instead.
+ */
+.matchup-table .champion-col {
+  text-align: left;
 }
 
 /* Two classes so this outranks `.data-table tbody th` (1 class + 2 elements). */
@@ -793,4 +810,113 @@ figure {
   padding: 0.75rem 1rem;
   color: var(--dim);
   font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------- asset placeholder */
+
+/*
+ * Stands in for an unresolved Data Dragon asset. Dimensions come from the call
+ * site as an inline style (see AssetPlaceholder.tsx) so the box always matches the
+ * image it replaces; everything here is the neutral surface it is drawn as.
+ *
+ * `flex-shrink: 0` matters: these sit in item rows and champion rows laid out with
+ * flex, and a placeholder that collapsed under pressure would defeat the whole
+ * point of reserving the box.
+ */
+.asset-placeholder {
+  display: inline-block;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  vertical-align: middle;
+}
+
+/* ------------------------------------------------------------- champion / profile icons */
+
+/*
+ * ChampionIcon renders its icon (or placeholder) and display name as one inline
+ * unit, so every call site gets icon-plus-text for free rather than re-composing
+ * it per row (Requirement 6.5 — no information carried by an image alone).
+ */
+.champion-icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  vertical-align: middle;
+}
+
+.champion-icon-label img,
+.champion-icon-label .asset-placeholder {
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.champion-icon-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.rid-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.rid-icon {
+  border-radius: 999px;
+  border: 1px solid var(--gold-dim);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------- item builds */
+
+.build-compare {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.build-compare-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.build-compare-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.item-build-row {
+  display: flex;
+  gap: 0.3rem;
+  list-style: none;
+  /* Every other list in this file resets `padding` explicitly (margin is zeroed
+     globally, padding is not) — this one was missed, so the browser's default
+     ~40px list padding pushed the items right of the label above them. */
+  padding: 0;
+}
+
+.item-build-icon {
+  border-radius: var(--radius);
+}
+
+/* A hairline gold border sets the trinket apart from the six item slots
+   (Requirement 3.5), without introducing a second color into the icon set. */
+.item-build-icon--trinket {
+  border: 1px solid var(--gold-dim);
+}
+
+.item-build-slot--trinket {
+  margin-left: 0.4rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--line);
 }

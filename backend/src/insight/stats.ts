@@ -98,6 +98,23 @@ export const UNKNOWN_ROLE = 'Unknown';
  * already filtered to an allowed queue type (Requirement 3.5). See decision 1 for
  * where the `MatchDto` -> `IncludedMatch` flattening lives.
  */
+/**
+ * Item_Slots 0-6 at game end, per Requirement 3.6/3.9 (visual-assets).
+ *
+ * `items` is a fixed-length tuple rather than a filtered array so that a gap
+ * (an empty slot) stays at its own position instead of shifting every later
+ * item left. `trinket` is `items[6]` pulled out as its own field, per
+ * design.md's "modelled as a slot, not special-cased at the render site" —
+ * every call site needs the trinket distinction, so it is not re-derived.
+ */
+export interface ItemBuild {
+  items: readonly [number, number, number, number, number, number];
+  trinket: number;
+}
+
+/** All slots empty. Used where a match predates item capture. */
+export const EMPTY_ITEM_BUILD: ItemBuild = { items: [0, 0, 0, 0, 0, 0], trinket: 0 };
+
 /** The opposing participant in the same lane, for a lane-matchup comparison. */
 export interface OpponentSummary {
   championName: string;
@@ -108,6 +125,8 @@ export interface OpponentSummary {
   /** 2 decimal places, using the shared match duration. */
   csPerMinute: number;
   visionScore: number;
+  /** Requirement 3.2/3.9 — from the SAME participant row this summary describes. */
+  build: ItemBuild;
 }
 
 export interface RawMatch {
@@ -127,6 +146,11 @@ export interface RawMatch {
   cs?: number;
   /** `undefined` when no opposing participant shares this player's lane. */
   opponent?: OpponentSummary;
+  /**
+   * Requirement 3.1. Optional so existing fixtures that predate visual-assets need
+   * no change; absent reads as an all-zero build, the same as a genuinely empty one.
+   */
+  build?: ItemBuild;
 }
 
 export type IncludedMatch = RawMatch;
