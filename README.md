@@ -13,6 +13,7 @@ The interesting constraint here isn't the stats. It's that Riot's rate limits ar
 - [Getting started](#getting-started)
 - [Environment variables](#environment-variables)
 - [Scripts](#scripts)
+- [Deployment](#deployment)
 - [API](#api)
 - [Assets](#assets)
 - [Regions](#regions)
@@ -109,6 +110,7 @@ The Vite dev server proxies `/api` to `http://localhost:3001`, which makes brows
 | `PORT` | No | `3001` | |
 | `CORS_ALLOWED_ORIGINS` | No | *(unset)* | Comma-separated list of **exact** origins. |
 | `DDRAGON_VERSION` | Yes | — | Exact Data Dragon release pinned for champion/item/profile-icon assets, e.g. `16.17.1`. No `"latest"` alias — a moving version would change rendered assets without a deploy, so a missing or `"latest"` value fails fast at startup. Bump it by editing this value and redeploying; see [Assets](#assets) for what depends on it. |
+| `FRONTEND_DIST` | No | *(unset)* | Path to the built frontend (`../frontend/dist`). When set, the API process also serves the SPA **with a history fallback**, so a hard refresh of `/profile` returns `index.html` instead of a 404. Leave unset when a CDN or reverse proxy serves the frontend — configure the fallback there instead (see [Deployment](#deployment)). |
 
 There is deliberately no wildcard CORS option. `/api/lookup` is unauthenticated and spends the shared Riot rate-limit budget on a cache miss, so `*` would let any page on the internet consume it. Leave `CORS_ALLOWED_ORIGINS` unset for local development and same-origin deployments.
 
@@ -130,6 +132,22 @@ npm run lint:backend     npm run lint:frontend
 ```
 
 Or from inside a workspace: `npm run dev`, `npm run build`, `npm test`, `npm run lint`, plus `npm run typecheck` / `npm run preview` on the frontend.
+
+## Deployment
+
+The frontend is a **history-mode SPA**: `/profile`, `/test`, and the catch-all 404 route exist only in the browser router, not as files on disk. Every host that serves `frontend/dist` must send `index.html` for any path that isn't a real built file — otherwise a hard refresh or a shared deep link 404s before the app ever loads. Client-side navigation still works without this because React Router intercepts it; a refresh doesn't, because the request reaches the server.
+
+Pick whichever matches how you serve the build:
+
+| How the build is served | What to configure |
+|---|---|
+| **The API process** (single origin) | Set `FRONTEND_DIST=../frontend/dist`. It serves hashed assets with a one-year immutable cache, `index.html` as `no-cache`, and falls back to `index.html` for any non-`/api`, non-`/health` GET. Nothing else to do. |
+| **Netlify / Cloudflare Pages** | `frontend/public/_redirects` (`/*  /index.html  200`) is copied into `dist` on build — already in the repo. |
+| **Vercel** | `frontend/vercel.json` rewrites everything except `/api/*` to `/index.html` — already in the repo. |
+| **nginx** | `location / { try_files $uri /index.html; }` — and proxy `/api` to the backend before that block. |
+| **Caddy** | `try_files {path} /index.html` in the site block, with a `handle /api/*` reverse-proxy ahead of it. |
+
+A genuinely unknown URL (a typo, a dead link) still lands on the in-app 404 page — it just arrives with a `200` and the app renders the "No match" screen client-side, which is the normal SPA tradeoff.
 
 ## API
 

@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfileReportPage } from './pages/ProfileReportPage';
 import { SearchPage } from './pages/SearchPage';
 import { TestIconsPage } from './pages/TestIconsPage';
@@ -20,6 +21,7 @@ export function App() {
         <Route path="/" element={<SearchPage />} />
         <Route path="/profile" element={<ProfileReportPage />} />
         <Route path="/test" element={<TestIconsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </StaticDataContextProvider>
   );

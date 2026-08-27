@@ -22,6 +22,7 @@
  * build working. Task 18.1 retains the frontend-to-backend integration.
  */
 
+import { isAbsolute, resolve } from 'node:path';
 import { loadConfig } from './config';
 import { createApp } from './app';
 import { createInMemoryCacheStore } from './cache';
@@ -51,12 +52,20 @@ const riotApiClient = createRiotApiClient({
 
 const orchestrator = createLookupOrchestrator({ cache, riotApiClient, now });
 
+const staticDir =
+  config.frontendDistPath === undefined
+    ? undefined
+    : isAbsolute(config.frontendDistPath)
+      ? config.frontendDistPath
+      : resolve(process.cwd(), config.frontendDistPath);
+
 const app = createApp({
   orchestrator,
   cache,
   now,
   allowedOrigins: config.allowedOrigins,
   dataDragonVersion: config.dataDragonVersion,
+  staticDir,
 });
 
 app.listen(config.port, () => {

@@ -307,6 +307,74 @@ figure {
   color: var(--dim);
 }
 
+/* ------------------------------------------------------------- not found */
+
+.notfound-headline {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 4.5vw, 2.4rem);
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin-top: 0.4rem;
+}
+
+/* The trace: the miss rendered in the app's lookup idiom — a stat/match row,
+   not a generic illustration. The gold tick opens it, the way it opens every
+   section label and marks every victory. */
+.notfound-trace {
+  margin: 1.75rem auto 0;
+  width: 100%;
+  max-width: 30rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.85rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.notfound-trace-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+  text-align: left;
+}
+
+.notfound-trace-row dt {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.notfound-trace-row dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.notfound-code {
+  color: var(--gold);
+  font-weight: 700;
+  margin-right: 0.4rem;
+}
+
+.notfound-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.75rem;
+}
+
 /* ------------------------------------------------------------- loading */
 
 .loader {

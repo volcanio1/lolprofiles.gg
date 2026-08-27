@@ -18,6 +18,13 @@ export interface AppConfig {
    * any deploy, and would let a cached response and a live one disagree.
    */
   dataDragonVersion: string;
+  /**
+   * Absolute or relative path to the built frontend (`frontend/dist`), from
+   * `FRONTEND_DIST`. When set, the API process also serves the SPA with a history
+   * fallback so a hard refresh of `/profile` does not 404. Unset (the default) is
+   * correct when a CDN or reverse proxy serves the frontend instead.
+   */
+  frontendDistPath?: string;
 }
 
 /**
@@ -59,10 +66,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  const frontendDist = env.FRONTEND_DIST?.trim();
+
   return {
     riotApiKey,
     port,
     allowedOrigins: parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
     dataDragonVersion,
+    frontendDistPath: frontendDist && frontendDist.length > 0 ? frontendDist : undefined,
   };
 }

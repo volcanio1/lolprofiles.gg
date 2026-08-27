@@ -1,0 +1,4 @@
+# SPA history fallback for static hosts (Netlify, Cloudflare Pages, …).
+# Every path that isn't a real built file is served index.html so the
+# browser router can resolve it — including to the in-app 404 page.
+/*  /index.html  200

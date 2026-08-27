@@ -25,4 +25,13 @@ describe('App routing', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Profile report' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Search a player' })).not.toBeInTheDocument();
   });
+
+  it('renders the 404 page for any unmatched route', () => {
+    renderAt('/no/such/page');
+
+    expect(screen.getByRole('heading', { level: 1, name: 'No match' })).toBeInTheDocument();
+    expect(screen.getByText("This route won’t resolve.")).toBeInTheDocument();
+    expect(screen.getByText('/no/such/page')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Search a player' })).toBeInTheDocument();
+  });
 });
