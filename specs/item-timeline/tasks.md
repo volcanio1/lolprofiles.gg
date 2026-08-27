@@ -111,12 +111,13 @@ The reducer is pure and is built and property-tested in isolation before any I/O
     - Give every item image a non-empty text alternative, and render an unknown item id with a placeholder and the raw identifier
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.7, 6.3_
 
-  - [ ] 8.2 Wire the expandable match row
-    - Fetch the build path only on expand, never as part of the report load, and never block the report on it
-    - Show "build path unavailable" for an unavailable result while leaving the row and its Final_Build intact
-    - Show the caveat from Requirement 4.3 when the result is unreconciled
+  - [ ] 8.2 Wire the Build Path tab
+    - Replace the not-yet-available placeholder that `match-detail-tabs` ships in that tab (its Requirement 5.2)
+    - Fetch on **tab selection**, not on row expansion — expanding a row and viewing General or Runes must stay request-free, per `match-detail-tabs` Requirement 2.7
+    - Never fetch as part of the report load, and never block the report on it
+    - Render the loading state, the "build path unavailable" state, and Requirement 4.3's unreconciled caveat **inside the tab**, leaving the match row, its Final_Builds, and the other two tabs intact
     - Leave the lane opponent's Final_Build display untouched, and render no build path for them
-    - _Requirements: 1.1, 3.5, 3.6, 4.3, 6.1, 6.4, 7.3_
+    - _Requirements: 1.1, 3.5, 3.6, 3.8, 3.9, 3.10, 4.3, 6.1, 6.4, 7.3_
 
   - [ ] 8.3 Apply the Riot compliance template
     - Render the expanded view through the existing `RiotDataPage` wrapper (`frontend/src/compliance/RiotDataPage.tsx`) so attribution and the no-advertising default apply without being re-implemented
@@ -147,7 +148,8 @@ The reducer is pure and is built and property-tested in isolation before any I/O
 ## Notes
 
 - Tasks marked with `*` are optional and can be skipped for faster delivery; they are not implemented by the coding agent by default.
-- **This feature depends on the `visual-assets` spec** for the Static_Data_Provider, the item metadata that classifies components, and the `ItemBuild` capture that Reconciliation compares against; and on the **`lookup-pipeline-fixes` spec** for `PLATFORM_TO_REGION`. Do not start before both have landed.
+- **This feature depends on the `visual-assets` spec** for the Static_Data_Provider, the item metadata that classifies components, and the `ItemBuild` capture that Reconciliation compares against; and on the **`lookup-pipeline-fixes` spec** for `PLATFORM_TO_REGION`. Both have landed.
+- **It also depends on the `match-detail-tabs` spec**, which owns the surface this feature renders into: the Build Path tab of the per-match Detail_Panel, shipped as an explicit not-yet-available placeholder for this feature to replace. Wave 8 cannot land before that tab exists. Nothing earlier in this plan — retrieval, replay, reconciliation, retention — depends on it, so waves 1 through 7 can proceed in parallel with `match-detail-tabs`.
 - **Task 1.1 is first and is not optional.** `ITEM_UNDO`'s field polarity is unverified, and task 2.1 encodes it. A reducer built on a guess passes its own tests while producing plausible wrong builds, which is precisely the failure mode this feature is meant to eliminate.
 - **Never cache the raw timeline.** A response is 1–5 MB and `InMemoryCacheStore` is an unbounded `Map` with no eviction, so retaining timelines the way match details are retained grows memory without bound. Task 3.1 deliberately adds no cache entry type for them, which makes the rule structural rather than something to remember.
 - **A build path is not a filtered list of purchases.** Undone purchases emit no compensating sell, so filtering produces a build containing items the player never owned — and it looks entirely plausible. The replay must be a fold with undo applied as a reversal.

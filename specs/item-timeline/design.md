@@ -191,7 +191,13 @@ GET /api/match/:matchId/build-path?gameName=<name>&tagLine=<tag>
 
 ### Frontend: BuildPathView
 
-Rendered inside an expanded match history row. Item images and the Component_Item classification both come from the `visual-assets` Static_Data_Provider, whose `isCompletedItem` accessor pins the rule. That rule is not the obvious one: `depth` is absent on 520 of `item.json`'s 868 entries including finished items like Doran's Blade, and "has no `into`" wrongly excludes Berserker's Greaves. The verified composite rule lives in `visual-assets`' design, which is why Requirement 3.2's prohibition on a second classification source matters here rather than being a formality.
+Rendered inside the **Build Path tab** of the Detail_Panel that `match-detail-tabs` establishes on every match row — replacing that tab's not-yet-available placeholder (its Requirement 5.2). Three consequences follow from that host, and none of them change this design's substance:
+
+- **The trigger is tab selection, not row expansion.** `match-detail-tabs` expands panels with the General tab selected and issues no request for General or Runes. This view is the only surface in the recent-matches section that ever fetches, so Requirement 1.1's prohibition on retrieving timelines during Profile_Report assembly is satisfied structurally rather than by discipline.
+- **Loading and failure states live inside the tab.** Requirement 3.10. An unavailable timeline (Requirement 6 / 1.5) renders as a message within the tab, not as a page-level error, because the rest of the match row and the other two tabs are unaffected by it.
+- **`isCompletedItem` is already there.** `match-detail-tabs` extends the Static_Data_Provider with spell and rune metadata but does not touch item metadata, so the classification accessor this view depends on is unchanged.
+
+Item images and the Component_Item classification both come from the `visual-assets` Static_Data_Provider, whose `isCompletedItem` accessor pins the rule. That rule is not the obvious one: `depth` is absent on 520 of `item.json`'s 868 entries including finished items like Doran's Blade, and "has no `into`" wrongly excludes Berserker's Greaves. The verified composite rule lives in `visual-assets`' design, which is why Requirement 3.2's prohibition on a second classification source matters here rather than being a formality.
 
 Defaults to the completed-items view (Requirement 3.3) with a toggle for the full path including components. Timestamps render as `M:SS` from match start (Requirement 3.4).
 
@@ -220,11 +226,13 @@ The Match_Timeline itself has **no cache entry type**, by design. There is no `t
 
 `timelineSlice` is keyed on the PUUID, so the existing key scan in `deleteByPuuid` removes it. The slice holds no other participant's identifiers — it describes one player — so there is no value-scan case of the kind `matchDetail` needs. Requirement 5.6 is satisfied by the existing mechanism and asserted by Property 5.
 
-## Sequence Flow: Expanding a Match Row
+## Sequence Flow: Selecting the Build Path Tab
+
+The trigger is selecting the Build Path tab on an already-expanded match row — not expanding the row, which costs nothing.
 
 ```mermaid
 sequenceDiagram
-    participant UI as Match row
+    participant UI as Build Path tab
     participant API as API Layer
     participant BPO as Build Path Orchestrator
     participant C as Cache

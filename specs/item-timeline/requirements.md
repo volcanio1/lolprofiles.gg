@@ -6,6 +6,8 @@ The `visual-assets` feature renders each match's Final_Build — the six items a
 
 This feature adds the build path: the ordered sequence of item purchases the analyzed player made, with timestamps, reconstructed from Match-V5's timeline endpoint. It is what turns "you finished with these six items" into "you completed your first legendary at 9:40, your second at 15:20, and you sold your starting item at 11:05".
 
+**This feature now has a defined home.** When this spec was written, "where the build path renders" was left open. The `match-detail-tabs` feature has since established an expandable Detail_Panel on every match row carrying three tabs — General, Build Path, and Runes — and ships the Build Path tab as an explicit not-yet-available placeholder that this feature replaces. Requirements 3.8 through 3.10 record that contract. The two specs were written independently to the same lazy-retrieval constraint, so there is nothing to reconcile: `match-detail-tabs` Requirement 5.4 fetches only on tab selection, which is exactly what Requirement 1.1 below demands.
+
 The scope is deliberately one-sided. The build path is retrieved and displayed **for the analyzed player only**. The lane opponent continues to show the Final_Build already specified in `visual-assets`, and no timeline data is extracted for them. This is a product decision rather than a technical limit — the same timeline response contains every participant's events — and the extraction is specified per-participant so that including the opponent later is a parameter change rather than a redesign. What the narrowed scope forgoes is any timing *comparison* between the two players, since only one side has timings at all.
 
 Three properties of the data shape this work, and each is a place where a straightforward implementation is wrong rather than merely slow.
@@ -74,6 +76,9 @@ Finally, the reconstruction has an independent oracle. Replaying the event strea
 5. THE System SHALL display the Build_Path for the analyzed player only.
 6. THE System SHALL continue to display the lane opponent's Final_Build as specified by the `visual-assets` feature, and SHALL NOT display a Build_Path for the lane opponent.
 7. THE System SHALL give every item image in a Build_Path a non-empty text alternative, consistent with the accessibility rules already applied to item images.
+8. THE System SHALL render the Build_Path in the Build Path tab of the Detail_Panel established by the `match-detail-tabs` feature, replacing that tab's not-yet-available message.
+9. THE System SHALL retrieve a Build_Path only in response to the Build Path tab being selected for a match, and SHALL NOT retrieve one when a Detail_Panel is expanded or when any other tab is selected.
+10. THE Build Path tab SHALL display its own loading state while a Build_Path is being retrieved, and SHALL display Requirement 6's unavailable state within the tab rather than as a page-level error.
 
 ### Requirement 4: Reconciliation Against the Final Build
 
