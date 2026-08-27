@@ -11,13 +11,13 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
 ## Tasks
 
 - [ ] 1. Confirm the Riot API contract and build the reverse mapping
-  - [ ] 1.1 Verify Account-V1 region-by-game-by-puuid against the live API
+  - [x] 1.1 Verify Account-V1 region-by-game-by-puuid against the live API
     - Call the endpoint for a known PUUID and record the exact response shape and the casing of the `region` field
     - Call it for a Riot account with no League of Legends play history and record the status and body
     - Write the findings into design.md's Testing Strategy section, replacing the "unverified" note with the observed behavior
     - _Requirements: 1.1, 3.4, 5.2_
 
-  - [ ] 1.2 Implement the Platform-to-Region map
+  - [x] 1.2 Implement the Platform-to-Region map
     - Derive `PLATFORM_TO_REGION` from the existing `REGION_TO_PLATFORMS` at module load rather than declaring a second literal, so the two cannot drift
     - Implement `regionForPlatform`, `isSupportedPlatform`, and `normalisePlatform` using the casing confirmed in 1.1
     - _Requirements: 3.1, 3.2, 3.4_
@@ -27,16 +27,16 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
     - **Validates: Requirements 3.1, 3.2**
 
 - [ ] 2. Implement the Region Resolver
-  - [ ] 2.1 Add `getRegionByPuuid` to the Riot API Client
+  - [x] 2.1 Add `getRegionByPuuid` to the Riot API Client
     - Route against the configured Discovery_Region host, attach the API key, apply the 10s timeout, reserve a rate-limit slot, and honour the existing 429 retry policy
     - Map HTTP responses onto the existing `RiotApiResult` variants; add no new transport path
     - _Requirements: 1.1, 1.5, 1.6_
 
-  - [ ] 2.2 Add the `accountRegion` cache endpoint
+  - [x] 2.2 Add the `accountRegion` cache endpoint
     - Extend `CacheEndpoint` with `accountRegion`, key it on `{ puuid, game }`, and give it a 24-hour TTL in the retention policy
     - _Requirements: 6.1, 6.2_
 
-  - [ ] 2.3 Implement `RegionResolver.resolve`
+  - [x] 2.3 Implement `RegionResolver.resolve`
     - Go through `cacheOrFetch` against `accountRegion` so a non-stale entry issues no Riot call
     - Return `resolved` / `no_lol_account` / `unsupported_platform` / `failed`, normalising the platform and reverse-mapping it through `regionForPlatform`
     - _Requirements: 1.1, 1.2, 1.3, 3.3, 5.2, 6.3_
@@ -53,7 +53,7 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 4. Wire resolution into the orchestrator
-  - [ ] 4.1 Replace guessed routing with resolved routing in `runLookup`
+  - [x] 4.1 Replace guessed routing with resolved routing in `runLookup`
     - Drop `region` from `LookupInput`, add the optional `platformOverride`, and insert the resolver call between account resolution and the parallel fan-out
     - Route League-V4 and Summoner-V4 with the Resolved_Platform and Match-V5 with the Derived_Region
     - Remove the `PLAYER_NOT_ON_PLATFORM` code and its Summoner-404 detection branch; add `NO_LOL_ACCOUNT` and `UNSUPPORTED_PLATFORM`
@@ -64,7 +64,7 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
     - **Property 2: Resolved platform determines all downstream routing**
     - **Validates: Requirements 1.2, 1.3, 1.4**
 
-  - [ ] 4.3 Demote Summoner-V4 to an enrichment call
+  - [x] 4.3 Demote Summoner-V4 to an enrichment call
     - Add the `enrich<T>()` helper returning `T | null` with no error channel, and route the Summoner-V4 call through it
     - Make `summonerLevel` and `profileIconId` nullable on `ProfileReport`; add `resolvedPlatform` and `usedPlatformOverride`
     - Dispatch the enrichment call alongside the required set without awaiting it as a precondition for assembling the report
@@ -75,12 +75,12 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
     - **Validates: Requirements 4.1, 4.2, 4.5**
 
 - [ ] 5. Update the API layer and frontend together
-  - [ ] 5.1 Update `POST /api/lookup` request and response contracts
+  - [x] 5.1 Update `POST /api/lookup` request and response contracts
     - Accept `{ gameName, tagLine, platformOverride? }`; reject `region` and `platform` as unknown fields rather than silently ignoring them
     - Map `NO_LOL_ACCOUNT` and `UNSUPPORTED_PLATFORM` into the error table with their statuses, messages and `retriable: false`
     - _Requirements: 2.1, 2.4, 5.2, 5.4, 3.3_
 
-  - [ ] 5.2 Update the frontend contract, search UI, and report view
+  - [x] 5.2 Update the frontend contract, search UI, and report view
     - Remove the region and platform selectors and their state from the search form; submit the Riot ID alone
     - Do not expose the diagnostic `platformOverride` anywhere in the default search interface
     - Mirror the nullable `summonerLevel` / `profileIconId` types and render a neutral placeholder for each absent value
@@ -88,7 +88,7 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
     - Add error displays for `NO_LOL_ACCOUNT` and `UNSUPPORTED_PLATFORM`; remove the `PLAYER_NOT_ON_PLATFORM` display
     - _Requirements: 2.1, 2.2, 2.3, 2.5, 4.3, 5.2, 5.4_
 
-  - [ ] 5.3 Update the cross-workspace parity guard
+  - [x] 5.3 Update the cross-workspace parity guard
     - The frontend's copy of the region mapping is no longer used for routing, but `REGION_TO_PLATFORMS` remains load-bearing for the reverse map; update `frontend/src/domain/parity.test.ts` so it still guards the mapping and the error-code set, and so it fails if the removed `PLAYER_NOT_ON_PLATFORM` code reappears on one side only
     - _Requirements: 7.5, 5.4_
 
@@ -105,7 +105,7 @@ Work proceeds bottom-up, matching how the existing codebase is layered: the pure
     - Assert that a resolver failure issues no platform-routed call at all, proving the no-fallback rule
     - _Requirements: 1.2, 1.3, 5.3_
 
-  - [ ] 7.2 Update the README and the module documentation
+  - [x] 7.2 Update the README and the module documentation
     - Update the README's API section for the changed `POST /api/lookup` request shape, the nullable `summonerLevel` / `profileIconId`, and the removed region selector
     - Fix the README's project-layout entry, which still points at a `.kiro/specs/` path that does not exist
     - Update the header comments in `backend/src/orchestrator/index.ts` and `backend/src/api/errors.ts` that describe region selection and `PLAYER_NOT_ON_PLATFORM`, so the code stops documenting behavior it no longer has

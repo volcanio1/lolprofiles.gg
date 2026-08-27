@@ -332,4 +332,16 @@ Property 3 is the one that most needs a generator rather than examples: it quant
 
 **Integration tests** (mocked Riot API): the full revised sequence for a player whose Resolved_Platform belongs to a different region than the historical `americas` default — the exact case that produced Finding A — asserting a 200 with a complete report.
 
-**Live verification** (manual, one run): confirm the real response shape and casing of Account-V1 region-by-game-by-puuid, and confirm its behaviour for a Riot account with no League play history. Requirement 3.4 and Error Handling's `NO_LOL_ACCOUNT` row both rest on assumptions this document has flagged as unverified; task 1.1 closes them before anything else is built on top.
+**Live verification** (task 1.1, run against the live API with a real key and a real PUUID for `Doffy#Smile` on `europe`):
+
+```
+GET https://europe.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/{puuid}
+-> 200 {"puuid":"...","region":"euw1","game":"lol"}
+```
+
+| Assumption | Result |
+|---|---|
+| Response shape | **Confirmed** — `{ puuid, game, region }`, matching `AccountRegionDto` exactly as specified above. No field rename needed. |
+| Casing of `region` | **Confirmed lowercase** — `"euw1"`, identical casing to `PlatformRoutingValue` and `REGION_TO_PLATFORMS`'s entries. `normalisePlatform`'s lowercasing is therefore defensive rather than load-bearing for this account; it is kept anyway per Requirement 3.4's "confirm both casings" framing, since one observation does not prove Riot never returns uppercase for some other shard or historical account. |
+| Behavior for a Riot account with no League play history | **Not verified.** No such account was available to test against during this session. What *was* tested: a syntactically malformed PUUID (wrong length) returns `400 {"status":{"message":"Bad Request - Exception decrypting <value>","status_code":400}}` — this is Riot rejecting an invalid PUUID encoding, a different condition from "valid PUUID, no `lol` region record." The `NO_LOL_ACCOUNT` mapping in the Error Handling table above is therefore **still an assumption**: it is written expecting a `404` for this condition (consistent with how Riot's other by-puuid endpoints report "no record for this game"), but that specific response has not been observed. Task 4.1's implementation should treat any `404` from this endpoint as `no_lol_account` per the design above, and this note should be replaced with a confirmed observation the first time a real no-League account is available to test against — until then, the 404 branch is unverified in practice, not unreasoned.
+| A syntactically valid-looking but non-existent PUUID | Riot's PUUID encoding could not be perturbed into a "valid but unrecognized" PUUID by hand — flipping the last base64 character of a real PUUID decoded back to the *same* account, suggesting trailing bits are not fully significant to the encoding. This means constructing a guaranteed-unrecognized-but-well-formed PUUID isn't straightforward from the client side, which is itself useful to know: a real "no LoL account" test needs a genuinely distinct Riot account (e.g. one made for Valorant/TFT only), not a hand-edited PUUID. |

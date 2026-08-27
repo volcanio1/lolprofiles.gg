@@ -163,14 +163,26 @@ interface StaticDataProvider {
 
   /** Spectator-V5 reports champions NUMERICALLY; Match-V5 reports a Champion_Key. */
   championKeyForId(championId: number): string | null;
-  summonerSpellName(id: number): string;
+
+  // The spell and rune accessors below are SHARED with the `match-detail-tabs`
+  // feature, whose Requirement 7.8 declares them one extension with two
+  // claimants: whichever feature is implemented first provides them, and the
+  // second does not reimplement them. Names follow the provider's established
+  // `championDisplayName` / `itemDisplayName` convention.
+  summonerSpellDisplayName(id: number): string;
   summonerSpellIconUrl(id: number): string | null;
-  runeName(id: number): string;
+  runeDisplayName(id: number): string;
   runeIconUrl(id: number): string | null;
+  runeTreeDisplayName(styleId: number): string;
+  runeTreeIconUrl(styleId: number): string | null;
+  statShardDisplayName(id: number): string;
+  statShardIconUrl(id: number): string | null;
 }
 ```
 
-`championKeyForId` is the one genuinely new lookup direction. `champion.json` already carries the numeric `key` beside each entry, so it needs no additional fetch — only the reverse index built at load time. Every accessor stays total in the provider's existing sense: a URL or `null`, a name or the raw identifier, never an empty string and never a throw (Requirement 7.4).
+Rune, rune tree and stat shard **icons** are served from Data_Dragon's *unversioned* path — the versioned path returns 403. That is not a variance from Requirement 7.5's inherited pinning: `visual-assets` Requirement 4 was amended (its criteria 7-9) to record the exception at source, so this feature inherits the amended rule.
+
+`championKeyForId` is the one genuinely new lookup direction, and the only accessor here that `match-detail-tabs` does not also need. `champion.json` already carries the numeric `key` beside each entry, so it needs no additional fetch — only the reverse index built at load time. Every accessor stays total in the provider's existing sense: a URL or `null`, a name or the raw identifier, never an empty string and never a throw (Requirement 7.4).
 
 ### API Layer
 

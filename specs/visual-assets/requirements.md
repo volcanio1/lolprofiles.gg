@@ -85,12 +85,17 @@ One clarification the requirements depend on: Match-V5's participant record repo
 
 #### Acceptance Criteria
 
-1. THE System SHALL resolve every asset URL and display name against a single Data_Dragon_Version held in backend configuration.
+1. THE System SHALL resolve every asset URL and display name against a single Data_Dragon_Version held in backend configuration, except as criterion 7 provides.
 2. THE System SHALL NOT resolve assets against a moving alias such as "latest".
 3. THE System SHALL expose the configured Data_Dragon_Version to the frontend at runtime, so that changing it does not require a frontend rebuild.
 4. THE Static_Data_Provider SHALL retrieve champion and item metadata from Data_Dragon and SHALL retain it for no less than 24 hours.
 5. THE System SHALL NOT route Data_Dragon requests through the Rate_Limit_Manager, which governs the rate-limited Riot game APIs only.
 6. THE System SHALL NOT route Data_Dragon image requests through the backend.
+7. THE System SHALL request rune, rune tree, and stat shard image files from Data_Dragon's unversioned image path, because Data_Dragon does not serve those three asset classes from the versioned path at all — the versioned path returns HTTP 403, verified against the live CDN. This is the sole exception to criterion 1, and it extends to no other asset class.
+8. THE System SHALL treat the mapping from a rune identifier to its image path as pinned even though the image file is not, because that mapping comes from `runesReforged.json`, which IS retrieved from the versioned path.
+9. THE System SHALL accept, as the consequence of criterion 7, that rune, rune tree, and stat shard *imagery* may change with a Riot patch without a deployment — the outcome criterion 2 exists to prevent, and here unavoidable. What cannot change without a deployment is which rune the System resolves an identifier to, which is what criterion 8 preserves.
+
+> **Amendment note.** Criteria 7 through 9 were added by the `match-detail-tabs` feature, which was the first to render runes and therefore the first to encounter this. They are recorded here, where the invariant is stated, rather than as a contradiction asserted from another spec — and they are inherited by every consumer of the Static_Data_Provider, including the `live-game` feature, whose Requirement 7.5 defers to this document's pinning rules rather than restating them.
 
 ### Requirement 5: Placeholder and Failure Behavior
 
@@ -112,7 +117,9 @@ One clarification the requirements depend on: Match-V5's participant record repo
 1. THE System SHALL give every rendered asset image a non-empty text alternative.
 2. THE System SHALL use the Champion_Display_Name as the text alternative for a champion icon, falling back to the Champion_Key when the display name cannot be resolved.
 3. THE System SHALL use the item's name as the text alternative for an item image, falling back to the item identifier when the name cannot be resolved.
-4. THE System SHALL give an Asset_Placeholder a text alternative describing what could not be loaded.
+4. THE System SHALL give an Asset_Placeholder a text alternative describing what could not be loaded, and WHERE the asset it replaces has no adjacent text naming its subject, THE System SHALL name that subject in the alternative rather than describing the absence alone.
+
+> **Amendment note.** The "describe the absence, not the subject" convention was written when every placeholder call site rendered the champion's name as text beside the icon, making the subject redundant. `ItemBuildRow` was the first case where it was not (an item slot carries no adjacent name) and resolved it as `"<name> unavailable"`; the `match-detail-tabs` feature generalised that for summoner spell, rune, rune tree and stat shard icons, which likewise stand alone. Criterion 4 now states the rule both cases follow.
 5. THE System SHALL NOT convey any information through an image alone that is not also available as text.
 
 ### Requirement 7: Riot Compliance
