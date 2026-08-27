@@ -14,7 +14,21 @@ import { ItemBuildRow } from '../components/ItemBuildRow';
 import { SummonerSpellIcon } from '../components/SummonerSpellIcon';
 import { RuneIcon } from '../components/RuneIcon';
 import { RuneTreeIcon } from '../components/RuneTreeIcon';
+import { RankIcon } from '../components/RankIcon';
 import type { AssetDescription } from '../staticData/provider';
+
+const ALL_TIERS = [
+  'IRON',
+  'BRONZE',
+  'SILVER',
+  'GOLD',
+  'PLATINUM',
+  'EMERALD',
+  'DIAMOND',
+  'MASTER',
+  'GRANDMASTER',
+  'CHALLENGER',
+];
 
 /** The full set of `<stats>` names observed across Data Dragon `item.json` (16.17.1). */
 const ALL_ITEM_STATS = [
@@ -127,6 +141,20 @@ export function TestIconsPage() {
           })}
         </tbody>
       </table>
+
+      <h2 className="rsec-title">Ranked tier crests</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', marginBottom: '2.5rem', alignItems: 'flex-end' }}>
+        {ALL_TIERS.map((tier) => (
+          <div key={tier} style={{ textAlign: 'center' }}>
+            <RankIcon tier={tier} size={52} />
+            <p style={{ fontSize: '0.7rem', marginTop: '0.3rem', color: 'var(--dim)' }}>{tier}</p>
+          </div>
+        ))}
+        <div style={{ textAlign: 'center' }}>
+          <RankIcon tier="UNRANKED" size={52} />
+          <p style={{ fontSize: '0.7rem', marginTop: '0.3rem', color: 'var(--dim)' }}>UNRANKED (placeholder)</p>
+        </div>
+      </div>
 
       <h2 className="rsec-title">Item descriptions</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', marginBottom: '2.5rem' }}>

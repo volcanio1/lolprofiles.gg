@@ -56,6 +56,7 @@ import { platformLabel } from '../domain/regions';
 import { ChampionIcon } from './ChampionIcon';
 import { MatchRow } from './MatchRow';
 import { ProfileIcon } from './ProfileIcon';
+import { RankIcon } from './RankIcon';
 
 export interface ProfileReportViewProps {
   report: ProfileReport;
@@ -228,9 +229,12 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
                     <span className="queue-card-tier queue-card-tier--none">Unranked</span>
                   ) : (
                     <>
-                      <span className="queue-card-tier">
-                        {standing.tier} {standing.division}
-                      </span>
+                      <div className="queue-card-rank">
+                        <RankIcon tier={standing.tier} size={52} />
+                        <span className="queue-card-tier">
+                          {standing.tier} {standing.division}
+                        </span>
+                      </div>
                       <span className="queue-card-wr">{formatWinRate(standing.winRatePercent)} win rate</span>
                     </>
                   )}

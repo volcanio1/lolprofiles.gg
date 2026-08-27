@@ -330,6 +330,12 @@ export interface StaticDataProvider {
   augmentDisplayName(id: number): string;
   /** Requirement 12.5/12.6. Community_Dragon, pinned to a derived `{major}.{minor}` version — not Data_Dragon. */
   augmentIconUrl(id: number): string | null;
+  /**
+   * Ranked-tier emblem for a League-V4 `tier` string (`GOLD`, `EMERALD`, …).
+   * `null` for anything that is not one of the ten real tiers, including
+   * `UNRANKED`. Community_Dragon, needs only the version — not the index.
+   */
+  rankEmblemUrl(tier: string): string | null;
 }
 
 /**
@@ -596,6 +602,26 @@ export function buildStaticDataIndex(
   return { version, champions, items, spells, runes, runeTrees, augments };
 }
 
+/**
+ * The ten ranked tiers, lowercased. League-V4 reports `tier` uppercase
+ * (`GOLD`); Community_Dragon's emblem filenames are lowercase
+ * (`emblem-gold.png`). Matching against this set both normalises the casing and
+ * rejects anything that is not a real tier (`UNRANKED`, a future tier name)
+ * before it can become a 404ing URL.
+ */
+const RANKED_TIERS: ReadonlySet<string> = new Set([
+  'iron',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'emerald',
+  'diamond',
+  'master',
+  'grandmaster',
+  'challenger',
+]);
+
 /** `id` after the shared usability check, as a lookup key. Never throws. */
 function usableIdKey(id: number): string | null {
   return isUsableId(id) ? String(id) : null;
@@ -616,6 +642,19 @@ function communityDragonIconUrl(ddragonVersion: string, iconPath: string): strin
   }
   const version = communityDragonVersionOf(ddragonVersion);
   return `${COMMUNITY_DRAGON_BASE}/${version}/plugins/rcp-be-lol-game-data/global/default/${iconPath}`;
+}
+
+/**
+ * Ranked-tier emblems live in the FRONT-END static-assets plugin
+ * (`rcp-fe-lol-static-assets`), not the game-data plugin the augment/rune icons
+ * come from. Same CDN, same version pin, different plugin root.
+ */
+function communityDragonStaticAssetUrl(ddragonVersion: string, iconPath: string): string | null {
+  if (iconPath.length === 0) {
+    return null;
+  }
+  const version = communityDragonVersionOf(ddragonVersion);
+  return `${COMMUNITY_DRAGON_BASE}/${version}/plugins/rcp-fe-lol-static-assets/global/default/${iconPath}`;
 }
 
 /**
@@ -880,6 +919,19 @@ export function createStaticDataProvider(
         return null;
       }
       return communityDragonIconUrl(version, entry.icon);
+    },
+
+    rankEmblemUrl(tier: string): string | null {
+      // Not gated on `usable`: the emblem filename IS the tier name, so this
+      // resolves as soon as the version is known — like `profileIconUrl`.
+      if (version === null || typeof tier !== 'string') {
+        return null;
+      }
+      const name = tier.trim().toLowerCase();
+      if (!RANKED_TIERS.has(name)) {
+        return null;
+      }
+      return communityDragonStaticAssetUrl(version, `images/ranked-emblem/emblem-${name}.png`);
     },
   };
 }

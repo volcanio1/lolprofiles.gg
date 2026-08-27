@@ -706,3 +706,29 @@ describe('StaticDataProvider — augment resolution (Community_Dragon)', () => {
     expect(shapeless.augmentDisplayName(1205)).toBe('1205');
   });
 });
+
+describe('StaticDataProvider — ranked-tier emblem resolution', () => {
+  it('resolves an emblem from an uppercase League-V4 tier, pinned to the derived Community_Dragon version', () => {
+    expect(ready.rankEmblemUrl('GOLD')).toBe(
+      'https://raw.communitydragon.org/16.17/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-gold.png',
+    );
+    expect(ready.rankEmblemUrl('EMERALD')).toBe(
+      'https://raw.communitydragon.org/16.17/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-emerald.png',
+    );
+  });
+
+  it('resolves as soon as the version is known — not gated on the fetched index', () => {
+    expect(versionOnly.rankEmblemUrl('DIAMOND')).toBe(
+      'https://raw.communitydragon.org/16.17/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-diamond.png',
+    );
+    expect(empty.rankEmblemUrl('DIAMOND')).toBeNull();
+  });
+
+  it('returns null for anything that is not one of the ten real tiers', () => {
+    expect(ready.rankEmblemUrl('UNRANKED')).toBeNull();
+    expect(ready.rankEmblemUrl('')).toBeNull();
+    expect(ready.rankEmblemUrl('platinumm')).toBeNull();
+    expect(() => ready.rankEmblemUrl(undefined as never)).not.toThrow();
+    expect(ready.rankEmblemUrl(undefined as never)).toBeNull();
+  });
+});

@@ -612,6 +612,33 @@ figure {
   color: var(--dim);
 }
 
+.queue-card-rank {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* Square viewport that crops the transparent canvas off a winged rank crest so
+   the crest itself fills the box — see RankIcon's header. */
+.rank-crest {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+.rank-crest img {
+  position: absolute;
+  left: 50%;
+  /* The crest sits slightly above the canvas centre in Riot's art, so nudge
+     down a touch to land it in the middle of the viewport. */
+  top: 53%;
+  width: 460%;
+  height: auto;
+  max-width: none;
+  transform: translate(-50%, -50%);
+}
+
 .queue-card-tier {
   font-family: var(--font-display);
   font-weight: 700;
