@@ -773,6 +773,11 @@ figure {
   gap: 0.75rem;
 }
 
+.match-list-more {
+  margin-top: 0.85rem;
+  width: 100%;
+}
+
 .match-row {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1307,7 +1312,10 @@ figure {
 }
 
 .scoreboard-table {
-  font-size: 0.85rem;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .scoreboard-team-heading {
@@ -1326,51 +1334,249 @@ figure {
   color: var(--loss);
 }
 
-.scoreboard-identity {
-  font-weight: 500;
+/* Row height comes from padding + the two-line identity; text is comfortably
+   readable rather than compact. */
+.scoreboard-table th,
+.scoreboard-table td {
+  padding: 0.5rem 0.55rem;
+  text-align: left;
+  vertical-align: middle;
 }
 
-.scoreboard-tagline {
-  color: var(--dim);
-  font-size: 0.78rem;
-  margin-left: 0.15rem;
+.scoreboard-table th:first-child,
+.scoreboard-table td:first-child {
+  padding-left: 0.3rem;
 }
 
-/* Requirement 3.7: a visible label, not a colour, marks the analyzed player. */
-.you-badge {
-  display: inline-block;
-  margin-left: 0.5rem;
-  padding: 0.05rem 0.4rem;
-  border: 1px solid var(--gold-dim);
-  border-radius: 999px;
-  color: var(--gold);
+/* Number columns: header and cell both right-aligned. Specificity beats the
+   `.scoreboard-table th, td` base rule so it wins for the header too. */
+.scoreboard-table .sb-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.scoreboard-table thead th {
   font-family: var(--font-display);
-  font-size: 0.6rem;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.62rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
+  color: var(--dim);
+  border-bottom: 1px solid var(--gold-dim);
+  white-space: nowrap;
+}
+
+.scoreboard-table tbody tr {
+  border-bottom: 1px solid var(--line);
+}
+
+.scoreboard-table tbody tr:last-child {
+  border-bottom: 0;
 }
 
 .scoreboard-row--analyzed {
   background: var(--surface-2);
 }
 
-.scoreboard-champion-icon {
-  border-radius: var(--radius);
-  vertical-align: middle;
+/* Uniform row height.
+ *
+ * `height` on a `tr` is only a MINIMUM — content taller than it grows that one
+ * row. So a player name long enough to wrap used to leave a single row taller
+ * than its neighbours, and because the champion cell is `vertical-align: middle`
+ * its portrait/name/level re-centred in that taller row, visibly breaking the
+ * champion-name alignment down the column (the support row, in practice).
+ *
+ * The fix is on `.sb-name-line` below: the name block always reserves two lines,
+ * so every row is the same height whether or not any name actually wraps. This
+ * `height` is then just the floor for the icon rows. */
+.scoreboard-table tbody tr {
+  height: 3rem;
 }
 
-.scoreboard-level {
-  color: var(--dim);
+.sb-kda {
+  font-weight: 600;
+}
+
+/* --- champion column: keep ChampionIcon intact and reserve a stable level line. */
+.sb-champ {
+  width: 1px; /* shrink to content */
+  white-space: nowrap;
+}
+
+.sb-champ-inner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.4rem;
+  padding-bottom: 0.45rem;
+  box-sizing: border-box;
+}
+
+.sb-champ .champion-icon-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.sb-champ .champion-icon-name {
+  min-width: 0;
   font-size: 0.78rem;
-  margin-left: 0.4rem;
+  line-height: 1.15;
+  white-space: normal;
 }
 
-.scoreboard-loadout {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 0.2rem;
-  justify-content: end;
+.sb-champ .sb-champion-icon {
+  flex: 0 0 32px;
+  border-radius: var(--radius);
+}
+
+.sb-champ .sb-level {
+  position: absolute;
+  top: calc(50% + 0.2rem);
+  left: calc(32px + 0.45rem);
+  color: var(--dim);
+  font-size: 0.66rem;
+  line-height: 1.2;
+}
+
+/* Keep a wrapped champion name from changing the row's vertical rhythm. */
+.sb-champ .champion-icon-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+/* The level is positioned independently, so it never participates in label sizing. */
+.sb-champ-inner > .sb-level {
+  white-space: nowrap;
+}
+
+/* --- player name: its own headerless section --- */
+.sb-player {
+  width: 10rem;
+  padding-left: 0.9rem;
+}
+
+th[scope='row'].sb-player {
+  font-weight: 400;
+}
+
+/*
+ * Always exactly two lines tall (`min-height`), whether the name wraps or not —
+ * that is what keeps EVERY row the same height, which in turn keeps the champion
+ * names aligned down the column. A one-line name is centred in the box by
+ * `align-content`; a name too long for two lines is clipped, with the full
+ * `name#tag` still available as the cell's `title`.
+ */
+.sb-name-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: center;
+  gap: 0 0.25rem;
+  line-height: 1.2;
+  min-height: 2.4em; /* 2 × line-height */
+  max-height: 2.4em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.sb-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sb-tag {
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+
+/* Requirement 3.7: a visible label, not a colour, marks the analyzed player. */
+.you-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--gold-dim);
+  border-radius: 999px;
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* --- spells + runes: one unlabelled column, two mini-columns of stacked icons --- */
+.sb-loadout-inner {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.sb-loadout-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sb-build {
+  width: 1px; /* shrink to the item row's natural width */
+}
+
+/* --- damage: value with a bar scaled to the match's top damage --- */
+.sb-damage {
+  min-width: 4.5rem;
+}
+
+.sb-damage-value {
+  display: block;
+}
+
+.sb-damage-bar {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  background: var(--line);
+}
+
+.sb-damage-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--gold-dim);
+}
+
+.scoreboard-row--analyzed .sb-damage-bar-fill {
+  background: var(--gold);
+}
+
+/* --- performance rating: red (bad) / grey (decent) / gold + glow (great) --- */
+.sb-rating-cell {
+  min-width: 3.2rem;
+}
+
+.sb-rating {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-rating--bad {
+  color: var(--error);
+}
+
+.sb-rating--decent {
+  color: var(--dim);
+}
+
+.sb-rating--great {
+  color: var(--gold-bright);
+  text-shadow:
+    0 0 2px rgba(232, 181, 74, 0.85),
+    0 0 8px rgba(232, 181, 74, 0.55);
 }
 
 /* --------------------------------------------------------------- runes tab */
@@ -1447,4 +1653,249 @@ figure {
 .build-path-unavailable {
   color: var(--dim);
   font-size: 0.9rem;
+}
+
+.build-path-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.build-path-caveat {
+  margin: 0;
+  color: var(--gold-dim);
+  font-size: 0.8rem;
+}
+
+.build-path-toggle {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.build-path-toggle[aria-pressed='true'] {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+.build-path-toggle:focus-visible {
+  outline: 2px solid var(--gold-dim);
+  outline-offset: 2px;
+}
+
+.build-path-empty {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
+/* Left-to-right flow that wraps onto the next line; the connector is leading, so
+   the last node of a row has no trailing arrow and the first node of the next
+   row keeps its incoming arrow. */
+.build-path-flow {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 0.6rem;
+}
+
+.build-path-node {
+  display: flex;
+  align-items: flex-start;
+}
+
+.build-path-node-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  width: 3rem;
+}
+
+/* A short line ending in an arrowhead, in a box the height of one icon so it
+   sits centred on the icon row of the node it points into. */
+.build-path-connector {
+  flex: none;
+  width: 1.6rem;
+  height: 32px; /* == ICON_SIZE */
+  display: flex;
+  align-items: center;
+}
+
+.build-path-connector::before {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--gold-dim);
+}
+
+.build-path-connector::after {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--gold-dim);
+}
+
+.build-path-connector--trinket::before {
+  background: none;
+  border-top: 2px dashed var(--gold-dim);
+  height: 0;
+}
+
+.build-path-node--trinket .build-path-icon {
+  border-color: var(--gold-dim);
+}
+
+.build-path-node--trinket .build-path-time {
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+}
+
+.build-path-icon {
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.build-path-time {
+  font-size: 0.68rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "sold" marker: a dimmed, struck-through copy of the item at the sell time. */
+.build-path-node--sold .build-path-icon {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.build-path-node--sold .build-path-connector::before,
+.build-path-node--sold .build-path-connector::after {
+  opacity: 0.5;
+}
+
+.build-path-sold-tag {
+  font-family: var(--font-display);
+  font-size: 0.5rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--loss);
+}
+
+/* ------------------------------------------------------------- skill order */
+
+.build-path-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.skill-order {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.skill-order-heading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  margin: 0;
+}
+
+.skill-order-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.skill-order-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.skill-order-tile-icon {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.skill-order-tile-icon--letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  font-family: var(--font-display);
+  color: var(--gold);
+}
+
+.skill-order-tile-key {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: var(--track);
+  color: var(--dim);
+}
+
+.skill-order-tile-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  color: var(--gold-bright);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.skill-order-grid {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-order-grid th,
+.skill-order-grid td {
+  border: 1px solid var(--line);
+  width: 1.5rem;
+  height: 1.4rem;
+  text-align: center;
+  font-size: 0.62rem;
+  color: var(--dim);
+}
+
+.skill-order-grid-ability {
+  font-family: var(--font-display);
+  color: var(--gold-dim);
+}
+
+.skill-order-grid-level {
+  color: var(--gold-dim);
+  font-size: 0.55rem;
+}
+
+.skill-order-grid-cell--on {
+  background: var(--gold);
+  color: #16130f;
+  font-weight: 700;
 }

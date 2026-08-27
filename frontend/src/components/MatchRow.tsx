@@ -20,7 +20,7 @@
  */
 
 import { useState } from 'react';
-import type { MatchParticipant, RecentMatchSummary } from '../api/types';
+import type { MatchParticipant, RecentMatchSummary, RiotIdParts } from '../api/types';
 import { DetailPanel, type DetailTabKey } from './DetailPanel';
 import { EMPTY_RUNE_PAGE, MatchSide } from './MatchSide';
 
@@ -57,9 +57,11 @@ function findByMarker(
 
 export interface MatchRowProps {
   match: RecentMatchSummary;
+  /** The searched player's Riot ID — threaded to the Build Path tab. */
+  riotId: RiotIdParts;
 }
 
-export function MatchRow({ match }: MatchRowProps) {
+export function MatchRow({ match, riotId }: MatchRowProps) {
   const analyzed = findByMarker(match.participants, 'isAnalyzedPlayer');
   const enemyLaner = findByMarker(match.participants, 'isEnemyLaner');
 
@@ -151,7 +153,7 @@ export function MatchRow({ match }: MatchRowProps) {
           lands) never runs before its row is even opened. */}
       {expanded ? (
         <div id={panelId}>
-          <DetailPanel match={match} selectedTab={selectedTab} onSelectTab={setSelectedTab} />
+          <DetailPanel match={match} riotId={riotId} selectedTab={selectedTab} onSelectTab={setSelectedTab} />
         </div>
       ) : null}
     </li>

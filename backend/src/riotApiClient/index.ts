@@ -71,6 +71,7 @@ import {
   type RateLimitHeaders,
   type RateLimitManager,
 } from '../rateLimit';
+import type { TimelineEventDto } from '../insight/buildPath';
 import type { PlatformRoutingValue, RegionalRoutingValue } from '../region';
 
 /** Requirement 2.6 / 9.4: per-call timeout. */
@@ -97,6 +98,7 @@ export const RIOT_METHODS = {
   league: 'league',
   matchIds: 'matchIds',
   matchDetail: 'matchDetail',
+  matchTimeline: 'matchTimeline',
 } as const;
 
 export type RiotMethod = (typeof RIOT_METHODS)[keyof typeof RIOT_METHODS];
@@ -180,6 +182,10 @@ export interface MatchParticipantDto {
   champLevel?: number;
   goldEarned?: number;
   totalDamageDealtToChampions?: number;
+  /** Objective last-hits (item-timeline / match-rating). Always present in Match-V5. */
+  turretKills?: number;
+  dragonKills?: number;
+  baronKills?: number;
   /** The current, non-deprecated player-name fields; `summonerName` is empty on live matches. */
   riotIdGameName?: string;
   riotIdTagline?: string;
@@ -211,6 +217,33 @@ export interface MatchDto {
     /** Seconds. */
     gameDuration: number;
     participants: MatchParticipantDto[];
+  };
+}
+
+/**
+ * Match-V5 timeline (item-timeline feature). Only the fields the build-path
+ * pipeline consumes are modelled (decision 5): the authoritative
+ * Participant_Slot <-> PUUID mapping and the shop-event stream.
+ *
+ * `info.frameInterval` and `info.frames[].participantFrames` — the per-frame
+ * gold, experience and position data — are deliberately NOT modelled. They are
+ * out of scope for item-timeline (Requirement 7.2), and a response is 0.3-1 MB
+ * of mostly that data; typing it would only invite its use.
+ */
+export interface MatchTimelineDto {
+  metadata: {
+    matchId: string;
+    participants: string[];
+  };
+  info: {
+    /**
+     * The authoritative Participant_Slot <-> PUUID mapping (item-timeline
+     * Requirement 2.5). `metadata.participants` happens to be ordered so that
+     * index + 1 equals the participant id (confirmed in the spec's task 1.1),
+     * but relying on that ordering is forbidden — read this array.
+     */
+    participants: { participantId: number; puuid: string }[];
+    frames: { timestamp: number; events: TimelineEventDto[] }[];
   };
 }
 
@@ -255,6 +288,16 @@ export interface RiotApiClient {
     count: number,
   ): Promise<RiotApiResult<string[]>>;
   getMatchById(region: RegionalRoutingValue, matchId: string): Promise<RiotApiResult<MatchDto>>;
+  /**
+   * Match-V5 timeline (item-timeline Requirement 1.2/1.3). Regional routing, and
+   * the same 10s timeout, rate-limit reservation and 429 retry policy as every
+   * other call. A 404 maps to `{ kind: 'not_found' }`, which the Build Path
+   * Orchestrator reads as "build path unavailable" rather than an error.
+   */
+  getMatchTimeline(
+    region: RegionalRoutingValue,
+    matchId: string,
+  ): Promise<RiotApiResult<MatchTimelineDto>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +483,15 @@ class HttpRiotApiClient implements RiotApiClient {
   async getMatchById(region: RegionalRoutingValue, matchId: string): Promise<RiotApiResult<MatchDto>> {
     const url = `${baseUrl(region)}/lol/match/v5/matches/${encodeURIComponent(matchId)}`;
     return this.send<MatchDto>(url, region, RIOT_METHODS.matchDetail);
+  }
+
+  /** item-timeline Requirement 1.2/1.3. Regional routing; same `send()` policy as every other call. */
+  async getMatchTimeline(
+    region: RegionalRoutingValue,
+    matchId: string,
+  ): Promise<RiotApiResult<MatchTimelineDto>> {
+    const url = `${baseUrl(region)}/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`;
+    return this.send<MatchTimelineDto>(url, region, RIOT_METHODS.matchTimeline);
   }
 
   /**

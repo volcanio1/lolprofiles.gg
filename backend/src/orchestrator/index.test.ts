@@ -169,6 +169,7 @@ function makeFakes(script: ClientScript = {}): Fakes {
         script.matchDetail?.(matchId) ?? { kind: 'ok', data: matchDto(matchId) },
         matchId,
       ),
+    getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
   };
 
   return { client, calls, callsAt: (stage) => calls.filter((call) => call.stage === stage) };

@@ -251,7 +251,7 @@ describe('toMatchParticipant', () => {
 });
 
 /** Every laned (six-queue) id, for the "never a Laneless_Match" half of Property 7. */
-const LANED_QUEUE_IDS = [400, 420, 430, 440, 480, 490] as const;
+const LANED_QUEUE_IDS = [400, 420, 430, 440, 480, 490, 710] as const;
 const LANELESS_QUEUE_IDS = Object.keys(LANELESS_QUEUE_TYPE_BY_QUEUE_ID).map(Number);
 
 // Feature: match-detail-tabs, Property 7: A Laneless_Match never reaches a role-relative computation

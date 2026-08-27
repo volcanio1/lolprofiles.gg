@@ -6,6 +6,7 @@ import request from 'supertest';
 import { createApp } from './app';
 import { createInMemoryCacheStore } from './cache';
 import type { LookupOrchestrator } from './orchestrator';
+import type { BuildPathOrchestrator } from './orchestrator/buildPath';
 
 /**
  * App-level assembly tests. The orchestrator is a stub and the cache is the real
@@ -17,11 +18,16 @@ const stubOrchestrator: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
 };
 
+const stubBuildPathOrchestrator: BuildPathOrchestrator = {
+  getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+};
+
 function makeApp(overrides: { staticDir?: string } = {}) {
   const now = () => 1_000;
   return createApp({
     dataDragonVersion: '16.17.1',
     orchestrator: stubOrchestrator,
+    buildPathOrchestrator: stubBuildPathOrchestrator,
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },

@@ -57,7 +57,12 @@ import {
 /** Decision 1: a provider that answers everything with placeholders. */
 const NOT_READY = createStaticDataProvider(null, null);
 
-const StaticDataContext = createContext<StaticDataProvider>(NOT_READY);
+/**
+ * Exported so a test can wrap a subtree in a *ready* provider
+ * (`createStaticDataProvider(version, index)`); production code uses
+ * `StaticDataContextProvider` / `useStaticData` and never touches this directly.
+ */
+export const StaticDataContext = createContext<StaticDataProvider>(NOT_READY);
 
 export function useStaticData(): StaticDataProvider {
   return useContext(StaticDataContext);

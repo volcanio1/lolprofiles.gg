@@ -323,7 +323,7 @@ export interface ProfileReport {
   recommendations: Recommendation[];
   /** Requirement 7.3, in minutes to 2 decimal places (decision 1). */
   averageMatchDurationMinutes: number;
-  /** Newest-first, capped at `RECENT_MATCH_LIMIT`; each carries the lane opponent's stats when known. */
+  /** Newest-first, capped at `RECENT_MATCH_TRANSPORT_LIMIT`; each carries the lane opponent's stats when known. */
   recentMatches: RecentMatchSummary[];
   /** Requirements 11.4 / 11.5: ISO timestamp, or `null` on a first retrieval. */
   lastUpdated: string | null;

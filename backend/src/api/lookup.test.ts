@@ -3,6 +3,7 @@ import request from 'supertest';
 import express, { type Express } from 'express';
 import { createInMemoryCacheStore } from '../cache';
 import type { LookupInput, LookupOrchestrator, LookupResult, ProfileReport } from '../orchestrator';
+import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createApiRouter, type ApiLogger } from './index';
 import { parseLookupRequest } from './lookup';
 
@@ -48,7 +49,16 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
   const app = express();
   app.use(
     '/api',
-    createApiRouter({ orchestrator, cache: createInMemoryCacheStore({ now }), now, logger, dataDragonVersion: '16.17.1' }),
+    createApiRouter({
+      orchestrator,
+      buildPathOrchestrator: {
+        getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+      } satisfies BuildPathOrchestrator,
+      cache: createInMemoryCacheStore({ now }),
+      now,
+      logger,
+      dataDragonVersion: '16.17.1',
+    }),
   );
 
   return { app, inputs, calls: () => inputs.length, logged };

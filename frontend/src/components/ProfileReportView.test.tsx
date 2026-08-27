@@ -296,6 +296,63 @@ describe('Recent matches — queue-type filter', () => {
   });
 });
 
+describe('Recent matches — load more', () => {
+  function match(matchId: string, queueType: string): ProfileReport['recentMatches'][number] {
+    return {
+      matchId,
+      championName: 'Vayne',
+      role: 'BOTTOM',
+      win: true,
+      kills: 1,
+      deaths: 1,
+      assists: 1,
+      cs: 100,
+      csPerMinute: 5,
+      visionScore: 10,
+      startTimestamp: 1_700_000_000_000,
+      durationSeconds: 1800,
+      opponent: null,
+      build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
+      participants: [],
+      queueType,
+    };
+  }
+
+  const many = report({
+    recentMatches: Array.from({ length: 23 }, (_, i) =>
+      match(`NA1_${String(i)}`, i % 4 === 0 ? 'aram' : 'ranked solo/duo'),
+    ),
+  });
+
+  it('shows one page of matches with a Load more button when more are available', () => {
+    render(<ProfileReportView report={many} />);
+    expect(screen.getByTestId('recent-match-NA1_9')).toBeInTheDocument();
+    expect(screen.queryByTestId('recent-match-NA1_10')).not.toBeInTheDocument();
+    expect(screen.getByTestId('recent-matches-load-more')).toBeInTheDocument();
+  });
+
+  it('reveals another page each click, then hides the button at the end', () => {
+    render(<ProfileReportView report={many} />);
+    fireEvent.click(screen.getByTestId('recent-matches-load-more'));
+    expect(screen.getByTestId('recent-match-NA1_19')).toBeInTheDocument();
+    expect(screen.getByTestId('recent-matches-load-more')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('recent-matches-load-more'));
+    expect(screen.getByTestId('recent-match-NA1_22')).toBeInTheDocument();
+    expect(screen.queryByTestId('recent-matches-load-more')).not.toBeInTheDocument();
+  });
+
+  it('resets to one page when the queue filter changes', () => {
+    render(<ProfileReportView report={many} />);
+    fireEvent.click(screen.getByTestId('recent-matches-load-more'));
+    fireEvent.change(screen.getByTestId('recent-matches-queue-filter'), { target: { value: 'aram' } });
+    // 6 aram matches (indexes 0,4,8,12,16,20) — one page shows all, no button.
+    expect(screen.queryByTestId('recent-matches-load-more')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('recent-matches-queue-filter'), { target: { value: 'all' } });
+    expect(screen.getByTestId('recent-match-NA1_9')).toBeInTheDocument();
+    expect(screen.queryByTestId('recent-match-NA1_10')).not.toBeInTheDocument();
+  });
+});
+
 describe('Requirements 7.1, 7.2, 7.4, 7.5 — fun facts and limited data', () => {
   it('renders each fun fact with its category', () => {
     render(<ProfileReportView report={report()} />);

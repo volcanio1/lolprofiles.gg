@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../app';
 import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
+import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 
 /**
  * Route tests for the pinned Data Dragon version endpoint. The orchestrator is a
@@ -14,11 +15,16 @@ const stubOrchestrator: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
 };
 
+const stubBuildPathOrchestrator: BuildPathOrchestrator = {
+  getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+};
+
 function makeApp(dataDragonVersion = '16.17.1') {
   const now = () => 1_000;
   return createApp({
     dataDragonVersion,
     orchestrator: stubOrchestrator,
+    buildPathOrchestrator: stubBuildPathOrchestrator,
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },
@@ -62,6 +68,7 @@ describe('GET /api/static-data', () => {
           return Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true });
         },
       },
+      buildPathOrchestrator: stubBuildPathOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

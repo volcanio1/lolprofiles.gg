@@ -17,8 +17,17 @@ import {
   type OpponentSummary,
 } from './stats';
 
-/** How many recent matches the report surfaces. */
+/** How many recent matches the frontend shows in one page, before "Load more". */
 export const RECENT_MATCH_LIMIT = 10;
+
+/**
+ * How many recent matches the report transports. Larger than `RECENT_MATCH_LIMIT`
+ * so the frontend can page through history ("Load more") and filter by queue —
+ * including down to ARAM / ARAM Mayhem, which share the pool with every laned
+ * queue — without a second Riot call. The orchestrator has already fetched and
+ * cached up to `MATCH_HISTORY_COUNT` (100), so this only widens the slice.
+ */
+export const RECENT_MATCH_TRANSPORT_LIMIT = 30;
 
 export interface RecentMatchSummary {
   matchId: string;
@@ -52,8 +61,9 @@ export interface RecentMatchSummary {
 }
 
 /**
- * Most recent `RECENT_MATCH_LIMIT` matches, newest first, merged from both
- * sources on equal footing. Does not mutate its input.
+ * Most recent `RECENT_MATCH_TRANSPORT_LIMIT` matches, newest first, merged from
+ * both sources on equal footing. Does not mutate its input. The frontend applies
+ * the smaller `RECENT_MATCH_LIMIT` display cap after filtering by queue.
  *
  * `match-detail-tabs` Requirement 11.1: `lanelessMatches` (ARAM, ARAM Mayhem —
  * see `mapping.ts`'s `toLanelessMatch`) competes for a recent-matches slot the
@@ -109,5 +119,5 @@ export function computeRecentMatches(
 
   return [...laned, ...laneless]
     .sort((a, b) => b.startTimestamp - a.startTimestamp)
-    .slice(0, RECENT_MATCH_LIMIT);
+    .slice(0, RECENT_MATCH_TRANSPORT_LIMIT);
 }

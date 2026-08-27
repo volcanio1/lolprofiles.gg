@@ -24,6 +24,9 @@ function fakeClient(respond: (puuid: string) => Promise<RiotApiResult<AccountReg
     getMatchById: () => {
       throw new Error('not used by RegionResolver');
     },
+    getMatchTimeline: () => {
+      throw new Error('not used by RegionResolver');
+    },
   };
 }
 

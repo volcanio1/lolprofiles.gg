@@ -35,24 +35,34 @@
  *    set of three, so the mapping is transcribing a requirement, not inventing a
  *    parallel source of truth.
  *
- * 2. WHICH QUEUE IDS COUNT AS "normal". The included ids and their descriptions
- *    in Riot's published queue table (queues.json) are:
+ * 2. WHICH QUEUE IDS COUNT AS "normal". The included ids:
  *      - 420 "5v5 Ranked Solo games"   (Summoner's Rift) -> ranked solo/duo
  *      - 440 "5v5 Ranked Flex games"   (Summoner's Rift) -> ranked flex
  *      - 400 "5v5 Draft Pick games"    (Summoner's Rift) -> normal
  *      - 430 "5v5 Blind Pick games"    (Summoner's Rift) -> normal
  *      - 480 "Swiftplay Games"         (Summoner's Rift) -> normal
  *      - 490 "Normal (Quickplay)"      (Summoner's Rift) -> normal
+ *      - 710  a featured/event 5v5 draft queue on Summoner's Rift -> normal
  *    The operational reading of "normal" is: a non-ranked 5v5 queue on Summoner's
  *    Rift with standard role assignment. That is what makes a match comparable to
  *    the ranked ones for the analysis the requirements ask for — Requirements 6.5,
  *    8.2 and 8.4 are all role-relative, so a mode without roles or lanes would
  *    corrupt them rather than add signal.
  *
- *    Consequently ARAM (450, Howling Abyss), Clash (700/720), Co-op vs AI, and
- *    every rotating game mode are excluded, as are all queue ids Riot marks
- *    deprecated. A newly introduced casual Summoner's Rift queue must be added
- *    here deliberately; until then its matches are excluded, per decision 1.
+ *    710 is not in Riot's published `queues.json` (Community Dragon carries a
+ *    stale "Ranked 5s" label for it). It is admitted on the strength of its match
+ *    data: `gameMode: CLASSIC`, `mapId: 11`, `MATCHED_GAME`, ten human players,
+ *    `TeamBuilderDraftPickStrategy`, and a full TOP/JUNGLE/MIDDLE/BOTTOM/UTILITY
+ *    `teamPosition` on every participant — structurally a normal drafted SR game.
+ *    Riot recycles low queue ids for rotating featured modes, so if 710 is ever
+ *    observed carrying a non-laned mode (augments, subteam placement, a non-SR
+ *    map) this entry must move to `LANELESS_QUEUE_TYPE_BY_QUEUE_ID` or be dropped.
+ *
+ *    Consequently ARAM (450, Howling Abyss), Clash (700/720), Arena (1700/1710/
+ *    1750), Co-op vs AI, and every other rotating game mode are excluded, as are
+ *    all queue ids Riot marks deprecated. A newly introduced casual Summoner's
+ *    Rift queue must be added here deliberately; until then its matches are
+ *    excluded, per decision 1.
  *
  * 3. A MATCH WITH NO PARTICIPANT ROW FOR THE REQUESTER IS EXCLUDED. Every
  *    per-match statistic is read from the requester's own row in
@@ -122,6 +132,7 @@ export const QUEUE_TYPE_BY_QUEUE_ID: Readonly<Record<number, AllowedQueueType>> 
   440: 'ranked flex', // 5v5 Ranked Flex
   480: 'normal', // Swiftplay
   490: 'normal', // Normal (Quickplay)
+  710: 'normal', // Featured/event 5v5 SR draft — see decision 2
 };
 
 /**
@@ -323,6 +334,9 @@ export function toMatchParticipant(
     visionScore: finiteOrZero(participant.visionScore),
     damageToChampions: finiteOrZero(participant.totalDamageDealtToChampions),
     goldEarned: finiteOrZero(participant.goldEarned),
+    turretKills: finiteOrZero(participant.turretKills),
+    dragonKills: finiteOrZero(participant.dragonKills),
+    baronKills: finiteOrZero(participant.baronKills),
     win: participant.win === true,
     killParticipationPercent: killParticipationOf(kills, assists, teamKills),
     augments: augmentsOf(participant),

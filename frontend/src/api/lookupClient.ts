@@ -44,7 +44,7 @@
  */
 
 import { apiBaseUrl } from '../config';
-import type { ApiErrorPayload, ErrorCode, ProfileReport } from './types';
+import type { ApiErrorPayload, BuildPathEntry, BuildPathResponse, ErrorCode, ProfileReport, RiotIdParts } from './types';
 
 /** Decision 2. */
 export const REQUEST_TIMEOUT_MS = 20_000;
@@ -185,6 +185,105 @@ export function isProfileReport(body: unknown): body is ProfileReport {
     Array.isArray(candidate.funFacts) &&
     Array.isArray(candidate.recommendations)
   );
+}
+
+// ---------------------------------------------------------------------------
+// item-timeline: GET /api/match/:matchId/build-path
+// ---------------------------------------------------------------------------
+
+export type BuildPathOutcome = BuildPathResponse | { kind: 'error'; error: ApiErrorPayload };
+
+function isBuildPathEntry(value: unknown): value is BuildPathEntry {
+  const entry = value as Partial<BuildPathEntry> | null;
+  return (
+    entry !== null &&
+    typeof entry === 'object' &&
+    typeof entry.itemId === 'number' &&
+    Number.isFinite(entry.itemId) &&
+    typeof entry.timestamp === 'number' &&
+    Number.isFinite(entry.timestamp) &&
+    (entry.soldAt === undefined || (typeof entry.soldAt === 'number' && Number.isFinite(entry.soldAt)))
+  );
+}
+
+/** Narrows an untrusted 200 body to a `BuildPathResponse`, or `null` when it is not one. */
+export function readBuildPathResponse(body: unknown): BuildPathResponse | null {
+  if (body === null || typeof body !== 'object') {
+    return null;
+  }
+  const candidate = body as Record<string, unknown>;
+  if (candidate.kind === 'build_path') {
+    if (!Array.isArray(candidate.buildPath) || !candidate.buildPath.every(isBuildPathEntry)) {
+      return null;
+    }
+    if (typeof candidate.reconciled !== 'boolean') {
+      return null;
+    }
+    const skillOrder = Array.isArray(candidate.skillOrder)
+      ? candidate.skillOrder.filter((slot): slot is number => typeof slot === 'number' && slot >= 1 && slot <= 4)
+      : [];
+    return { kind: 'build_path', buildPath: candidate.buildPath, skillOrder, reconciled: candidate.reconciled };
+  }
+  if (candidate.kind === 'unavailable' && (candidate.reason === 'no_timeline' || candidate.reason === 'participant_absent')) {
+    return { kind: 'unavailable', reason: candidate.reason };
+  }
+  return null;
+}
+
+/**
+ * `GET /api/match/:matchId/build-path`. Same contract as `lookupProfile`: never
+ * rejects, always settles. `unavailable` is a normal outcome, not an error
+ * (item-timeline Requirement 1.5 / 6.1).
+ */
+export async function fetchBuildPath(
+  matchId: string,
+  riotId: RiotIdParts,
+  options: LookupClientOptions = {},
+): Promise<BuildPathOutcome> {
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const query = new URLSearchParams({ gameName: riotId.gameName, tagLine: riotId.tagLine });
+    const url = `${baseUrl}/api/match/${encodeURIComponent(matchId)}/build-path?${query.toString()}`;
+
+    let response: Response;
+    try {
+      response = await doFetch(url, { method: 'GET', signal: controller.signal });
+    } catch {
+      return { kind: 'error', error: synthesizedError(timedOut ? 'TIMEOUT' : 'NETWORK_ERROR') };
+    }
+
+    let parsed: unknown;
+    let parseFailed = false;
+    try {
+      parsed = await response.json();
+    } catch {
+      parseFailed = true;
+    }
+
+    if (response.ok) {
+      const narrowed = parseFailed ? null : readBuildPathResponse(parsed);
+      return narrowed ?? { kind: 'error', error: synthesizedError('RIOT_UNAVAILABLE') };
+    }
+
+    return {
+      kind: 'error',
+      error: parseFailed
+        ? synthesizedError(errorCodeForStatus(response.status))
+        : readErrorPayload(parsed, response.status),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

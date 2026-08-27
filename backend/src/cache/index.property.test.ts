@@ -17,6 +17,7 @@ const ENDPOINTS: readonly CacheEndpoint[] = [
   'league',
   'matchIds',
   'matchDetail',
+  'timelineSlice',
 ];
 
 /**
@@ -31,6 +32,7 @@ const EXPECTED_RETENTION_MS: Record<CacheEndpoint, number | 'infinite'> = {
   league: 10 * 60 * 1000,
   matchIds: 10 * 60 * 1000,
   matchDetail: 'infinite',
+  timelineSlice: 'infinite',
 };
 
 /** Characters that a naive delimiter-joined encoding would alias on. */
@@ -186,6 +188,7 @@ describe('Cache Store properties', () => {
       league: 0,
       matchIds: 0,
       matchDetail: 0,
+      timelineSlice: 0,
     };
 
     await fc.assert(

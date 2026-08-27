@@ -27,6 +27,7 @@ import { loadConfig } from './config';
 import { createApp } from './app';
 import { createInMemoryCacheStore } from './cache';
 import { createLookupOrchestrator } from './orchestrator';
+import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createRateLimitManager } from './rateLimit';
 import { createRiotApiClient, type RiotHttpTransport } from './riotApiClient';
 import 'dotenv/config';
@@ -50,7 +51,14 @@ const riotApiClient = createRiotApiClient({
   now,
 });
 
-const orchestrator = createLookupOrchestrator({ cache, riotApiClient, now });
+const orchestrator = createLookupOrchestrator({
+  cache,
+  riotApiClient,
+  now,
+  matchHistoryCount: config.matchHistoryCount,
+});
+
+const buildPathOrchestrator = createBuildPathOrchestrator({ cache, riotApiClient, now });
 
 const staticDir =
   config.frontendDistPath === undefined
@@ -61,6 +69,7 @@ const staticDir =
 
 const app = createApp({
   orchestrator,
+  buildPathOrchestrator,
   cache,
   now,
   allowedOrigins: config.allowedOrigins,

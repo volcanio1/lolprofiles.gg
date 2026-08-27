@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_COOLDOWN_SECONDS,
   errorCodeForStatus,
+  fetchBuildPath,
   isProfileReport,
   lookupProfile,
+  readBuildPathResponse,
   readErrorPayload,
   synthesizedError,
   type FetchLike,
@@ -251,5 +253,89 @@ describe('response narrowing helpers', () => {
     expect(isProfileReport({})).toBe(false);
     expect(isProfileReport({ ...sampleReport(), funFacts: 'nope' })).toBe(false);
     expect(isProfileReport({ ...sampleReport(), stats: null })).toBe(false);
+  });
+});
+
+describe('readBuildPathResponse', () => {
+  it('accepts a well-formed build_path body and keeps the skill order', () => {
+    expect(
+      readBuildPathResponse({
+        kind: 'build_path',
+        buildPath: [{ itemId: 1055, timestamp: 11000 }],
+        skillOrder: [1, 2, 1, 9, 3],
+        reconciled: true,
+      }),
+    ).toEqual({
+      kind: 'build_path',
+      buildPath: [{ itemId: 1055, timestamp: 11000 }],
+      skillOrder: [1, 2, 1, 3], // out-of-range slot dropped
+      reconciled: true,
+    });
+  });
+
+  it('accepts both unavailable reasons and rejects an unknown one', () => {
+    expect(readBuildPathResponse({ kind: 'unavailable', reason: 'no_timeline' })).toEqual({
+      kind: 'unavailable',
+      reason: 'no_timeline',
+    });
+    expect(readBuildPathResponse({ kind: 'unavailable', reason: 'participant_absent' })).not.toBeNull();
+    expect(readBuildPathResponse({ kind: 'unavailable', reason: 'whatever' })).toBeNull();
+  });
+
+  it('rejects a malformed build_path body', () => {
+    expect(readBuildPathResponse({ kind: 'build_path', buildPath: [{ itemId: 'x', timestamp: 1 }], reconciled: true })).toBeNull();
+    expect(readBuildPathResponse({ kind: 'build_path', buildPath: [], reconciled: 'yes' })).toBeNull();
+    expect(readBuildPathResponse(null)).toBeNull();
+  });
+});
+
+describe('fetchBuildPath', () => {
+  it('GETs the build-path URL with the Riot ID as query params', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchLike: FetchLike = (url, init) => {
+      calls.push({ url, init });
+      return Promise.resolve(jsonResponse(200, { kind: 'unavailable', reason: 'no_timeline' }));
+    };
+
+    await fetchBuildPath('EUW1_1', { gameName: 'Faker', tagLine: 'KR1' }, { fetch: fetchLike, baseUrl: BASE });
+
+    expect(calls[0].url).toBe(`${BASE}/api/match/EUW1_1/build-path?gameName=Faker&tagLine=KR1`);
+    expect(calls[0].init.method).toBe('GET');
+  });
+
+  it('returns the narrowed build_path outcome on 200', async () => {
+    const fetchLike: FetchLike = () =>
+      Promise.resolve(
+        jsonResponse(200, {
+          kind: 'build_path',
+          buildPath: [{ itemId: 3006, timestamp: 5000 }],
+          skillOrder: [1],
+          reconciled: false,
+        }),
+      );
+    const outcome = await fetchBuildPath('EUW1_1', { gameName: 'A', tagLine: 'B' }, { fetch: fetchLike, baseUrl: BASE });
+    expect(outcome).toEqual({
+      kind: 'build_path',
+      buildPath: [{ itemId: 3006, timestamp: 5000 }],
+      skillOrder: [1],
+      reconciled: false,
+    });
+  });
+
+  it('maps a non-2xx response to an error outcome', async () => {
+    const fetchLike: FetchLike = () => Promise.resolve(jsonResponse(429, { error: { code: 'RATE_LIMITED', message: 'slow down', retriable: true } }));
+    const outcome = await fetchBuildPath('EUW1_1', { gameName: 'A', tagLine: 'B' }, { fetch: fetchLike, baseUrl: BASE });
+    expect(outcome).toEqual({ kind: 'error', error: expect.objectContaining({ code: 'RATE_LIMITED' }) });
+  });
+
+  it('treats a transport failure as a network error, never rejecting', async () => {
+    const fetchLike: FetchLike = () => Promise.reject(new Error('offline'));
+    const outcome = await fetchBuildPath('EUW1_1', { gameName: 'A', tagLine: 'B' }, { fetch: fetchLike, baseUrl: BASE });
+    expect(outcome).toEqual({ kind: 'error', error: expect.objectContaining({ code: 'NETWORK_ERROR' }) });
+  });
+
+  it('treats an unreadable 200 body as an error, not an empty build path', async () => {
+    const outcome = await fetchBuildPath('EUW1_1', { gameName: 'A', tagLine: 'B' }, { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE });
+    expect(outcome.kind).toBe('error');
   });
 });

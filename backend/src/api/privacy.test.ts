@@ -11,6 +11,7 @@ import {
   type PuuidDeletionResult,
 } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
+import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createApiRouter, type ApiLogger } from './index';
 
 /**
@@ -31,6 +32,10 @@ const stubOrchestrator: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
 };
 
+const stubBuildPathOrchestrator: BuildPathOrchestrator = {
+  getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+};
+
 interface Harness {
   app: Express;
   cache: InMemoryCacheStore;
@@ -48,7 +53,17 @@ function makeHarness(cache?: CacheStore): Harness {
   };
 
   const app = express();
-  app.use('/api', createApiRouter({ orchestrator: stubOrchestrator, cache: store, now, logger, dataDragonVersion: '16.17.1' }));
+  app.use(
+    '/api',
+    createApiRouter({
+      orchestrator: stubOrchestrator,
+      buildPathOrchestrator: stubBuildPathOrchestrator,
+      cache: store,
+      now,
+      logger,
+      dataDragonVersion: '16.17.1',
+    }),
+  );
 
   return { app, cache: store, logged };
 }

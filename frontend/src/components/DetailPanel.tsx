@@ -29,7 +29,7 @@
  */
 
 import { useRef } from 'react';
-import type { RecentMatchSummary } from '../api/types';
+import type { RecentMatchSummary, RiotIdParts } from '../api/types';
 import { AugmentsTab } from './AugmentsTab';
 import { BuildPathTab } from './BuildPathTab';
 import { GeneralTab } from './GeneralTab';
@@ -49,11 +49,13 @@ function thirdTabLabel(queueType: string): string {
 
 export interface DetailPanelProps {
   match: RecentMatchSummary;
+  /** The analyzed player's Riot ID, for the Build Path tab's retrieval. */
+  riotId: RiotIdParts;
   selectedTab: DetailTabKey;
   onSelectTab: (tab: DetailTabKey) => void;
 }
 
-export function DetailPanel({ match, selectedTab, onSelectTab }: DetailPanelProps) {
+export function DetailPanel({ match, riotId, selectedTab, onSelectTab }: DetailPanelProps) {
   const tabRefs = useRef<Partial<Record<DetailTabKey, HTMLButtonElement | null>>>({});
   const isAugments = match.queueType === 'aram mayhem';
 
@@ -115,8 +117,17 @@ export function DetailPanel({ match, selectedTab, onSelectTab }: DetailPanelProp
        * discipline is established now so `item-timeline` inherits it for free.
        */}
       <div role="tabpanel" id={panelId(selectedTab)} aria-labelledby={tabId(selectedTab)} className="detail-tabpanel">
-        {selectedTab === 'general' ? <GeneralTab participants={match.participants} /> : null}
-        {selectedTab === 'buildPath' ? <BuildPathTab matchId={match.matchId} /> : null}
+        {selectedTab === 'general' ? (
+          <GeneralTab participants={match.participants} durationSeconds={match.durationSeconds} />
+        ) : null}
+        {selectedTab === 'buildPath' ? (
+          <BuildPathTab
+            matchId={match.matchId}
+            riotId={riotId}
+            finalBuild={match.build}
+            championName={match.championName}
+          />
+        ) : null}
         {selectedTab === 'runes' && isAugments ? <AugmentsTab participants={match.participants} /> : null}
         {selectedTab === 'runes' && !isAugments ? <RunesTab participants={match.participants} /> : null}
       </div>

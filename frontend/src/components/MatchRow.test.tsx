@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MatchParticipant, RecentMatchSummary } from '../api/types';
 import { formatMatchDuration, matchQueueTypeLabel, MatchRow } from './MatchRow';
 
+const RID = { gameName: 'Tester', tagLine: 'NA1' };
+
 /**
  * `match-detail-tabs` task 5.2 — Requirements 1.2, 1.3, 1.6, 1.7.
  *
@@ -34,6 +36,9 @@ function participant(overrides: Partial<MatchParticipant> = {}): MatchParticipan
     damageToChampions: 0,
     goldEarned: 0,
     win: true,
+    turretKills: 0,
+    dragonKills: 0,
+    baronKills: 0,
     killParticipationPercent: 'N/A',
     augments: [],
     ...overrides,
@@ -86,7 +91,7 @@ describe('matchQueueTypeLabel', () => {
 
 describe('MatchRow — Requirement 1.6: duration and queue type', () => {
   it('displays the match duration and queue type, which the row did not show before this feature', () => {
-    render(<MatchRow match={match({ durationSeconds: 1_927, queueType: 'ranked flex' })} />);
+    render(<MatchRow riotId={RID} match={match({ durationSeconds: 1_927, queueType: 'ranked flex' })} />);
 
     expect(screen.getByTestId('recent-match-NA1_1-duration')).toHaveTextContent('32:07');
     expect(screen.getByTestId('recent-match-NA1_1-queue-type')).toHaveTextContent('Ranked Flex');
@@ -95,7 +100,7 @@ describe('MatchRow — Requirement 1.6: duration and queue type', () => {
 
 describe('MatchRow — Requirement 1.7: no Enemy_Laner identified', () => {
   it('renders the no-opponent notice and no opposing side at all', () => {
-    render(<MatchRow match={match({ opponent: null })} />);
+    render(<MatchRow riotId={RID} match={match({ opponent: null })} />);
 
     expect(screen.getByTestId('recent-match-NA1_1-no-opponent')).toBeInTheDocument();
     expect(screen.queryByTestId('match-side-opponent')).not.toBeInTheDocument();
@@ -107,7 +112,7 @@ describe('MatchRow — Requirement 1.7: no Enemy_Laner identified', () => {
 describe('MatchRow — mirrored sides read spells and runes from the marked participant', () => {
   it('renders both sides when an Enemy_Laner was identified, each reading its own participant record', () => {
     render(
-      <MatchRow
+      <MatchRow riotId={RID}
         match={match({
           opponent: {
             championName: 'Jinx',
@@ -137,7 +142,7 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
   });
 
   it('still shows the row’s existing values — outcome, champion, K/D/A, CS/min, vision — unchanged', () => {
-    render(<MatchRow match={match()} />);
+    render(<MatchRow riotId={RID} match={match()} />);
     const row = screen.getByTestId('recent-match-NA1_1');
 
     expect(row).toHaveTextContent('Victory');
@@ -148,7 +153,7 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
 
   it('shows each side’s player name above their champion, reading from the marked participant', () => {
     render(
-      <MatchRow
+      <MatchRow riotId={RID}
         match={match({
           opponent: {
             championName: 'Jinx',
@@ -175,7 +180,7 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
   });
 
   it('omits the name line rather than rendering a bare "#" when no marked participant supplied one', () => {
-    render(<MatchRow match={match({ participants: [] })} />);
+    render(<MatchRow riotId={RID} match={match({ participants: [] })} />);
     const playerSide = screen.getByTestId('match-side-player');
     expect(playerSide.textContent).not.toContain('#');
   });
@@ -183,12 +188,12 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
 
 describe('MatchRow — Detail_Panel expansion (Requirements 2.1, 2.2, 2.4, 2.5)', () => {
   it('renders every Detail_Panel collapsed on initial render', () => {
-    render(<MatchRow match={match()} />);
+    render(<MatchRow riotId={RID} match={match()} />);
     expect(screen.queryByTestId('detail-panel-NA1_1')).not.toBeInTheDocument();
   });
 
   it('expands and collapses on the toggle control', () => {
-    render(<MatchRow match={match()} />);
+    render(<MatchRow riotId={RID} match={match()} />);
     const toggle = screen.getByTestId('recent-match-NA1_1-expand-toggle');
 
     fireEvent.click(toggle);
@@ -199,7 +204,7 @@ describe('MatchRow — Detail_Panel expansion (Requirements 2.1, 2.2, 2.4, 2.5)'
   });
 
   it('selects the General tab on first expansion and restores the last-selected tab on a later expansion of the same row', () => {
-    render(<MatchRow match={match()} />);
+    render(<MatchRow riotId={RID} match={match()} />);
     const toggle = screen.getByTestId('recent-match-NA1_1-expand-toggle');
 
     fireEvent.click(toggle); // first expansion
@@ -218,8 +223,8 @@ describe('MatchRow — Detail_Panel expansion (Requirements 2.1, 2.2, 2.4, 2.5)'
   it('keeps two rows’ expansion and tab selection fully independent', () => {
     render(
       <ul>
-        <MatchRow match={match({ matchId: 'NA1_1' })} />
-        <MatchRow match={match({ matchId: 'NA1_2' })} />
+        <MatchRow riotId={RID} match={match({ matchId: 'NA1_1' })} />
+        <MatchRow riotId={RID} match={match({ matchId: 'NA1_2' })} />
       </ul>,
     );
 
@@ -246,7 +251,7 @@ describe('MatchRow — Detail_Panel expansion (Requirements 2.1, 2.2, 2.4, 2.5)'
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
 
-    render(<MatchRow match={match()} />);
+    render(<MatchRow riotId={RID} match={match()} />);
     fireEvent.click(screen.getByTestId('recent-match-NA1_1-expand-toggle'));
     fireEvent.click(screen.getByRole('tab', { name: 'Runes' }));
     fireEvent.click(screen.getByRole('tab', { name: 'General' }));
@@ -258,7 +263,7 @@ describe('MatchRow — Detail_Panel expansion (Requirements 2.1, 2.2, 2.4, 2.5)'
 
 describe('MatchRow — Laneless_Match suppresses role and opponent (Requirement 11.4, 11.5)', () => {
   it('shows no role text and no opposing side when role is blank and opponent is null', () => {
-    render(<MatchRow match={match({ role: '', opponent: null, queueType: 'aram' })} />);
+    render(<MatchRow riotId={RID} match={match({ role: '', opponent: null, queueType: 'aram' })} />);
 
     expect(screen.queryByText('BOTTOM')).not.toBeInTheDocument();
     expect(screen.getByTestId('recent-match-NA1_1-no-opponent')).toBeInTheDocument();
@@ -266,7 +271,7 @@ describe('MatchRow — Laneless_Match suppresses role and opponent (Requirement 
   });
 
   it('still shows every other field unchanged for a laneless match', () => {
-    render(<MatchRow match={match({ role: '', opponent: null, queueType: 'aram mayhem' })} />);
+    render(<MatchRow riotId={RID} match={match({ role: '', opponent: null, queueType: 'aram mayhem' })} />);
     const row = screen.getByTestId('recent-match-NA1_1');
 
     expect(row).toHaveTextContent('Victory');

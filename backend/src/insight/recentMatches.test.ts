@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { IncludedMatch } from './stats';
-import { computeRecentMatches, RECENT_MATCH_LIMIT } from './recentMatches';
+import { computeRecentMatches, RECENT_MATCH_TRANSPORT_LIMIT } from './recentMatches';
 
 const BASE_TS = 1_700_000_000_000;
 
@@ -33,12 +33,12 @@ describe('computeRecentMatches', () => {
     expect(computeRecentMatches(matches).map((m) => m.matchId)).toEqual(['newest', 'middle', 'oldest']);
   });
 
-  it('caps the result at RECENT_MATCH_LIMIT', () => {
-    const matches = Array.from({ length: RECENT_MATCH_LIMIT + 5 }, (_, i) =>
+  it('caps the result at RECENT_MATCH_TRANSPORT_LIMIT', () => {
+    const matches = Array.from({ length: RECENT_MATCH_TRANSPORT_LIMIT + 5 }, (_, i) =>
       match({ matchId: `m${String(i)}`, startTimestamp: BASE_TS + i }),
     );
 
-    expect(computeRecentMatches(matches)).toHaveLength(RECENT_MATCH_LIMIT);
+    expect(computeRecentMatches(matches)).toHaveLength(RECENT_MATCH_TRANSPORT_LIMIT);
   });
 
   it('carries the opponent summary through when present', () => {

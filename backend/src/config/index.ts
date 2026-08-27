@@ -25,6 +25,26 @@ export interface AppConfig {
    * correct when a CDN or reverse proxy serves the frontend instead.
    */
   frontendDistPath?: string;
+  /**
+   * How many recent match ids to fetch and detail per lookup, from
+   * `MATCH_HISTORY_COUNT`. Unset uses the orchestrator's default (100), which
+   * suits a production Riot key. A development key allows only 100 requests per
+   * 2 minutes, so a cold lookup at 100 exhausts the budget immediately and
+   * everything 429s — set this to ~30 alongside a dev key.
+   */
+  matchHistoryCount?: number;
+}
+
+/** Parses a positive-integer env var, or `undefined` when unset/blank. Throws on garbage. */
+function readPositiveInt(raw: string | undefined, name: string): number | undefined {
+  if (raw === undefined || raw.trim().length === 0) {
+    return undefined;
+  }
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name} environment variable value: "${raw}". Expected a positive integer.`);
+  }
+  return value;
 }
 
 /**
@@ -74,5 +94,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowedOrigins: parseAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
     dataDragonVersion,
     frontendDistPath: frontendDist && frontendDist.length > 0 ? frontendDist : undefined,
+    matchHistoryCount: readPositiveInt(env.MATCH_HISTORY_COUNT, 'MATCH_HISTORY_COUNT'),
   };
 }

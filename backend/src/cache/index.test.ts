@@ -32,6 +32,7 @@ describe('TTL_BY_ENDPOINT', () => {
       league: TEN_MINUTES_MS,
       matchIds: TEN_MINUTES_MS,
       matchDetail: 'infinite',
+      timelineSlice: 'infinite',
     });
   });
 });

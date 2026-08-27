@@ -141,10 +141,14 @@ export const RECENT_MATCH_QUEUE_FILTERS: readonly {
   { value: 'aram-mayhem', label: 'ARAM Mayhem', queueTypes: ['aram mayhem'] },
 ];
 
+/** How many recent matches are shown at once, and how many each "Load more" reveals. */
+export const RECENT_MATCHES_PAGE_SIZE = 10;
+
 export function ProfileReportView({ report }: ProfileReportViewProps) {
   const queueTypes = orderedQueueTypes(report.stats.rankedByQueue);
 
   const [queueFilter, setQueueFilter] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(RECENT_MATCHES_PAGE_SIZE);
   const filteredMatches = useMemo(() => {
     const option = RECENT_MATCH_QUEUE_FILTERS.find((entry) => entry.value === queueFilter);
     if (!option || option.queueTypes.length === 0) {
@@ -152,6 +156,7 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
     }
     return report.recentMatches.filter((match) => option.queueTypes.includes(match.queueType));
   }, [queueFilter, report.recentMatches]);
+  const visibleMatches = filteredMatches.slice(0, visibleCount);
 
   return (
     <div data-testid="profile-report" className="report">
@@ -321,7 +326,10 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
               className="field-select rsec-filter-select"
               data-testid="recent-matches-queue-filter"
               value={queueFilter}
-              onChange={(event) => setQueueFilter(event.target.value)}
+              onChange={(event) => {
+                setQueueFilter(event.target.value);
+                setVisibleCount(RECENT_MATCHES_PAGE_SIZE);
+              }}
             >
               {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -340,11 +348,23 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
             No recent matches in this queue.
           </p>
         ) : (
-          <ul className="match-list" role="list">
-            {filteredMatches.map((match) => (
-              <MatchRow key={match.matchId} match={match} />
-            ))}
-          </ul>
+          <>
+            <ul className="match-list" role="list">
+              {visibleMatches.map((match) => (
+                <MatchRow key={match.matchId} match={match} riotId={report.riotId} />
+              ))}
+            </ul>
+            {filteredMatches.length > visibleMatches.length ? (
+              <button
+                type="button"
+                className="btn btn-ghost match-list-more"
+                data-testid="recent-matches-load-more"
+                onClick={() => setVisibleCount((count) => count + RECENT_MATCHES_PAGE_SIZE)}
+              >
+                Load more
+              </button>
+            ) : null}
+          </>
         )}
       </section>
 

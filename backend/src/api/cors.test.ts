@@ -3,6 +3,7 @@ import request from 'supertest';
 import express from 'express';
 import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
+import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createApiRouter } from './index';
 import { parseAllowedOrigins } from './cors';
 
@@ -23,6 +24,10 @@ const stubOrchestrator: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
 };
 
+const stubBuildPathOrchestrator: BuildPathOrchestrator = {
+  getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+};
+
 function makeApp(allowedOrigins?: readonly string[]) {
   const now = () => 1_000;
   const app = express();
@@ -31,6 +36,7 @@ function makeApp(allowedOrigins?: readonly string[]) {
     createApiRouter({
       dataDragonVersion: '16.17.1',
       orchestrator: stubOrchestrator,
+      buildPathOrchestrator: stubBuildPathOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

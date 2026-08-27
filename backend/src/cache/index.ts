@@ -15,6 +15,12 @@
  *    entries are retained for at least 10 minutes.
  *  - 10.4: `matchDetail` entries are never stale, because completed match data
  *    is immutable.
+ *  - item-timeline 5.3/5.4: `timelineSlice` entries — one player's reconstructed
+ *    build path for one match, keyed `{ matchId, puuid }` — are never stale, by
+ *    the same immutability argument as `matchDetail`. Safe here only because the
+ *    slice is kilobytes; the 1-5 MB raw Match_Timeline it is derived from has NO
+ *    cache entry type at all (item-timeline Requirement 5.1), so there is nothing
+ *    for a caller to retain it under.
  *
  * Two decisions worth stating explicitly, because callers depend on them:
  *
@@ -40,7 +46,14 @@
  * in-place redaction task 5.4 originally implemented.
  */
 
-export type CacheEndpoint = 'account' | 'accountRegion' | 'summoner' | 'league' | 'matchIds' | 'matchDetail';
+export type CacheEndpoint =
+  | 'account'
+  | 'accountRegion'
+  | 'summoner'
+  | 'league'
+  | 'matchIds'
+  | 'matchDetail'
+  | 'timelineSlice';
 
 export interface CacheKey {
   endpoint: CacheEndpoint;
@@ -109,6 +122,7 @@ export const TTL_BY_ENDPOINT: Readonly<Record<CacheEndpoint, number | 'infinite'
   league: TEN_MINUTES_MS,
   matchIds: TEN_MINUTES_MS,
   matchDetail: 'infinite',
+  timelineSlice: 'infinite',
 };
 
 /**
@@ -261,6 +275,10 @@ export class InMemoryCacheStore implements CacheStore {
    *    the value.
    *  - `matchDetail` — the PUUID appears in `metadata.participants` and in the
    *    subject's participant record. Matched on the value.
+   *  - `timelineSlice` — keyed by `{ matchId, puuid }`, so the key matches; the
+   *    value also carries the PUUID (item-timeline Requirement 5.6). It describes
+   *    one player only, so there is no other-participant value-scan case of the
+   *    kind `matchDetail` has, and it counts toward `removedEntryCount`.
    *
    * Idempotent: a second call finds nothing left and reports `found: false`.
    * Never throws for a PUUID with no cached data (Requirement 12.6). An empty

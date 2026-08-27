@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from './app';
 import { createInMemoryCacheStore, type InMemoryCacheStore } from './cache';
 import { createLookupOrchestrator } from './orchestrator';
+import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createRateLimitManager } from './rateLimit';
 import {
   createRiotApiClient,
@@ -171,6 +172,7 @@ function makeHarness(): Harness {
   const app = createApp({
     dataDragonVersion: '16.17.1',
     orchestrator,
+    buildPathOrchestrator: createBuildPathOrchestrator({ cache, riotApiClient, now }),
     cache,
     now,
     logger: { unexpectedError: () => undefined },

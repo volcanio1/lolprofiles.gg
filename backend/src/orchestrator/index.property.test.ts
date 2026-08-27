@@ -31,7 +31,7 @@ const GAME_NAME = 'Prop';
 const TAG_LINE = 'TEST';
 
 /** Requirement 3.5's allowed queue ids, and ids that must be excluded. */
-const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 480, 490] as const;
+const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 480, 490, 710] as const;
 const DISALLOWED_QUEUE_IDS = [0, 450, 460, 470, 700, 720, 900, 1700, 2, 4] as const;
 
 /** Fires no budget: `runLookup` must complete on the pipeline's own terms. */
@@ -119,6 +119,7 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
       calls.push({ stage: 'matchDetail', detail: matchId });
       return Promise.resolve(script.matchDetail?.(matchId) ?? { kind: 'ok', data: matchDto({ matchId, queueId: 420, durationSeconds: 1_800, win: true }) });
     },
+    getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
   };
 
   const orchestrator = createLookupOrchestrator({
@@ -457,6 +458,7 @@ describe('Lookup Orchestrator match-history properties', () => {
               }),
             });
           },
+          getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
         };
 
         const orchestrator = createLookupOrchestrator({

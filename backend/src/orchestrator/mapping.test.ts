@@ -63,6 +63,8 @@ describe('queueTypeForQueueId (Requirement 3.5)', () => {
     expect(queueTypeForQueueId(430)).toBe('normal');
     expect(queueTypeForQueueId(480)).toBe('normal');
     expect(queueTypeForQueueId(490)).toBe('normal');
+    // 710: featured/event 5v5 SR draft queue with standard roles \u2014 see decision 2.
+    expect(queueTypeForQueueId(710)).toBe('normal');
   });
 
   it('excludes queues outside the three allowed types, including ARAM and Clash', () => {
@@ -129,6 +131,9 @@ describe('toIncludedMatch', () => {
           visionScore: 21,
           damageToChampions: 0,
           goldEarned: 0,
+          turretKills: 0,
+          dragonKills: 0,
+          baronKills: 0,
           win: true,
           killParticipationPercent: 'N/A',
           augments: [],
@@ -351,7 +356,7 @@ describe('toLanelessMatch', () => {
   });
 
   it('returns undefined for every laned (six-queue) id, and for an arbitrary unrecognized id', () => {
-    for (const queueId of [400, 420, 430, 440, 480, 490, 700, 900]) {
+    for (const queueId of [400, 420, 430, 440, 480, 490, 710, 700, 900]) {
       expect(toLanelessMatch(matchDto({ queueId }), PUUID)).toBeUndefined();
     }
   });

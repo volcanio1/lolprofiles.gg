@@ -48,6 +48,8 @@
 import express, { Router, type ErrorRequestHandler } from 'express';
 import type { CacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
+import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import { createBuildPathHandler } from './buildPath';
 import { createCorsMiddleware } from './cors';
 import { internalError, malformedRequestError } from './errors';
 import { createLookupHandler } from './lookup';
@@ -57,6 +59,12 @@ import { createStaticDataHandler } from './staticData';
 export * from './errors';
 export { createCorsMiddleware, parseAllowedOrigins, type CorsOptions } from './cors';
 export { createLookupHandler, isJsonObject, parseLookupRequest, readOptionalString } from './lookup';
+export {
+  createBuildPathHandler,
+  parseBuildPathRequest,
+  readQueryString,
+  type BuildPathResponseBody,
+} from './buildPath';
 export { createPrivacyDeleteHandler, type DeletionConfirmation } from './privacy';
 export {
   createStaticDataHandler,
@@ -85,6 +93,8 @@ export const consoleApiLogger: ApiLogger = {
 
 export interface ApiDependencies {
   orchestrator: LookupOrchestrator;
+  /** item-timeline: serves `GET /api/match/:matchId/build-path`. */
+  buildPathOrchestrator: BuildPathOrchestrator;
   cache: CacheStore;
   /** Injected clock, shared with the cache store and the orchestrator. */
   now?: () => number;
@@ -133,6 +143,10 @@ export function createApiRouter(deps: ApiDependencies): Router {
   router.use(express.json({ limit: REQUEST_BODY_LIMIT })); // decision 1
 
   router.post('/lookup', createLookupHandler({ orchestrator: deps.orchestrator }));
+  router.get(
+    '/match/:matchId/build-path',
+    createBuildPathHandler({ buildPathOrchestrator: deps.buildPathOrchestrator }),
+  );
   router.post('/privacy/delete', createPrivacyDeleteHandler({ cache: deps.cache, now }));
   router.get(
     '/static-data',

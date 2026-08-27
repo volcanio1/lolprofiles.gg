@@ -14,4 +14,4 @@ export {
   readStoredIndex,
   writeStoredIndex,
 } from './cache';
-export { StaticDataContextProvider, useStaticData } from './StaticDataContext';
+export { StaticDataContext, StaticDataContextProvider, useStaticData } from './StaticDataContext';

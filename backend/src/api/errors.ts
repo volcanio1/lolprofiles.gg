@@ -76,7 +76,7 @@ export const MAX_MANUAL_RETRIES = 3;
 export const RATE_LIMIT_COOLDOWN_SECONDS = 5;
 
 /** Which input field a validation failure belongs to, when it belongs to one. */
-export type ValidationField = 'riotId' | 'gameName' | 'tagLine' | 'platform' | 'puuid' | 'region';
+export type ValidationField = 'riotId' | 'gameName' | 'tagLine' | 'platform' | 'puuid' | 'region' | 'matchId';
 
 /**
  * lookup-pipeline-fixes Requirement 5.2. Distinct from `playerNotFoundError`:

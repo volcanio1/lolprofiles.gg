@@ -173,6 +173,10 @@ export interface MatchParticipant {
   damageToChampions: number;
   goldEarned: number;
   win: boolean;
+  /** Objective last-hits, for the match-performance rating. */
+  turretKills: number;
+  dragonKills: number;
+  baronKills: number;
   /** Requirement 3.4/3.6. 'N/A' exactly when the team's total kills is 0. */
   killParticipationPercent: number | 'N/A';
   /**

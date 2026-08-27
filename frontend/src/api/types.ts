@@ -110,6 +110,10 @@ export interface MatchParticipant {
   damageToChampions: number;
   goldEarned: number;
   win: boolean;
+  /** Objective last-hits, for the match-performance rating. */
+  turretKills: number;
+  dragonKills: number;
+  baronKills: number;
   /** Requirement 3.4/3.6. 'N/A' exactly when the team's total kills is 0. */
   killParticipationPercent: number | 'N/A';
   /**
@@ -143,6 +147,32 @@ export interface RecentMatchSummary {
   /** `match-detail-tabs` Requirement 1.6/6.4. */
   queueType: string;
 }
+
+/**
+ * `item-timeline`: one item acquisition on the analyzed player's build path.
+ * `timestamp` is milliseconds from match start, rendered as `M:SS`.
+ */
+export interface BuildPathEntry {
+  itemId: number;
+  /** Milliseconds from match start when the item was bought. */
+  timestamp: number;
+  /** Milliseconds from match start when it was later sold. Present only if sold. */
+  soldAt?: number;
+}
+
+/**
+ * `item-timeline`: the body of `GET /api/match/:matchId/build-path`. `200` for
+ * both variants — a match with no timeline is a normal outcome, not an error.
+ */
+export type BuildPathResponse =
+  | {
+      kind: 'build_path';
+      buildPath: readonly BuildPathEntry[];
+      /** Ability leveled at each level-up, in order: 1=Q, 2=W, 3=E, 4=R. */
+      skillOrder: readonly number[];
+      reconciled: boolean;
+    }
+  | { kind: 'unavailable'; reason: 'no_timeline' | 'participant_absent' };
 
 /** Requirement 7.4's four categories. */
 export interface FunFact {
@@ -183,7 +213,12 @@ export interface ProfileReport {
   recommendations: Recommendation[];
   /** Requirement 7.3. */
   averageMatchDurationMinutes: number;
-  /** Newest-first; each carries the lane opponent's stats when known. */
+  /**
+   * Newest-first, up to the backend's transport limit (wider than the page the
+   * UI shows at once — the "Load more" button walks through the rest). Merges
+   * laned and laneless (ARAM / ARAM Mayhem) matches. Each carries the lane
+   * opponent's stats when known.
+   */
   recentMatches: RecentMatchSummary[];
   /** Requirements 11.4/11.5: `null` means "being retrieved for the first time". */
   lastUpdated: string | null;

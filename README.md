@@ -27,7 +27,7 @@ The interesting constraint here isn't the stats. It's that Riot's rate limits ar
 
 ## Architecture
 
-Two workspaces: a React SPA and a Node/Express API. **The frontend never talks to Riot and never sees the API key** — it only calls this project's own `/api/lookup`.
+Two workspaces: a React SPA and a Node/Express API. **The frontend never talks to Riot and never sees the API key** — it only calls this project's own `/api/*` endpoints.
 
 ```
 Browser (React SPA)
@@ -191,6 +191,41 @@ Errors are wrapped in an `{ "error": { ... } }` envelope, so presence of `error`
 
 Validation happens before the orchestrator is invoked, so a malformed Riot ID **never** costs a Riot API call.
 
+### `GET /api/match/:matchId/build-path`
+
+```
+GET /api/match/EUW1_7231636281/build-path?gameName=Faker&tagLine=KR1
+```
+
+Reconstructs one player's **build path** for one match — the ordered sequence of item purchases, with the game time each happened at — from Match-V5's timeline endpoint. `gameName`/`tagLine` are validated through the same Riot ID Validator the lookup route uses; the region is derived from the match id's platform prefix, so no Region Resolver call is made.
+
+`200` for both outcomes — a match with no timeline is normal, not an error:
+
+```jsonc
+// build path found
+{ "kind": "build_path",
+  "buildPath": [
+    { "itemId": 1055, "timestamp": 11000 },
+    { "itemId": 1036, "timestamp": 65000, "soldAt": 540000 },
+    { "itemId": 3078, "timestamp": 480000 }
+  ],
+  "skillOrder": [1, 2, 1, 3, 1, 4],   // ability leveled at each level-up: 1=Q 2=W 3=E 4=R
+  "reconciled": true }
+
+// no timeline for this match, or the player isn't in it
+{ "kind": "unavailable", "reason": "no_timeline" }   // or "participant_absent"
+```
+
+`timestamp` is when the item was bought (ms from match start); `soldAt` (present only if the item was sold) is when it was sold. The frontend merges buys and sales into one timeline — a sold item shows a buy node at its buy time and a separate "sold" marker at the sell time. `skillOrder` is the ability chart, from the timeline's `SKILL_LEVEL_UP` events. The frontend draws the path as a wrapping left-to-right flow chart (trinket appended) with a skill-order grid above it.
+
+`reconciled` is `false` only when the replay genuinely can't be squared with the match's reported final build (a reconstruction bug) — the path is still returned, with a caveat in the UI, and the diff logged server-side. Boots, trinkets and Seeker's Armguard are excluded from the check, because the game transforms them in place with no purchase event the timeline records; see `specs/item-timeline/design.md`. Reconciliation reads the match detail from cache and fetches it once on a miss.
+
+**Scope is one-sided by design.** A build path is retrieved and shown **for the analyzed player only**. The lane opponent continues to show the final-inventory build already in the match row — no timeline data is extracted for them. This is a product decision, not a technical limit; the extraction is written per-participant so adding the opponent later is a parameter change.
+
+**Retention.** The 0.3–1 MB (and up) raw timeline is **never cached** — there is no cache entry type for it. It is parsed, reduced to a ~2 KB `timelineSlice` (that one player's build path + the reconciled flag, keyed `{ matchId, puuid }`), and discarded. The slice is retained **indefinitely**, by the same immutability argument as match details. The number of timelines being parsed at once is bounded (default 4) so a burst of requests can't run dozens of multi-megabyte `JSON.parse` calls concurrently — the rate limiter doesn't govern that, since the granted limit is 2,000 calls / 10s.
+
+The frontend fetches this **only when the Build Path tab of an expanded match is selected** — never during report assembly, never on row expansion.
+
 ### `POST /api/privacy/delete`
 
 Takes a `puuid`, evicts its cached data and scrubs its participant rows from retained match details. Returns `{ found, deletedAt }`. A PUUID with nothing cached returns `found: false` with a 200 — not an error. See [Known gaps](#known-gaps) before exposing this publicly.
@@ -210,7 +245,7 @@ Returns the pinned `DDRAGON_VERSION`. No Riot API call, no cache entry, and no r
 
 ## Assets
 
-Champion icons, the profile icon, item build images, summoner spell icons, and rune/rune-tree/stat-shard icons all come straight from Data Dragon, keyed to the version this deployment has pinned in `DDRAGON_VERSION`:
+Champion icons, the profile icon, item build images (final builds and build-path timelines alike), summoner spell icons, and rune/rune-tree/stat-shard icons all come straight from Data Dragon, keyed to the version this deployment has pinned in `DDRAGON_VERSION`:
 
 - The frontend calls `GET /api/static-data` once for the pinned version, then fetches `champion.json`, `item.json`, `summoner.json`, and `runesReforged.json` **directly from Data Dragon** and holds them in `localStorage` for 24 hours.
 - Every image tag points straight at `https://ddragon.leagueoflegends.com/...` — **assets are hot-linked, never proxied or rehosted** through this backend. Data Dragon calls never touch the Rate Limit Manager, since it doesn't govern Riot's CDN.
@@ -251,6 +286,7 @@ A resolved platform is cached for 24 hours (the `accountRegion` cache endpoint) 
 | League-V4 | 10 minutes | Rank changes per game |
 | Match-V5 match IDs | 10 minutes | New matches appear |
 | Match-V5 match detail | Indefinite | A completed match is immutable |
+| Match-V5 timeline slice | Indefinite | One player's reconstructed build path (~2 KB); the match is immutable. Safe only because it's kilobytes — the raw 0.3–1 MB timeline it's derived from has **no** cache entry type and is discarded after parsing |
 
 Cache keys are length-prefixed per segment so concatenation is injective — `{"a:b": "c"}` and `{"a": "b:c"}` can't collide.
 
@@ -261,7 +297,7 @@ npm run test:backend
 npm run test:frontend
 ```
 
-32 backend test files, 18 frontend. Beyond conventional unit and integration tests (including supertest-driven route tests and an end-to-end pass over fakes), the backend carries **24 property-based invariants** in 11 `*.property.test.ts` files, each running 100–400 cases via fast-check — covering region-mapping closure, the win-rate and KDA formulas, top-champion ordering, tie-breaking, 429 retry bounds, cache key injectivity, TTL staleness, deletion idempotence, the guarantee that the API key never appears in client-facing output, and (added by `match-detail-tabs`) kill-participation bounds, participant-capture fidelity down to matches with fewer than ten players, PUUID absence, and the Enemy_Laner marker's correctness under a mirror pick. Each property test also asserts it actually exercised every branch it claims to, so degenerate coverage fails loudly.
+36 backend test files, 28 frontend. Beyond conventional unit and integration tests (including supertest-driven route tests and an end-to-end pass over fakes), the backend carries **24 property-based invariants** in 11 `*.property.test.ts` files, each running 100–400 cases via fast-check — covering region-mapping closure, the win-rate and KDA formulas, top-champion ordering, tie-breaking, 429 retry bounds, cache key injectivity, TTL staleness, deletion idempotence, the guarantee that the API key never appears in client-facing output, and (added by `match-detail-tabs`) kill-participation bounds, participant-capture fidelity down to matches with fewer than ten players, PUUID absence, and the Enemy_Laner marker's correctness under a mirror pick. Each property test also asserts it actually exercised every branch it claims to, so degenerate coverage fails loudly.
 
 No test touches the live Riot API, real credentials, real network, or real timers.
 

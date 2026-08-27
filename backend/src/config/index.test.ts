@@ -60,4 +60,22 @@ describe('loadConfig', () => {
       ).toThrow(/latest/i);
     }
   });
+
+  it('leaves matchHistoryCount undefined when MATCH_HISTORY_COUNT is unset', () => {
+    const cfg = loadConfig({ RIOT_API_KEY: 'some-key', DDRAGON_VERSION: '16.17.1' });
+    expect(cfg.matchHistoryCount).toBeUndefined();
+  });
+
+  it('reads MATCH_HISTORY_COUNT as a positive integer', () => {
+    const cfg = loadConfig({ RIOT_API_KEY: 'some-key', DDRAGON_VERSION: '16.17.1', MATCH_HISTORY_COUNT: '30' });
+    expect(cfg.matchHistoryCount).toBe(30);
+  });
+
+  it('rejects a non-positive or non-numeric MATCH_HISTORY_COUNT', () => {
+    for (const bad of ['0', '-5', 'lots']) {
+      expect(() =>
+        loadConfig({ RIOT_API_KEY: 'some-key', DDRAGON_VERSION: '16.17.1', MATCH_HISTORY_COUNT: bad }),
+      ).toThrow(/MATCH_HISTORY_COUNT/);
+    }
+  });
 });
