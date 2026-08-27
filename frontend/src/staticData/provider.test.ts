@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStaticDataIndex,
   classifyCompletedItem,
+  communityDragonVersionOf,
   createStaticDataProvider,
   type StaticDataIndex,
 } from './provider';
@@ -33,8 +34,42 @@ const ITEM_JSON = {
   },
 };
 
+const SUMMONER_JSON = {
+  data: {
+    SummonerFlash: { key: '4', name: 'Flash', image: { full: 'SummonerFlash.png' } },
+    SummonerBarrier: { key: '21', name: 'Barrier', image: { full: 'SummonerBarrier.png' } },
+  },
+};
+
+const RUNES_JSON = [
+  {
+    id: 8100,
+    name: 'Domination',
+    icon: 'perk-images/Styles/7200_Domination.png',
+    slots: [
+      {
+        runes: [
+          { id: 8112, name: 'Electrocute', icon: 'perk-images/Styles/Domination/Electrocute/Electrocute.png' },
+        ],
+      },
+      { runes: [{ id: 8143, name: 'Sudden Impact', icon: 'perk-images/Styles/Domination/SuddenImpact/SuddenImpact.png' }] },
+    ],
+  },
+  {
+    id: 8000,
+    name: 'Precision',
+    icon: 'perk-images/Styles/7201_Precision.png',
+    slots: [{ runes: [{ id: 8005, name: 'Press the Attack', icon: 'perk-images/Styles/Precision/PressTheAttack/PressTheAttack.png' }] }],
+  },
+];
+
+const CHERRY_AUGMENTS_JSON = [
+  { id: 1205, nameTRA: 'ADAPt', augmentSmallIconPath: '/lol-game-data/assets/ASSETS/UX/Cherry/Augments/Icons/ADAPt_small.png' },
+  { id: 1141, nameTRA: 'All For You', augmentSmallIconPath: '/lol-game-data/assets/ASSETS/UX/Cherry/Augments/Icons/AllForYou_small.png' },
+];
+
 const VERSION = '16.17.1';
-const index: StaticDataIndex = buildStaticDataIndex(VERSION, CHAMPION_JSON, ITEM_JSON);
+const index: StaticDataIndex = buildStaticDataIndex(VERSION, CHAMPION_JSON, ITEM_JSON, SUMMONER_JSON, RUNES_JSON, CHERRY_AUGMENTS_JSON);
 const ready = createStaticDataProvider(VERSION, index);
 const versionOnly = createStaticDataProvider(VERSION, null);
 const empty = createStaticDataProvider(null, null);
@@ -261,6 +296,10 @@ describe('StaticDataProvider — totality (Requirements 5.3, 5.4)', () => {
       version: VERSION,
       champions: { Evil: { name: 'Evil', image: '../../evil.png' } },
       items: {},
+      spells: {},
+      runes: {},
+      runeTrees: {},
+      augments: {},
     });
     expect(traversal.championIconUrl('Evil')).not.toContain('../');
   });
@@ -288,6 +327,10 @@ describe('StaticDataProvider — regressions found in review', () => {
       version: VERSION,
       champions: { Broken: { name: 42, image: null } as never },
       items: { '1': { name: null } as never },
+      spells: {},
+      runes: {},
+      runeTrees: {},
+      augments: {},
     });
     expect(() => malformed.championIconUrl('Broken')).not.toThrow();
     expect(malformed.championIconUrl('Broken')).toBeNull();
@@ -347,5 +390,194 @@ describe('StaticDataProvider — regressions found in review', () => {
 
   it('counts an item with an empty into array as completed', () => {
     expect(classifyCompletedItem({ gold: { total: 450 }, tags: ['Damage'], into: [] })).toBe(true);
+  });
+});
+
+/**
+ * Task 1.4/1.5, Property 4: the four new asset URL families are total.
+ *
+ * Unlike Property 2 (`championIconUrl`, `itemIconUrl`), which asserts the URL
+ * contains the pinned version, three of these four families are false by
+ * construction (Requirement 7.4 — rune, tree and stat shard images are
+ * unversioned). Only the totality half carries over: for every input including
+ * `0`, negatives, non-integers, ids absent from the metadata, and
+ * prototype-chain keys, each accessor returns a URL or `null` — never a throw,
+ * never a URL containing the literal `undefined`.
+ *
+ * This codebase has no `fast-check` dependency in the frontend workspace (only
+ * the backend does); the exhaustive `HOSTILE_IDS`/`PROTOTYPE_KEYS` sweep above is
+ * this workspace's existing equivalent, so the property is exercised the same
+ * way `championIconUrl`'s prototype-chain regression test already is.
+ */
+describe('StaticDataProvider — summoner spell, rune, rune tree, stat shard resolution', () => {
+  it('resolves a summoner spell from its numeric id against the pinned (versioned) path', () => {
+    expect(ready.summonerSpellIconUrl(4)).toBe(
+      `https://ddragon.leagueoflegends.com/cdn/${VERSION}/img/spell/SummonerFlash.png`,
+    );
+    expect(ready.summonerSpellDisplayName(4)).toBe('Flash');
+  });
+
+  it('resolves a rune and its tree from unversioned paths', () => {
+    expect(ready.runeIconUrl(8112)).toBe(
+      'https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/Domination/Electrocute/Electrocute.png',
+    );
+    expect(ready.runeDisplayName(8112)).toBe('Electrocute');
+    expect(ready.runeTreeIconUrl(8100)).toBe(
+      'https://ddragon.leagueoflegends.com/cdn/img/perk-images/Styles/7200_Domination.png',
+    );
+    expect(ready.runeTreeDisplayName(8100)).toBe('Domination');
+  });
+
+  it('flattens runes across every tree and every slot, not only the first of each', () => {
+    expect(ready.runeDisplayName(8143)).toBe('Sudden Impact'); // Domination, second slot
+    expect(ready.runeDisplayName(8005)).toBe('Press the Attack'); // Precision, first slot
+    expect(ready.runeTreeDisplayName(8000)).toBe('Precision');
+  });
+
+  it('resolves a stat shard from the hardcoded table, unversioned, regardless of index readiness', () => {
+    expect(ready.statShardIconUrl(5001)).toBe(
+      'https://ddragon.leagueoflegends.com/cdn/img/perk-images/StatMods/StatModsHealthScalingIcon.png',
+    );
+    expect(ready.statShardDisplayName(5001)).toBe('Health Scaling');
+    // Not gated on the fetched index — Data_Dragon publishes no stat shard metadata at all.
+    expect(empty.statShardIconUrl(5001)).toBe(
+      'https://ddragon.leagueoflegends.com/cdn/img/perk-images/StatMods/StatModsHealthScalingIcon.png',
+    );
+    expect(empty.statShardDisplayName(5001)).toBe('Health Scaling');
+  });
+
+  it('treats id 0 as unresolvable for a stat shard, unlike an item slot', () => {
+    // 0 is a real, verified profile icon and an empty item slot elsewhere in this
+    // module; it is neither for a stat shard — no id observed in real match data
+    // (task 1.2) is 0, and the table simply has no entry for it.
+    expect(ready.statShardIconUrl(0)).toBeNull();
+    expect(ready.statShardDisplayName(0)).toBe('0');
+  });
+
+  it('falls back to the numeric identifier as the display name when unresolvable', () => {
+    expect(ready.summonerSpellDisplayName(99_999)).toBe('99999');
+    expect(ready.runeDisplayName(99_999)).toBe('99999');
+    expect(ready.runeTreeDisplayName(99_999)).toBe('99999');
+    expect(ready.statShardDisplayName(99_999)).toBe('99999');
+  });
+
+  it('is total for every hostile numeric id, on all eight accessors, before and after the index loads', () => {
+    const providers = [ready, versionOnly, empty];
+    for (const provider of providers) {
+      for (const id of HOSTILE_IDS) {
+        expect(() => provider.summonerSpellIconUrl(id)).not.toThrow();
+        expect(() => provider.summonerSpellDisplayName(id)).not.toThrow();
+        expect(() => provider.runeIconUrl(id)).not.toThrow();
+        expect(() => provider.runeDisplayName(id)).not.toThrow();
+        expect(() => provider.runeTreeIconUrl(id)).not.toThrow();
+        expect(() => provider.runeTreeDisplayName(id)).not.toThrow();
+        expect(() => provider.statShardIconUrl(id)).not.toThrow();
+        expect(() => provider.statShardDisplayName(id)).not.toThrow();
+
+        expect(provider.summonerSpellDisplayName(id).length).toBeGreaterThan(0);
+        expect(provider.runeDisplayName(id).length).toBeGreaterThan(0);
+        expect(provider.runeTreeDisplayName(id).length).toBeGreaterThan(0);
+        expect(provider.statShardDisplayName(id).length).toBeGreaterThan(0);
+
+        for (const url of [
+          provider.summonerSpellIconUrl(id),
+          provider.runeIconUrl(id),
+          provider.runeTreeIconUrl(id),
+          provider.statShardIconUrl(id),
+        ]) {
+          if (url !== null) {
+            expect(url).not.toContain('undefined');
+            expect(url).not.toContain('null');
+          }
+        }
+      }
+    }
+  });
+
+  it('never resolves a prototype-chain key as if it were a spell, rune, tree, or stat shard', () => {
+    for (const key of PROTOTYPE_KEYS) {
+      const asNumber = Number(key); // NaN for every one of these — exercises the isUsableId(NaN) path
+      expect(ready.summonerSpellIconUrl(asNumber)).toBeNull();
+      expect(ready.runeIconUrl(asNumber)).toBeNull();
+      expect(ready.runeTreeIconUrl(asNumber)).toBeNull();
+      expect(ready.statShardIconUrl(asNumber)).toBeNull();
+    }
+  });
+
+  it('survives an index whose spell/rune maps are missing or malformed entirely', () => {
+    const shapeless = createStaticDataProvider(VERSION, {
+      version: VERSION,
+      champions: {},
+      items: {},
+    } as never);
+    expect(() => shapeless.summonerSpellIconUrl(4)).not.toThrow();
+    expect(shapeless.summonerSpellIconUrl(4)).toBeNull();
+    expect(shapeless.summonerSpellDisplayName(4)).toBe('4');
+    expect(shapeless.runeIconUrl(8112)).toBeNull();
+    expect(shapeless.runeTreeIconUrl(8100)).toBeNull();
+    // Stat shards are unaffected — they never read the index.
+    expect(shapeless.statShardIconUrl(5001)).not.toBeNull();
+  });
+});
+
+/**
+ * `match-detail-tabs` task 9.4 — Requirements 12.1, 12.5, 12.6, 12.7.
+ *
+ * Augments are the one asset class resolved from Community_Dragon rather than
+ * Data_Dragon, at a version DERIVED from `DDRAGON_VERSION` (not a second
+ * configuration value) — see `communityDragonVersionOf`.
+ */
+describe('StaticDataProvider — augment resolution (Community_Dragon)', () => {
+  it('resolves an augment name and icon URL, pinned to the derived Community_Dragon version', () => {
+    expect(ready.augmentDisplayName(1205)).toBe('ADAPt');
+    expect(ready.augmentIconUrl(1205)).toBe(
+      'https://raw.communitydragon.org/16.17/plugins/rcp-be-lol-game-data/global/default/assets/ux/cherry/augments/icons/adapt_small.png',
+    );
+  });
+
+  it('derives the Community_Dragon version from DDRAGON_VERSION, never "latest"', () => {
+    expect(communityDragonVersionOf('16.17.1')).toBe('16.17');
+    expect(communityDragonVersionOf('16.17')).toBe('16.17');
+    // Malformed input never throws and never falls back to "latest".
+    expect(() => communityDragonVersionOf('')).not.toThrow();
+    expect(communityDragonVersionOf('')).not.toContain('latest');
+  });
+
+  it('falls back to the numeric identifier as the display name when unresolvable', () => {
+    expect(ready.augmentDisplayName(99_999)).toBe('99999');
+    expect(ready.augmentIconUrl(99_999)).toBeNull();
+  });
+
+  it('is total for every hostile numeric id, before and after the index loads', () => {
+    for (const provider of [ready, versionOnly, empty]) {
+      for (const id of HOSTILE_IDS) {
+        expect(() => provider.augmentIconUrl(id)).not.toThrow();
+        expect(() => provider.augmentDisplayName(id)).not.toThrow();
+        expect(provider.augmentDisplayName(id).length).toBeGreaterThan(0);
+        const url = provider.augmentIconUrl(id);
+        if (url !== null) {
+          expect(url).not.toContain('undefined');
+          expect(url).not.toContain('null');
+        }
+      }
+    }
+  });
+
+  it('never resolves a prototype-chain key as if it were an augment', () => {
+    for (const key of PROTOTYPE_KEYS) {
+      const asNumber = Number(key);
+      expect(ready.augmentIconUrl(asNumber)).toBeNull();
+    }
+  });
+
+  it('survives an index whose augments map is missing entirely', () => {
+    const shapeless = createStaticDataProvider(VERSION, {
+      version: VERSION,
+      champions: {},
+      items: {},
+    } as never);
+    expect(() => shapeless.augmentIconUrl(1205)).not.toThrow();
+    expect(shapeless.augmentIconUrl(1205)).toBeNull();
+    expect(shapeless.augmentDisplayName(1205)).toBe('1205');
   });
 });

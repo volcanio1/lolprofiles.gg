@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import express, { type Express } from 'express';
 import { createInMemoryCacheStore } from '../cache';
-import { DEFAULT_REGION, SUPPORTED_REGIONS } from '../region';
 import type { LookupInput, LookupOrchestrator, LookupResult, ProfileReport } from '../orchestrator';
 import { createApiRouter, type ApiLogger } from './index';
 import { parseLookupRequest } from './lookup';
@@ -61,6 +60,8 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     puuid: 'puuid-1',
     summonerLevel: 412,
     profileIconId: 29,
+    resolvedPlatform: 'na1',
+    usedPlatformOverride: false,
     stats: {
       rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60 } },
       overallAverageKda: 3.5,
@@ -135,84 +136,66 @@ describe('POST /api/lookup — success', () => {
   });
 });
 
-describe('POST /api/lookup — region handling', () => {
-  it('defaults to americas when no region is selected (Requirement 1.6)', async () => {
+describe('POST /api/lookup — platformOverride handling (lookup-pipeline-fixes)', () => {
+  it('passes no platformOverride when none is supplied', async () => {
     const harness = makeHarness(successResult());
 
     await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile' });
 
-    expect(harness.inputs[0].region).toBe(DEFAULT_REGION);
-    expect(DEFAULT_REGION).toBe('americas');
+    expect(harness.inputs[0].platformOverride).toBeUndefined();
   });
 
-  it('treats a blank region as not selected', async () => {
+  it('passes a recognized platformOverride through verbatim (Requirement 2.4)', async () => {
     const harness = makeHarness(successResult());
 
-    await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', region: '   ' });
+    await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', platformOverride: 'euw1' });
 
-    expect(harness.inputs[0].region).toBe(DEFAULT_REGION);
+    expect(harness.inputs[0].platformOverride).toBe('euw1');
   });
 
-  it('honors every supported region', async () => {
-    for (const region of SUPPORTED_REGIONS) {
-      const harness = makeHarness(successResult());
-      await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', region });
-      expect(harness.inputs[0].region).toBe(region);
-    }
+  it('treats a blank platformOverride as absent', async () => {
+    const harness = makeHarness(successResult());
+
+    await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', platformOverride: '   ' });
+
+    expect(harness.inputs[0].platformOverride).toBeUndefined();
   });
 
-  it('rejects an unsupported region without calling the orchestrator (Requirement 5.5)', async () => {
+  it('treats an unrecognized platformOverride as absent rather than rejecting the request (decision 2)', async () => {
     const harness = makeHarness(successResult());
 
     const response = await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: 'Doffy#Smile', region: 'atlantis' });
+      .send({ riotId: 'Doffy#Smile', platformOverride: 'mars1' });
+
+    expect(response.status).toBe(200);
+    expect(harness.inputs[0].platformOverride).toBeUndefined();
+  });
+
+  it('rejects a request carrying a region field, without calling the orchestrator (Requirement 2.1)', async () => {
+    const harness = makeHarness(successResult());
+
+    const response = await request(harness.app)
+      .post('/api/lookup')
+      .send({ riotId: 'Doffy#Smile', region: 'europe' });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('UNSUPPORTED_REGION');
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(response.body.error.field).toBe('region');
     expect(harness.calls()).toBe(0);
   });
 
-  it('rejects a region whose case does not match, rather than guessing', async () => {
+  it('rejects a request carrying a platform field, without calling the orchestrator (Requirement 2.1)', async () => {
     const harness = makeHarness(successResult());
 
     const response = await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: 'Doffy#Smile', region: 'AMERICAS' });
+      .send({ riotId: 'Doffy#Smile', platform: 'euw1' });
 
     expect(response.status).toBe(400);
-    expect(harness.calls()).toBe(0);
-  });
-
-  it('forwards a platform that exists in the mapping, leaving 5.4 substitution to the orchestrator', async () => {
-    const harness = makeHarness(successResult());
-
-    // `kr` is a real platform but belongs to `asia`, not `americas`. Requirement
-    // 5.4 says substitute, which is the orchestrator's job — not reject.
-    await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', region: 'americas', platform: 'kr' });
-
-    expect(harness.inputs[0].platform).toBe('kr');
-  });
-
-  it('rejects a platform that appears nowhere in the mapping (Requirement 5.5)', async () => {
-    const harness = makeHarness(successResult());
-
-    const response = await request(harness.app)
-      .post('/api/lookup')
-      .send({ riotId: 'Doffy#Smile', platform: 'mars1' });
-
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('UNSUPPORTED_REGION');
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
     expect(response.body.error.field).toBe('platform');
     expect(harness.calls()).toBe(0);
-  });
-
-  it('treats a blank platform as no preference', async () => {
-    const harness = makeHarness(successResult());
-
-    await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile', platform: '' });
-
-    expect(harness.inputs[0].platform).toBeUndefined();
   });
 });
 
@@ -307,7 +290,6 @@ describe('POST /api/lookup — LookupResult to HTTP mapping', () => {
     { code: 'AUTH_FAILURE', retriable: false, status: 503 },
     { code: 'NETWORK_ERROR', retriable: true, status: 502 },
     { code: 'MATCH_HISTORY_UNAVAILABLE', retriable: true, status: 503 },
-    { code: 'UNSUPPORTED_REGION', retriable: false, status: 400 },
   ];
 
   for (const { code, retriable, status } of errorCases) {
@@ -322,40 +304,27 @@ describe('POST /api/lookup — LookupResult to HTTP mapping', () => {
     });
   }
 
-  it('maps PLAYER_NOT_ON_PLATFORM to 404 naming the region actually searched (Requirement 9.10)', async () => {
-    const harness = makeHarness({ kind: 'error', code: 'PLAYER_NOT_ON_PLATFORM', retriable: false });
-
-    const response = await request(harness.app)
-      .post('/api/lookup')
-      .send({ riotId: 'Doffy#Smile', region: 'americas' });
-
-    expect(response.status).toBe(404);
-    expect(response.body.error.code).toBe('PLAYER_NOT_ON_PLATFORM');
-    expect(response.body.error.region).toBe('americas');
-    // Requirement 5.4's fallback platform for americas, which is what was searched.
-    expect(response.body.error.platform).toBe('na1');
-    expect(response.body.error.message).toContain('Doffy#Smile');
-    expect(response.body.error.message).toContain('NA1');
-    expect(response.body.error.field).toBe('region');
-  });
-
-  it('reports the explicitly chosen platform when the visitor picked one', async () => {
-    const harness = makeHarness({ kind: 'error', code: 'PLAYER_NOT_ON_PLATFORM', retriable: false });
-
-    const response = await request(harness.app)
-      .post('/api/lookup')
-      .send({ riotId: 'Doffy#Smile', region: 'europe', platform: 'eun1' });
-
-    expect(response.body.error.platform).toBe('eun1');
-    expect(response.body.error.region).toBe('europe');
-  });
-
-  it('does not tell the visitor Riot is unavailable when they simply picked the wrong region', async () => {
-    const harness = makeHarness({ kind: 'error', code: 'PLAYER_NOT_ON_PLATFORM', retriable: false });
+  it('maps NO_LOL_ACCOUNT to 404 identifying the submitted Riot ID (Requirement 5.2)', async () => {
+    const harness = makeHarness({ kind: 'error', code: 'NO_LOL_ACCOUNT', retriable: false });
 
     const response = await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile' });
 
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('NO_LOL_ACCOUNT');
+    expect(response.body.error.message).toContain('Doffy#Smile');
+    expect(response.body.error.retriable).toBe(false);
     expect(response.body.error.message).not.toMatch(/unavailable|temporarily/i);
+  });
+
+  it('maps UNSUPPORTED_PLATFORM to 404 naming the platform Riot reported (Requirement 5.3)', async () => {
+    const harness = makeHarness({ kind: 'error', code: 'UNSUPPORTED_PLATFORM', retriable: false, platform: 'vn2' });
+
+    const response = await request(harness.app).post('/api/lookup').send({ riotId: 'Doffy#Smile' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('UNSUPPORTED_PLATFORM');
+    expect(response.body.error.platform).toBe('vn2');
+    expect(response.body.error.message).toContain('vn2');
     expect(response.body.error.retriable).toBe(false);
   });
 
@@ -398,16 +367,25 @@ describe('POST /api/lookup — defect handling', () => {
 });
 
 describe('parseLookupRequest — pure validation', () => {
-  it('accepts a well-formed request and reports the resolved region', () => {
-    const parsed = parseLookupRequest({ riotId: 'Doffy#Smile', region: 'europe', platform: 'euw1' });
+  it('accepts a well-formed request and passes through a recognized platformOverride', () => {
+    const parsed = parseLookupRequest({ riotId: 'Doffy#Smile', platformOverride: 'euw1' });
 
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) {
       return;
     }
     expect(parsed.riotId).toEqual({ gameName: 'Doffy', tagLine: 'Smile' });
-    expect(parsed.region).toBe('europe');
-    expect(parsed.platform).toBe('euw1');
+    expect(parsed.platformOverride).toBe('euw1');
+  });
+
+  it('drops an unrecognized platformOverride rather than rejecting the request', () => {
+    const parsed = parseLookupRequest({ riotId: 'Doffy#Smile', platformOverride: 'mars1' });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    expect(parsed.platformOverride).toBeUndefined();
   });
 
   it('does not throw for hostile body shapes', () => {
@@ -424,9 +402,7 @@ function makeErrorResult(
     | 'RATE_LIMITED'
     | 'AUTH_FAILURE'
     | 'NETWORK_ERROR'
-    | 'MATCH_HISTORY_UNAVAILABLE'
-    | 'UNSUPPORTED_REGION'
-    | 'PLAYER_NOT_ON_PLATFORM',
+    | 'MATCH_HISTORY_UNAVAILABLE',
   retriable: boolean,
 ): LookupResult {
   return { kind: 'error', code, retriable };

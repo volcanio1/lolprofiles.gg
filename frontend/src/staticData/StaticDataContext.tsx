@@ -45,8 +45,10 @@ import {
 import { apiBaseUrl } from '../config';
 import { readStoredIndex, writeStoredIndex } from './cache';
 import {
+  COMMUNITY_DRAGON_BASE,
   DDRAGON_BASE,
   buildStaticDataIndex,
+  communityDragonVersionOf,
   createStaticDataProvider,
   type StaticDataIndex,
   type StaticDataProvider,
@@ -87,17 +89,24 @@ async function loadStaticData(
     return { version, index: stored };
   }
 
-  // Decision 2: straight to the CDN, in parallel — the two files are independent.
+  // Decision 2: straight to the CDN, in parallel — the five files are independent.
   // Encoded for the same reason `provider.ts` encodes it into image URLs: the
   // value is our own backend's, but hardening it in one place and not the other is
   // how the unhardened path survives a later change to where it comes from.
   const cdn = `${DDRAGON_BASE}/cdn/${encodeURIComponent(version)}/data/en_US`;
-  const [championJson, itemJson] = await Promise.all([
+  // `match-detail-tabs` Requirement 12.5: Community_Dragon, a SEPARATE CDN from
+  // Data_Dragon, pinned to a derived {major}.{minor} — never Community_Dragon's
+  // own "latest" alias.
+  const cherryAugmentsUrl = `${COMMUNITY_DRAGON_BASE}/${encodeURIComponent(communityDragonVersionOf(version))}/plugins/rcp-be-lol-game-data/global/default/v1/cherry-augments.json`;
+  const [championJson, itemJson, summonerJson, runesJson, cherryAugmentsJson] = await Promise.all([
     fetchJson(`${cdn}/champion.json`, signal),
     fetchJson(`${cdn}/item.json`, signal),
+    fetchJson(`${cdn}/summoner.json`, signal),
+    fetchJson(`${cdn}/runesReforged.json`, signal),
+    fetchJson(cherryAugmentsUrl, signal),
   ]);
 
-  const index = buildStaticDataIndex(version, championJson, itemJson);
+  const index = buildStaticDataIndex(version, championJson, itemJson, summonerJson, runesJson, cherryAugmentsJson);
   writeStoredIndex(index, now());
   return { version, index };
 }

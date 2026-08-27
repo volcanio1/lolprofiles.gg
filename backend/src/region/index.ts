@@ -101,3 +101,52 @@ export function resolvePlatform(
   }
   return platforms[0];
 }
+
+/**
+ * lookup-pipeline-fixes: the reverse of `REGION_TO_PLATFORMS`.
+ *
+ * Built by inverting `REGION_TO_PLATFORMS` at module load, rather than declared
+ * as a second literal (Requirement 3.2) — a hand-written second mapping is
+ * exactly the kind of thing that drifts the next time a platform is added to
+ * one list and not the other. This inversion is a function (not a relation)
+ * only because `REGION_TO_PLATFORMS`'s platform lists are pairwise disjoint,
+ * which `region/index.property.test.ts`'s existing property already asserts;
+ * if that disjointness is ever weakened, this derivation silently stops being
+ * total, since a platform in two regions would have the second write win.
+ */
+export const PLATFORM_TO_REGION: Readonly<Record<PlatformRoutingValue, RegionalRoutingValue>> = (() => {
+  const map = {} as Record<PlatformRoutingValue, RegionalRoutingValue>;
+  for (const region of SUPPORTED_REGIONS) {
+    for (const platform of REGION_TO_PLATFORMS[region]) {
+      map[platform] = region;
+    }
+  }
+  return map;
+})();
+
+/** Requirement 3.1: the Regional_Routing_Value a Resolved_Platform belongs to. */
+export function regionForPlatform(platform: PlatformRoutingValue): RegionalRoutingValue {
+  return PLATFORM_TO_REGION[platform];
+}
+
+/**
+ * Requirement 3.1/3.2. Named distinctly from `isValidPlatform` at the call
+ * sites this feature introduces (the Region Resolver), but it is the exact
+ * same total check — Requirement 3.2 forbids a second, independently-editable
+ * notion of "is this platform supported," and `isValidPlatform` already is
+ * that notion.
+ */
+export const isSupportedPlatform = isValidPlatform;
+
+/**
+ * Requirement 3.4: lowercases and trims. Account-V1's region-by-game-by-puuid
+ * endpoint was confirmed live (task 1.1, `Doffy#Smile` on `europe`) to already
+ * return a lowercase platform value (`"euw1"`) matching `PlatformRoutingValue`'s
+ * casing exactly, so this normalisation is defensive rather than currently
+ * load-bearing — one observation doesn't prove Riot never returns a different
+ * casing for some other shard or account, and normalising costs nothing when
+ * the input already matches.
+ */
+export function normalisePlatform(raw: string): string {
+  return raw.trim().toLowerCase();
+}

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_REGION, REGION_TO_PLATFORMS, SUPPORTED_REGIONS } from './regions';
+import { REGION_TO_PLATFORMS, SUPPORTED_REGIONS } from './regions';
 import { MAX_GAME_NAME_LENGTH, MAX_TAG_LINE_LENGTH } from './riotId';
 
 /**
@@ -10,11 +10,15 @@ import { MAX_GAME_NAME_LENGTH, MAX_TAG_LINE_LENGTH } from './riotId';
  *
  * `domain/riotId.ts` and `domain/regions.ts` duplicate logic that
  * `backend/src/validator` and `backend/src/region` own, because Requirements
- * 1.3-1.5 need validation before the request leaves the browser and Requirement 5.3
- * needs the platform mapping to build the selector — and the two npm workspaces
- * share no code. The backend stays authoritative, so a divergence cannot admit an
- * invalid lookup, but it CAN produce a wasted round trip or a selector offering a
- * platform the backend will silently replace.
+ * 1.3-1.5 need validation before the request leaves the browser, and
+ * `domain/regions.ts`'s platform-label table (lookup-pipeline-fixes) needs the
+ * same platform set the backend's Region Resolver reverse-maps from — and the
+ * two npm workspaces share no code. The backend stays authoritative, so a
+ * divergence cannot admit an invalid lookup, but it CAN produce a wasted round
+ * trip or a report displaying a platform label this frontend build doesn't
+ * recognize. This file also guards `ErrorCode` parity, so a code removed from
+ * the backend (or added without an update here) is caught immediately rather
+ * than surfacing as a generic fallback message in production.
  *
  * This test closes that gap by reading the backend's source as TEXT and comparing
  * the values it declares against this workspace's copies. Reading source text is an
@@ -33,8 +37,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const backendSrc = resolve(here, '../../../backend/src');
 const regionPath = resolve(backendSrc, 'region/index.ts');
 const validatorPath = resolve(backendSrc, 'validator/index.ts');
+const orchestratorPath = resolve(backendSrc, 'orchestrator/index.ts');
 
-const backendAvailable = existsSync(regionPath) && existsSync(validatorPath);
+const backendAvailable = existsSync(regionPath) && existsSync(validatorPath) && existsSync(orchestratorPath);
 
 /** Extracts `REGION_TO_PLATFORMS` from the backend source as a plain map. */
 function parseBackendRegionMap(source: string): Record<string, string[]> {
@@ -63,14 +68,6 @@ function parseBackendNumber(source: string, name: string): number {
   return Number(found[1]);
 }
 
-function parseBackendString(source: string, name: string): string {
-  const found = new RegExp(`${name}[^=]*=\\s*'([^']+)'`).exec(source);
-  if (found === null) {
-    throw new Error(`Could not locate ${name} in the backend source.`);
-  }
-  return found[1];
-}
-
 describe.skipIf(!backendAvailable)('parity with the authoritative backend rules', () => {
   it('mirrors the region-to-platform mapping exactly, including order', () => {
     const backendMap = parseBackendRegionMap(readFileSync(regionPath, 'utf8'));
@@ -82,11 +79,6 @@ describe.skipIf(!backendAvailable)('parity with the authoritative backend rules'
     for (const region of SUPPORTED_REGIONS) {
       expect(backendMap[region], region).toEqual([...REGION_TO_PLATFORMS[region]]);
     }
-  });
-
-  it('mirrors the default region (Requirement 1.6)', () => {
-    const backendDefault = parseBackendString(readFileSync(regionPath, 'utf8'), 'DEFAULT_REGION');
-    expect(backendDefault).toBe(DEFAULT_REGION);
   });
 
   it('mirrors the Riot ID length limits (Requirement 1.5)', () => {
@@ -105,6 +97,33 @@ describe.skipIf(!backendAvailable)('parity with the authoritative backend rules'
     // 400 response would fall back to a generic message that names the wrong rule.
     const frontendCodes = ['EMPTY_PART', 'GAME_NAME_TOO_LONG', 'MISSING_HASH', 'MULTIPLE_HASH', 'TAG_LINE_TOO_LONG'];
     expect(backendCodes).toEqual(frontendCodes);
+  });
+
+  it('mirrors the ErrorCode set exactly (lookup-pipeline-fixes) — catches PLAYER_NOT_ON_PLATFORM/UNSUPPORTED_REGION reappearing on only one side', () => {
+    const source = readFileSync(orchestratorPath, 'utf8');
+    const declared = /export type ErrorCode\s*=([\s\S]*?);/.exec(source);
+    expect(declared).not.toBeNull();
+    const backendCodes = [...(declared?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((match) => match[1]).sort();
+
+    // Transcribed from `frontend/src/api/types.ts`'s `ErrorCode`, not imported —
+    // the two files intentionally share no code, so a divergence here is exactly
+    // the drift this test exists to catch.
+    const frontendCodes = [
+      'AUTH_FAILURE',
+      'MATCH_HISTORY_UNAVAILABLE',
+      'NETWORK_ERROR',
+      'NO_LOL_ACCOUNT',
+      'PLAYER_NOT_FOUND',
+      'RATE_LIMITED',
+      'RIOT_UNAVAILABLE',
+      'TIMEOUT',
+      'UNSUPPORTED_PLATFORM',
+      'VALIDATION_FAILED',
+    ].sort();
+
+    expect(backendCodes).toEqual(frontendCodes);
+    expect(backendCodes).not.toContain('PLAYER_NOT_ON_PLATFORM');
+    expect(backendCodes).not.toContain('UNSUPPORTED_REGION');
   });
 });
 

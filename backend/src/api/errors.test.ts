@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import type { ErrorCode } from '../orchestrator';
-import { SUPPORTED_REGIONS } from '../region';
 import type { RiotIdErrorCode } from '../validator';
 import {
   HTTP_STATUS_BY_ERROR_CODE,
@@ -12,9 +11,9 @@ import {
   internalError,
   malformedRequestError,
   missingFieldError,
+  noLolAccountError,
   playerNotFoundError,
-  playerNotOnPlatformError,
-  unsupportedRegionError,
+  unsupportedPlatformError,
   validationError,
 } from './errors';
 
@@ -26,9 +25,9 @@ import {
 
 const ALL_ERROR_CODES: readonly ErrorCode[] = [
   'VALIDATION_FAILED',
-  'UNSUPPORTED_REGION',
   'PLAYER_NOT_FOUND',
-  'PLAYER_NOT_ON_PLATFORM',
+  'NO_LOL_ACCOUNT',
+  'UNSUPPORTED_PLATFORM',
   'RIOT_UNAVAILABLE',
   'TIMEOUT',
   'RATE_LIMITED',
@@ -59,8 +58,10 @@ describe('error mapping totality', () => {
       let body;
       if (code === 'PLAYER_NOT_FOUND') {
         body = playerNotFoundError('A', 'B').body;
-      } else if (code === 'PLAYER_NOT_ON_PLATFORM') {
-        body = playerNotOnPlatformError('A', 'B', 'europe', 'euw1').body;
+      } else if (code === 'NO_LOL_ACCOUNT') {
+        body = noLolAccountError('A', 'B').body;
+      } else if (code === 'UNSUPPORTED_PLATFORM') {
+        body = unsupportedPlatformError('vn2').body;
       } else {
         body = apiErrorFor(code, false).body;
       }
@@ -94,45 +95,52 @@ describe('Requirement 9.2 — player not found', () => {
   });
 });
 
-describe('Requirement 9.10 — player exists but not on the selected region', () => {
-  it('answers 404 and names both the region and the platform that were searched', () => {
-    const { status, body } = playerNotOnPlatformError('Doffy', 'Smile', 'americas', 'na1');
+describe('lookup-pipeline-fixes Requirement 5.2 — Riot account with no League play history', () => {
+  it('answers 404 and identifies the submitted gameName and tagLine', () => {
+    const { status, body } = noLolAccountError('Doffy', 'Smile');
 
     expect(status).toBe(404);
-    expect(body.error.code).toBe('PLAYER_NOT_ON_PLATFORM');
+    expect(body.error.code).toBe('NO_LOL_ACCOUNT');
     expect(body.error.message).toContain('Doffy#Smile');
-    expect(body.error.message).toContain('NA1');
-    expect(body.error.message).toContain('americas');
-    expect(body.error.region).toBe('americas');
-    expect(body.error.platform).toBe('na1');
+    expect(body.error.gameName).toBe('Doffy');
+    expect(body.error.tagLine).toBe('Smile');
   });
 
-  it('points the visitor at the region field, since that is what they must change', () => {
-    const { body } = playerNotOnPlatformError('Doffy', 'Smile', 'americas', 'na1');
-
-    expect(body.error.field).toBe('region');
-    expect(body.error.message).toMatch(/select the region/i);
-    // Retrying the same region cannot succeed.
-    expect(body.error.retriable).toBe(false);
-  });
-
-  it('does not claim Riot is unavailable, which is what this used to report', () => {
-    // Finding A: the whole point of this code is that nothing is broken and the
-    // visitor's Riot ID was correct.
-    const { body } = playerNotOnPlatformError('Doffy', 'Smile', 'americas', 'na1');
+  it('does not claim Riot is unavailable, and is not retriable', () => {
+    const { body } = noLolAccountError('Doffy', 'Smile');
 
     expect(body.error.message).not.toMatch(/unavailable|try again later|temporarily/i);
     expect(body.error.message).not.toBe(MESSAGE_BY_ERROR_CODE.RIOT_UNAVAILABLE);
+    expect(body.error.retriable).toBe(false);
   });
 
-  it('is distinguishable from a genuinely nonexistent account', () => {
-    const notOnPlatform = playerNotOnPlatformError('Doffy', 'Smile', 'americas', 'na1').body.error;
+  it('is distinguishable from a genuinely nonexistent Riot account', () => {
+    const noLol = noLolAccountError('Doffy', 'Smile').body.error;
     const notFound = playerNotFoundError('Doffy', 'Smile').body.error;
 
-    expect(notOnPlatform.code).not.toBe(notFound.code);
-    expect(notOnPlatform.message).not.toBe(notFound.message);
+    expect(noLol.code).not.toBe(notFound.code);
+    expect(noLol.message).not.toBe(notFound.message);
     // Both are 404s: in each case the resource asked for does not exist.
-    expect(HTTP_STATUS_BY_ERROR_CODE.PLAYER_NOT_ON_PLATFORM).toBe(404);
+    expect(HTTP_STATUS_BY_ERROR_CODE.NO_LOL_ACCOUNT).toBe(404);
+  });
+});
+
+describe('lookup-pipeline-fixes Requirement 5.3 — unsupported platform reported by Riot', () => {
+  it('answers 404 and names the platform Riot itself reported', () => {
+    const { status, body } = unsupportedPlatformError('vn2');
+
+    expect(status).toBe(404);
+    expect(body.error.code).toBe('UNSUPPORTED_PLATFORM');
+    expect(body.error.message).toContain('vn2');
+    expect(body.error.platform).toBe('vn2');
+  });
+
+  it('is not retriable, since the same platform will be reported again', () => {
+    expect(unsupportedPlatformError('vn2').body.error.retriable).toBe(false);
+  });
+
+  it('no longer emits PLAYER_NOT_ON_PLATFORM from any code path (Requirement 5.4)', () => {
+    expect(ALL_ERROR_CODES).not.toContain('PLAYER_NOT_ON_PLATFORM');
   });
 });
 
@@ -306,23 +314,3 @@ describe('Requirement 9.1 — validation messages name the rule that failed', ()
   });
 });
 
-describe('Requirement 5.5 — unsupported region or platform', () => {
-  it('answers 400 and lists the supported regions instead of echoing input', () => {
-    const { status, body } = unsupportedRegionError('region');
-
-    expect(status).toBe(400);
-    expect(body.error.code).toBe('UNSUPPORTED_REGION');
-    expect(body.error.field).toBe('region');
-    for (const region of SUPPORTED_REGIONS) {
-      expect(body.error.message).toContain(region);
-    }
-  });
-
-  it('distinguishes an unsupported platform from an unsupported region', () => {
-    const platform = unsupportedRegionError('platform').body.error;
-
-    expect(platform.field).toBe('platform');
-    expect(platform.message).toMatch(/platform/i);
-    expect(platform.message).not.toBe(unsupportedRegionError('region').body.error.message);
-  });
-});

@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_REGION,
-  PLATFORM_LABELS,
-  REGION_LABELS,
-  REGION_TO_PLATFORMS,
-  SUPPORTED_REGIONS,
-  isValidRegion,
-  platformBelongsTo,
-  platformsFor,
-  regionFromParam,
-  type RegionalRoutingValue,
-} from './regions';
+import { PLATFORM_LABELS, REGION_TO_PLATFORMS, SUPPORTED_REGIONS, platformLabel } from './regions';
 import {
   MAX_GAME_NAME_LENGTH,
   MAX_TAG_LINE_LENGTH,
@@ -95,22 +84,17 @@ describe('validateRiotId — Requirements 1.2-1.5', () => {
   });
 });
 
-describe('regions — Requirements 1.6, 1.7, 5.2, 5.3', () => {
-  it('offers exactly the four supported regions in mapping order (Requirement 1.7)', () => {
+describe('regions — parity table and platform display (lookup-pipeline-fixes)', () => {
+  it('offers exactly the four regions the backend supports, in mapping order', () => {
     expect(SUPPORTED_REGIONS).toEqual(['americas', 'europe', 'asia', 'sea']);
   });
 
-  it('defaults to americas (Requirement 1.6)', () => {
-    expect(DEFAULT_REGION).toBe('americas');
-    expect(SUPPORTED_REGIONS).toContain(DEFAULT_REGION);
-  });
-
-  it('maps each region to exactly its documented platforms, in order (Requirement 5.2)', () => {
+  it('maps each region to exactly its documented platforms, in order', () => {
     // Transcribed from the requirement, not imported from the backend.
-    expect(platformsFor('americas')).toEqual(['na1', 'br1', 'la1', 'la2']);
-    expect(platformsFor('europe')).toEqual(['euw1', 'eun1', 'tr1', 'ru']);
-    expect(platformsFor('asia')).toEqual(['kr', 'jp1']);
-    expect(platformsFor('sea')).toEqual(['oc1']);
+    expect(REGION_TO_PLATFORMS.americas).toEqual(['na1', 'br1', 'la1', 'la2']);
+    expect(REGION_TO_PLATFORMS.europe).toEqual(['euw1', 'eun1', 'tr1', 'ru']);
+    expect(REGION_TO_PLATFORMS.asia).toEqual(['kr', 'jp1']);
+    expect(REGION_TO_PLATFORMS.sea).toEqual(['oc1']);
   });
 
   it('keeps regions disjoint and covers exactly eleven platforms', () => {
@@ -119,45 +103,18 @@ describe('regions — Requirements 1.6, 1.7, 5.2, 5.3', () => {
     expect(new Set(all).size).toBe(11);
   });
 
-  it('labels every region and every platform, so no raw routing value reaches the UI', () => {
-    for (const region of SUPPORTED_REGIONS) {
-      expect(REGION_LABELS[region]?.length, region).toBeGreaterThan(0);
-    }
+  it('labels every platform, so no raw routing value reaches the report (Requirement 2.3)', () => {
     for (const platform of Object.values(REGION_TO_PLATFORMS).flat()) {
       expect(PLATFORM_LABELS[platform]?.length, platform).toBeGreaterThan(0);
     }
   });
 
-  it('validates regions case-sensitively, matching the backend', () => {
-    expect(isValidRegion('europe')).toBe(true);
-    expect(isValidRegion('EUROPE')).toBe(false);
-    expect(isValidRegion('atlantis')).toBe(false);
-    expect(isValidRegion('toString')).toBe(false);
+  it('platformLabel returns the friendly name for a known platform', () => {
+    expect(platformLabel('euw1')).toBe(PLATFORM_LABELS.euw1);
+    expect(platformLabel('na1')).toBe(PLATFORM_LABELS.na1);
   });
 
-  it('reports platform membership per region (Requirement 5.3)', () => {
-    expect(platformBelongsTo('europe', 'euw1')).toBe(true);
-    expect(platformBelongsTo('europe', 'kr')).toBe(false);
-    expect(platformBelongsTo('asia', 'kr')).toBe(true);
-  });
-
-  it('narrows an untrusted region parameter to the default rather than forwarding it', () => {
-    expect(regionFromParam('europe')).toBe('europe');
-    expect(regionFromParam('atlantis')).toBe(DEFAULT_REGION);
-    expect(regionFromParam(null)).toBe(DEFAULT_REGION);
-    expect(regionFromParam(undefined)).toBe(DEFAULT_REGION);
-    expect(regionFromParam('')).toBe(DEFAULT_REGION);
-  });
-
-  it('lists the fallback platform first, since that is what Requirement 5.4 substitutes', () => {
-    const expectedFirst: Record<RegionalRoutingValue, string> = {
-      americas: 'na1',
-      europe: 'euw1',
-      asia: 'kr',
-      sea: 'oc1',
-    };
-    for (const region of SUPPORTED_REGIONS) {
-      expect(platformsFor(region)[0], region).toBe(expectedFirst[region]);
-    }
+  it('platformLabel degrades to the uppercased raw value for an unknown platform, never empty', () => {
+    expect(platformLabel('vn2')).toBe('VN2');
   });
 });

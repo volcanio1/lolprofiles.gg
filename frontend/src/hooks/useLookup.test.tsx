@@ -15,6 +15,8 @@ function sampleReport(): ProfileReport {
     puuid: 'p-1',
     summonerLevel: 496,
     profileIconId: 7,
+    resolvedPlatform: 'na1',
+    usedPlatformOverride: false,
     stats: { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM' },
     funFacts: [],
     limitedDataNotice: false,
@@ -82,7 +84,7 @@ function fakeTime(start = 1_000) {
   };
 }
 
-const REQUEST: LookupRequest = { riotId: 'Doffy#Smile', region: 'europe' };
+const REQUEST: LookupRequest = { riotId: 'Doffy#Smile' };
 
 describe('useLookup — loading lifecycle (Requirements 9.6, 9.7)', () => {
   it('is idle before anything is dispatched', () => {
@@ -224,7 +226,7 @@ describe('useLookup — bounded retry (Requirement 9.3)', () => {
     });
 
     act(() => {
-      result.current.start({ riotId: 'Other#EUW', region: 'europe' });
+      result.current.start({ riotId: 'Other#EUW' });
     });
     await deferred.settle({ kind: 'error', error: error() });
 
@@ -366,10 +368,10 @@ describe('useLookup — concurrency', () => {
     const { result } = renderHook(() => useLookup({ lookup }));
 
     act(() => {
-      result.current.start({ riotId: 'First#EUW', region: 'europe' });
+      result.current.start({ riotId: 'First#EUW' });
     });
     act(() => {
-      result.current.start({ riotId: 'Second#EUW', region: 'europe' });
+      result.current.start({ riotId: 'Second#EUW' });
     });
 
     // The first (stale) lookup settles last.

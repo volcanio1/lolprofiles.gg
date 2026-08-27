@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { ProfileReport } from '../api/types';
 import { ProfileReportView, formatKda, formatWinRate, orderedQueueTypes, queueLabel } from './ProfileReportView';
@@ -11,6 +11,8 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
     puuid: 'p-1',
     summonerLevel: 496,
     profileIconId: 7,
+    resolvedPlatform: 'na1',
+    usedPlatformOverride: false,
     stats: {
       rankedByQueue: {
         RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 },
@@ -194,6 +196,8 @@ describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane 
           durationSeconds: 1800,
           opponent,
           build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
+          participants: [],
+          queueType: 'ranked solo/duo',
         },
       ],
     });
@@ -240,6 +244,55 @@ describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane 
   it('says so when there are no recent matches', () => {
     render(<ProfileReportView report={report({ recentMatches: [] })} />);
     expect(screen.getByTestId('no-recent-matches')).toBeInTheDocument();
+  });
+});
+
+describe('Recent matches — queue-type filter', () => {
+  function match(matchId: string, queueType: string): ProfileReport['recentMatches'][number] {
+    return {
+      matchId,
+      championName: 'Vayne',
+      role: 'BOTTOM',
+      win: true,
+      kills: 1,
+      deaths: 1,
+      assists: 1,
+      cs: 100,
+      csPerMinute: 5,
+      visionScore: 10,
+      startTimestamp: 1_700_000_000_000,
+      durationSeconds: 1800,
+      opponent: null,
+      build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
+      participants: [],
+      queueType,
+    };
+  }
+
+  const mixed = report({
+    recentMatches: [match('NA1_1', 'ranked solo/duo'), match('NA1_2', 'aram'), match('NA1_3', 'normal')],
+  });
+
+  it('defaults to all queues and shows every match', () => {
+    render(<ProfileReportView report={mixed} />);
+    expect((screen.getByTestId('recent-matches-queue-filter') as HTMLSelectElement).value).toBe('all');
+    expect(screen.getByTestId('recent-match-NA1_1')).toBeInTheDocument();
+    expect(screen.getByTestId('recent-match-NA1_2')).toBeInTheDocument();
+    expect(screen.getByTestId('recent-match-NA1_3')).toBeInTheDocument();
+  });
+
+  it('narrows the list to the selected queue type', () => {
+    render(<ProfileReportView report={mixed} />);
+    fireEvent.change(screen.getByTestId('recent-matches-queue-filter'), { target: { value: 'aram' } });
+    expect(screen.getByTestId('recent-match-NA1_2')).toBeInTheDocument();
+    expect(screen.queryByTestId('recent-match-NA1_1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('recent-match-NA1_3')).not.toBeInTheDocument();
+  });
+
+  it('shows a queue-specific empty note when no match matches the filter', () => {
+    render(<ProfileReportView report={mixed} />);
+    fireEvent.change(screen.getByTestId('recent-matches-queue-filter'), { target: { value: 'ranked-flex' } });
+    expect(screen.getByTestId('no-recent-matches-for-queue')).toBeInTheDocument();
   });
 });
 
@@ -380,6 +433,8 @@ describe('Requirement 5.2/5.3 — degraded rendering with no Static Data Provide
                 build: { items: [0, 0, 0, 0, 0, 0], trinket: 3364 },
               },
               build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
+              participants: [],
+              queueType: 'ranked solo/duo',
             },
           ],
         })}

@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { TTL_BY_ENDPOINT, createInMemoryCacheStore, type CacheKey, type InMemoryCacheStore } from '../cache';
 import { standingForQueue } from '../insight/stats';
-import type { RegionalRoutingValue } from '../region';
 import type {
   AccountDto,
+  AccountRegionDto,
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
@@ -25,7 +25,7 @@ import type { RiotApiFailure } from './cacheOrFetch';
  */
 
 const PUUID = 'puuid-property';
-const REGION: RegionalRoutingValue = 'americas';
+const REGION = 'americas';
 const PLATFORM = 'na1';
 const GAME_NAME = 'Prop';
 const TAG_LINE = 'TEST';
@@ -39,6 +39,8 @@ const neverFiringScheduler = () => () => undefined;
 
 interface ClientScript {
   account?: RiotApiResult<AccountDto>;
+  /** Defaults to a `na1` (Requirement REGION/PLATFORM-consistent) resolution. */
+  regionResolution?: RiotApiResult<AccountRegionDto>;
   summoner?: RiotApiResult<SummonerDto>;
   league?: RiotApiResult<LeagueEntryDto[]>;
   matchIds?: RiotApiResult<string[]>;
@@ -95,6 +97,12 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
       calls.push({ stage: 'account', detail: `${gameName}#${tagLine}` });
       return Promise.resolve(script.account ?? { kind: 'ok', data: accountDto() });
     },
+    getRegionByPuuid: (_region, _game, puuid) => {
+      calls.push({ stage: 'regionResolution', detail: puuid });
+      return Promise.resolve(
+        script.regionResolution ?? { kind: 'ok', data: { puuid, game: 'lol', region: PLATFORM } },
+      );
+    },
     getSummonerByPuuid: (_platform, puuid) => {
       calls.push({ stage: 'summoner', detail: puuid });
       return Promise.resolve(script.summoner ?? { kind: 'ok', data: summonerDto(100) });
@@ -123,7 +131,7 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
 
   return {
     calls,
-    result: orchestrator.runLookup({ riotId: { gameName: GAME_NAME, tagLine: TAG_LINE }, region: REGION }),
+    result: orchestrator.runLookup({ riotId: { gameName: GAME_NAME, tagLine: TAG_LINE } }),
   };
 }
 
@@ -149,7 +157,7 @@ const failureArb: fc.Arbitrary<RiotApiFailure> = fc.oneof(
  *  - 3.6 a match-ids failure says match history is unavailable
  *  - 9.3 anything else Riot could not serve is temporary unavailability
  */
-function expectedErrorCode(stage: 'summoner' | 'league' | 'matchIds', failure: RiotApiFailure): string {
+function expectedErrorCode(stage: 'league' | 'matchIds', failure: RiotApiFailure): string {
   switch (failure.kind) {
     case 'auth_error':
       return 'AUTH_FAILURE';
@@ -160,12 +168,6 @@ function expectedErrorCode(stage: 'summoner' | 'league' | 'matchIds', failure: R
     case 'network_error':
       return 'NETWORK_ERROR';
     case 'not_found':
-      // 9.10: Summoner-V4 answering 404 for a resolved PUUID means the player has
-      // no summoner on the platform we asked about — a statement about the region
-      // selection, not about Riot's health.
-      if (stage === 'summoner') {
-        return 'PLAYER_NOT_ON_PLATFORM';
-      }
       return stage === 'matchIds' ? 'MATCH_HISTORY_UNAVAILABLE' : 'RIOT_UNAVAILABLE';
     default:
       return stage === 'matchIds' ? 'MATCH_HISTORY_UNAVAILABLE' : 'RIOT_UNAVAILABLE';
@@ -218,18 +220,17 @@ describe('Lookup Orchestrator halting properties', () => {
     );
   });
 
-  it('never synthesizes a report when a required post-PUUID call fails', async () => {
-    type Stage = 'summoner' | 'league' | 'matchIds';
-    const STAGES: readonly Stage[] = ['summoner', 'league', 'matchIds'];
+  it('never synthesizes a report when a required post-PUUID call fails (Summoner-V4 is no longer among the required, per Requirement 4.5)', async () => {
+    type Stage = 'league' | 'matchIds';
+    const STAGES: readonly Stage[] = ['league', 'matchIds'];
 
     const caseArb = fc.record({
       failing: fc
-        .array(fc.constantFrom<Stage>('summoner', 'league', 'matchIds'), { minLength: 1, maxLength: 3 })
+        .array(fc.constantFrom<Stage>('league', 'matchIds'), { minLength: 1, maxLength: 2 })
         .map((stages) => [...new Set(stages)]),
       failure: failureArb,
       /** Which components a PRIOR session had left in the cache. */
       seeded: fc.record({
-        summoner: fc.boolean(),
         league: fc.boolean(),
         matchIds: fc.boolean(),
       }),
@@ -250,13 +251,6 @@ describe('Lookup Orchestrator halting properties', () => {
         // finite TTL so this session must attempt a refresh and therefore really
         // does hit the failure under test.
         const seedEntries: { key: CacheKey; value: unknown; ttl: number | 'infinite' }[] = [];
-        if (seeded.summoner) {
-          seedEntries.push({
-            key: { endpoint: 'summoner', routingValue: PLATFORM, params: { puuid: PUUID } },
-            value: summonerDto(77),
-            ttl: TTL_BY_ENDPOINT.summoner,
-          });
-        }
         if (seeded.league) {
           seedEntries.push({
             key: { endpoint: 'league', routingValue: PLATFORM, params: { puuid: PUUID } },
@@ -284,7 +278,8 @@ describe('Lookup Orchestrator halting properties', () => {
         clock = start + (TTL_BY_ENDPOINT.summoner as number) + 1;
 
         const script: ClientScript = {
-          summoner: failing.includes('summoner') ? failure : { kind: 'ok', data: summonerDto(100) },
+          // Summoner-V4 always succeeds and is irrelevant to this property — it
+          // cannot influence success/error classification at all (Requirement 4.5).
           league: failing.includes('league') ? failure : { kind: 'ok', data: [] },
           matchIds: failing.includes('matchIds') ? failure : { kind: 'ok', data: [] },
         };
@@ -309,7 +304,10 @@ describe('Lookup Orchestrator halting properties', () => {
           expect(result.report.partialDataWarning).toBe(true);
           // Nothing is missing or defaulted: the report is complete, not partial.
           expect(result.report.puuid).toBe(PUUID);
-          expect(result.report.summonerLevel).toBeGreaterThan(0);
+          // Enrichment is never cached (design.md), so every fallback report has
+          // null summoner fields — this is not itself evidence of an incomplete
+          // report, per Requirement 4.2.
+          expect(result.report.summonerLevel).toBeNull();
           expect(result.report.lastUpdated).not.toBeNull();
           expect(result.report.stats).toBeDefined();
           expect(Array.isArray(result.report.funFacts)).toBe(true);
@@ -350,26 +348,26 @@ describe('Lookup Orchestrator halting properties', () => {
           // Fallback possible: everything the failing stage needs is already cached.
           [
             {
-              failing: ['summoner'] as ('summoner' | 'league' | 'matchIds')[],
+              failing: ['league'] as ('league' | 'matchIds')[],
               failure,
-              seeded: { summoner: true, league: true, matchIds: true },
+              seeded: { league: true, matchIds: true },
               start: 1_000 + index,
             },
           ] as const,
           // Fallback impossible: nothing cached, so it must be an error.
           [
             {
-              failing: ['summoner'] as ('summoner' | 'league' | 'matchIds')[],
+              failing: ['league'] as ('league' | 'matchIds')[],
               failure,
-              seeded: { summoner: false, league: false, matchIds: false },
+              seeded: { league: false, matchIds: false },
               start: 2_000 + index,
             },
           ] as const,
         ]) as [
           {
-            failing: ('summoner' | 'league' | 'matchIds')[];
+            failing: ('league' | 'matchIds')[];
             failure: RiotApiFailure;
-            seeded: { summoner: boolean; league: boolean; matchIds: boolean };
+            seeded: { league: boolean; matchIds: boolean };
             start: number;
           },
         ][],
@@ -423,6 +421,13 @@ describe('Lookup Orchestrator match-history properties', () => {
             calls.push({ stage: 'account' });
             return Promise.resolve<RiotApiResult<AccountDto>>({ kind: 'ok', data: accountDto() });
           },
+          getRegionByPuuid: (_region, _game, puuid) => {
+            calls.push({ stage: 'regionResolution' });
+            return Promise.resolve<RiotApiResult<AccountRegionDto>>({
+              kind: 'ok',
+              data: { puuid, game: 'lol', region: PLATFORM },
+            });
+          },
           getSummonerByPuuid: () => {
             calls.push({ stage: 'summoner' });
             return Promise.resolve<RiotApiResult<SummonerDto>>({ kind: 'ok', data: summonerDto(100) });
@@ -465,7 +470,6 @@ describe('Lookup Orchestrator match-history properties', () => {
 
         const result = await orchestrator.runLookup({
           riotId: { gameName: GAME_NAME, tagLine: TAG_LINE },
-          region: REGION,
         });
 
         // Independent oracle, stated from Requirements 3.3/3.5 rather than by

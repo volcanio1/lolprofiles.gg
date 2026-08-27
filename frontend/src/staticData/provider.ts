@@ -41,6 +41,37 @@
 
 export const DDRAGON_BASE = 'https://ddragon.leagueoflegends.com';
 
+/**
+ * Requirement 7.4. Rune, rune tree, and stat shard images 403 on the versioned
+ * path — verified live against the pinned version (design.md task 1.1). This is
+ * the sole exception to `visual-assets` Requirement 4.1's version pinning; only
+ * the image bytes float, never the identifier-to-path mapping (`runesReforged.json`
+ * itself is still fetched from the versioned path).
+ */
+export const DDRAGON_UNVERSIONED_IMG_BASE = `${DDRAGON_BASE}/cdn/img`;
+
+/**
+ * `match-detail-tabs` Requirement 12.5/12.6. Community_Dragon is a SEPARATE
+ * Riot-operated CDN from Data_Dragon — Data_Dragon publishes no augment data
+ * at all (verified 403 on every path tried). It is pinned the same way
+ * Data_Dragon is: never `"latest"`, always a specific version — but Community
+ * Dragon's own versioning accepts only a `{major}.{minor}` pair, not
+ * `DDRAGON_VERSION`'s full three-part form, so `communityDragonVersionOf`
+ * derives one from the other rather than introducing a second configuration
+ * value that could drift from it.
+ */
+export const COMMUNITY_DRAGON_BASE = 'https://raw.communitydragon.org';
+
+/**
+ * `"16.17.1"` -> `"16.17"`. Falls back to the input unchanged if it does not
+ * have at least two dot-separated segments — malformed input should not throw,
+ * and an unusable version already makes every other accessor resolve to `null`.
+ */
+export function communityDragonVersionOf(ddragonVersion: string): string {
+  const parts = ddragonVersion.split('.');
+  return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : ddragonVersion;
+}
+
 /** One champion, trimmed to what rendering needs. */
 export interface ChampionEntry {
   /** Display name, e.g. `Wukong` for the key `MonkeyKing`. */
@@ -57,6 +88,37 @@ export interface ItemEntry {
   completed: boolean;
 }
 
+/** One summoner spell, or one rune, or one rune tree. Same shape, same lookup. */
+export interface NamedIconEntry {
+  name: string;
+  /** Data Dragon's `image.full` (spells) or `icon` (runes, trees) field, verbatim. */
+  icon: string;
+}
+
+/**
+ * Requirement 7.7. Data_Dragon publishes no stat shard metadata anywhere —
+ * `runesReforged.json` was searched and confirmed to carry no entry for any
+ * `perks.statPerks` value (design.md decision, "Stat shards have no metadata
+ * anywhere"). This table is this codebase's only source for the mapping.
+ *
+ * Task 1.2 verified seven of these nine ids against 228 real match participants.
+ * `5002` and `5003` were never observed and may be identifiers the game no longer
+ * assigns — see design.md's stat shard table for the per-id observation counts.
+ * They stay in this table because non-observation does not establish absence, but
+ * they carry no stronger guarantee than "the icon file exists".
+ */
+const STAT_SHARD_TABLE: Readonly<Record<number, NamedIconEntry>> = {
+  5001: { name: 'Health Scaling', icon: 'perk-images/StatMods/StatModsHealthScalingIcon.png' },
+  5002: { name: 'Armor', icon: 'perk-images/StatMods/StatModsArmorIcon.png' },
+  5003: { name: 'Magic Resist', icon: 'perk-images/StatMods/StatModsMagicResIcon.png' },
+  5005: { name: 'Attack Speed', icon: 'perk-images/StatMods/StatModsAttackSpeedIcon.png' },
+  5007: { name: 'Ability Haste', icon: 'perk-images/StatMods/StatModsCDRScalingIcon.png' },
+  5008: { name: 'Adaptive Force', icon: 'perk-images/StatMods/StatModsAdaptiveForceIcon.png' },
+  5010: { name: 'Movement Speed', icon: 'perk-images/StatMods/StatModsMovementSpeedIcon.png' },
+  5011: { name: 'Health', icon: 'perk-images/StatMods/StatModsHealthPlusIcon.png' },
+  5013: { name: 'Tenacity', icon: 'perk-images/StatMods/StatModsTenacityIcon.png' },
+};
+
 /**
  * The trimmed, persisted form of Data Dragon's metadata.
  *
@@ -71,6 +133,25 @@ export interface StaticDataIndex {
   champions: Record<string, ChampionEntry>;
   /** Keyed by the item id as a string. */
   items: Record<string, ItemEntry>;
+  /**
+   * Keyed by the spell's numeric id as a string. `summoner.json` reports `key` as
+   * a string keyed under the spell's *name*; this index inverts that to id-keyed
+   * at build time, once, because Match-V5 reports `summoner1Id`/`summoner2Id` as
+   * numbers and every lookup site wants that direction.
+   */
+  spells: Record<string, NamedIconEntry>;
+  /** Keyed by rune id as a string, flattened across every tree and slot. */
+  runes: Record<string, NamedIconEntry>;
+  /** Keyed by rune tree id as a string (e.g. `8100` for Domination). */
+  runeTrees: Record<string, NamedIconEntry>;
+  /**
+   * `match-detail-tabs` Requirement 12.1/12.5. Keyed by augment id as a string,
+   * from Community_Dragon's `cherry-augments.json` — a different CDN from every
+   * other map here. This mapping's `id` space is UNVERIFIED against real
+   * `playerAugmentN` values (see README's Assets section); it is this
+   * codebase's best available candidate, not a confirmed one.
+   */
+  augments: Record<string, NamedIconEntry>;
 }
 
 export interface StaticDataProvider {
@@ -89,6 +170,26 @@ export interface StaticDataProvider {
   itemDisplayName(id: number): string;
   /** Serves `item-timeline`'s Requirement 3.2. False when unresolvable. */
   isCompletedItem(id: number): boolean;
+  /** Requirement 8.2. The identifier as a string when unresolvable. */
+  summonerSpellDisplayName(id: number): string;
+  /** Requirement 7.2. Versioned path — spells are not part of the 7.4 exception. */
+  summonerSpellIconUrl(id: number): string | null;
+  /** Requirement 8.3. */
+  runeDisplayName(id: number): string;
+  /** Requirement 7.3/7.4. Unversioned path — see `DDRAGON_UNVERSIONED_IMG_BASE`. */
+  runeIconUrl(id: number): string | null;
+  /** Requirement 8.3. */
+  runeTreeDisplayName(styleId: number): string;
+  /** Requirement 7.3/7.4. Unversioned path. */
+  runeTreeIconUrl(styleId: number): string | null;
+  /** Requirement 8.3. */
+  statShardDisplayName(id: number): string;
+  /** Requirement 7.4/7.7. Unversioned path, identifier-to-file mapping hardcoded. */
+  statShardIconUrl(id: number): string | null;
+  /** Requirement 12.7. The identifier as a string when unresolvable. Name only — no description (Requirement 12.8). */
+  augmentDisplayName(id: number): string;
+  /** Requirement 12.5/12.6. Community_Dragon, pinned to a derived `{major}.{minor}` version — not Data_Dragon. */
+  augmentIconUrl(id: number): string | null;
 }
 
 /**
@@ -147,6 +248,16 @@ function isChampionEntry(candidate: unknown): candidate is ChampionEntry {
   );
 }
 
+function isNamedIconEntry(candidate: unknown): candidate is NamedIconEntry {
+  const entry = candidate as NamedIconEntry | null;
+  return (
+    entry !== null &&
+    typeof entry === 'object' &&
+    typeof entry.name === 'string' &&
+    typeof entry.icon === 'string'
+  );
+}
+
 function isItemEntry(candidate: unknown): candidate is ItemEntry {
   const entry = candidate as ItemEntry | null;
   return (
@@ -199,9 +310,16 @@ export function buildStaticDataIndex(
   version: string,
   championJson: unknown,
   itemJson: unknown,
+  summonerJson?: unknown,
+  runesJson?: unknown,
+  cherryAugmentsJson?: unknown,
 ): StaticDataIndex {
   const champions: Record<string, ChampionEntry> = {};
   const items: Record<string, ItemEntry> = {};
+  const spells: Record<string, NamedIconEntry> = {};
+  const runes: Record<string, NamedIconEntry> = {};
+  const runeTrees: Record<string, NamedIconEntry> = {};
+  const augments: Record<string, NamedIconEntry> = {};
 
   const championData = (championJson as { data?: Record<string, unknown> } | null)?.data;
   if (championData && typeof championData === 'object') {
@@ -230,7 +348,104 @@ export function buildStaticDataIndex(
     }
   }
 
-  return { version, champions, items };
+  // summoner.json is keyed by spell NAME with `key` as the numeric id AS A STRING
+  // (design.md: "The index must therefore be inverted"). Iterating `Object.entries`
+  // reads the name-keyed data; only `entry.key` is used as the output key.
+  const summonerData = (summonerJson as { data?: Record<string, unknown> } | null)?.data;
+  if (summonerData && typeof summonerData === 'object') {
+    for (const value of Object.values(summonerData)) {
+      const entry = value as { key?: unknown; name?: unknown; image?: { full?: unknown } };
+      if (typeof entry?.key !== 'string' || entry.key.length === 0) {
+        continue; // No numeric id to key this entry under — nothing to invert.
+      }
+      const name = typeof entry.name === 'string' ? entry.name : entry.key;
+      const icon = typeof entry.image?.full === 'string' ? entry.image.full : `${entry.key}.png`;
+      spells[entry.key] = { name, icon };
+    }
+  }
+
+  // runesReforged.json is an array of trees, each with slots of runes. Both a
+  // rune-id index and a tree-id index are derived in the same pass.
+  if (Array.isArray(runesJson)) {
+    for (const tree of runesJson) {
+      const treeEntry = tree as {
+        id?: unknown;
+        name?: unknown;
+        icon?: unknown;
+        slots?: { runes?: unknown[] }[];
+      };
+      if (typeof treeEntry?.id === 'number' && Number.isInteger(treeEntry.id)) {
+        const treeName = typeof treeEntry.name === 'string' ? treeEntry.name : String(treeEntry.id);
+        const treeIcon = typeof treeEntry.icon === 'string' ? treeEntry.icon : '';
+        runeTrees[String(treeEntry.id)] = { name: treeName, icon: treeIcon };
+      }
+      if (!Array.isArray(treeEntry?.slots)) {
+        continue;
+      }
+      for (const slot of treeEntry.slots) {
+        const slotRunes = (slot as { runes?: unknown[] })?.runes;
+        if (!Array.isArray(slotRunes)) {
+          continue;
+        }
+        for (const rune of slotRunes) {
+          const runeEntry = rune as { id?: unknown; name?: unknown; icon?: unknown };
+          if (typeof runeEntry?.id !== 'number' || !Number.isInteger(runeEntry.id)) {
+            continue;
+          }
+          const name = typeof runeEntry.name === 'string' ? runeEntry.name : String(runeEntry.id);
+          const icon = typeof runeEntry.icon === 'string' ? runeEntry.icon : '';
+          runes[String(runeEntry.id)] = { name, icon };
+        }
+      }
+    }
+  }
+
+  // cherry-augments.json (Community_Dragon) is a flat array, unlike every
+  // Data_Dragon file above — `{ id, nameTRA, augmentSmallIconPath, ... }`.
+  // The icon path is stored relative (lowercased, `/lol-game-data/assets/`
+  // stripped) rather than as a full URL, so the accessor can build the URL
+  // against whichever Community_Dragon version is current at call time — the
+  // same "store the filename, resolve the base at read time" pattern every
+  // other entry in this index already uses.
+  if (Array.isArray(cherryAugmentsJson)) {
+    const assetsPrefix = '/lol-game-data/assets/';
+    for (const entry of cherryAugmentsJson) {
+      const augment = entry as { id?: unknown; nameTRA?: unknown; augmentSmallIconPath?: unknown };
+      if (typeof augment?.id !== 'number' || !Number.isInteger(augment.id)) {
+        continue;
+      }
+      const name = typeof augment.nameTRA === 'string' && augment.nameTRA.length > 0 ? augment.nameTRA : String(augment.id);
+      const rawPath = typeof augment.augmentSmallIconPath === 'string' ? augment.augmentSmallIconPath : '';
+      const icon = rawPath.toLowerCase().startsWith(assetsPrefix.toLowerCase())
+        ? rawPath.slice(assetsPrefix.length)
+        : rawPath;
+      augments[String(augment.id)] = { name, icon: icon.toLowerCase() };
+    }
+  }
+
+  return { version, champions, items, spells, runes, runeTrees, augments };
+}
+
+/** `id` after the shared usability check, as a lookup key. Never throws. */
+function usableIdKey(id: number): string | null {
+  return isUsableId(id) ? String(id) : null;
+}
+
+/** Requirement 7.4: rune, tree, and stat shard images live at the unversioned path. */
+function unversionedIconUrl(iconPath: string): string | null {
+  if (iconPath.length === 0) {
+    return null;
+  }
+  return `${DDRAGON_UNVERSIONED_IMG_BASE}/${iconPath}`;
+}
+
+/** Requirement 12.5/12.6: pinned to a derived Community_Dragon version, never "latest". */
+function communityDragonIconUrl(ddragonVersion: string, iconPath: string): string | null {
+  if (iconPath.length === 0) {
+    return null;
+  }
+  const version = communityDragonVersionOf(ddragonVersion);
+  return `${COMMUNITY_DRAGON_BASE}/${version}/plugins/rcp-be-lol-game-data/global/default/${iconPath}`;
 }
 
 /**
@@ -318,6 +533,137 @@ export function createStaticDataProvider(
         return false;
       }
       return lookupEntry(usable.items, String(id), isItemEntry)?.completed === true;
+    },
+
+    summonerSpellDisplayName(id: number): string {
+      const key = usableIdKey(id);
+      if (key === null) {
+        try {
+          return String(id);
+        } catch {
+          return '';
+        }
+      }
+      return lookupEntry(usable?.spells, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    summonerSpellIconUrl(id: number): string | null {
+      // Requirement 7.2: spells are NOT part of the unversioned-path exception —
+      // resolved against the pinned version, exactly like champion and item icons.
+      const key = usableIdKey(id);
+      if (base === null || usable === null || key === null) {
+        return null;
+      }
+      const entry = lookupEntry(usable.spells, key, isNamedIconEntry);
+      if (entry === undefined) {
+        return null;
+      }
+      return `${base}/img/spell/${encodeURIComponent(entry.icon)}`;
+    },
+
+    runeDisplayName(id: number): string {
+      const key = usableIdKey(id);
+      if (key === null) {
+        try {
+          return String(id);
+        } catch {
+          return '';
+        }
+      }
+      return lookupEntry(usable?.runes, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    runeIconUrl(id: number): string | null {
+      const key = usableIdKey(id);
+      if (usable === null || key === null) {
+        return null;
+      }
+      const entry = lookupEntry(usable.runes, key, isNamedIconEntry);
+      if (entry === undefined) {
+        return null;
+      }
+      return unversionedIconUrl(entry.icon);
+    },
+
+    runeTreeDisplayName(styleId: number): string {
+      const key = usableIdKey(styleId);
+      if (key === null) {
+        try {
+          return String(styleId);
+        } catch {
+          return '';
+        }
+      }
+      return lookupEntry(usable?.runeTrees, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    runeTreeIconUrl(styleId: number): string | null {
+      const key = usableIdKey(styleId);
+      if (usable === null || key === null) {
+        return null;
+      }
+      const entry = lookupEntry(usable.runeTrees, key, isNamedIconEntry);
+      if (entry === undefined) {
+        return null;
+      }
+      return unversionedIconUrl(entry.icon);
+    },
+
+    statShardDisplayName(id: number): string {
+      const key = usableIdKey(id);
+      if (key === null) {
+        try {
+          return String(id);
+        } catch {
+          return '';
+        }
+      }
+      // Not gated on `usable`: STAT_SHARD_TABLE is a hardcoded constant, not part
+      // of the fetched/persisted index — Data_Dragon publishes no such metadata
+      // (Requirement 7.7), so there is nothing here for the index to be "ready" for.
+      const numeric = Number(key);
+      return Object.prototype.hasOwnProperty.call(STAT_SHARD_TABLE, numeric)
+        ? STAT_SHARD_TABLE[numeric].name
+        : key;
+    },
+
+    statShardIconUrl(id: number): string | null {
+      const key = usableIdKey(id);
+      if (key === null) {
+        return null;
+      }
+      const numeric = Number(key);
+      if (!Object.prototype.hasOwnProperty.call(STAT_SHARD_TABLE, numeric)) {
+        return null;
+      }
+      return unversionedIconUrl(STAT_SHARD_TABLE[numeric].icon);
+    },
+
+    augmentDisplayName(id: number): string {
+      const key = usableIdKey(id);
+      if (key === null) {
+        try {
+          return String(id);
+        } catch {
+          return '';
+        }
+      }
+      return lookupEntry(usable?.augments, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    augmentIconUrl(id: number): string | null {
+      // `version` (not `usable`'s version) — augments come from a hardcoded-URL
+      // pattern over Community_Dragon, but the LOOKUP still needs the fetched
+      // index, so this IS gated on `usable`, unlike stat shards.
+      const key = usableIdKey(id);
+      if (usable === null || version === null || key === null) {
+        return null;
+      }
+      const entry = lookupEntry(usable.augments, key, isNamedIconEntry);
+      if (entry === undefined) {
+        return null;
+      }
+      return communityDragonIconUrl(version, entry.icon);
     },
   };
 }

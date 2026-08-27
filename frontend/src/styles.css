@@ -490,6 +490,19 @@ figure {
   flex: none;
 }
 
+.rsec-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.rsec-filter-select {
+  font-size: 0.8rem;
+  padding: 0.4rem 2rem 0.4rem 0.65rem;
+}
+
 .rsec-duo {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -623,6 +636,16 @@ figure {
   padding-right: 0;
 }
 
+/*
+ * A name+icon cell right-anchored in a variable-width column shifts position
+ * row to row depending on the name's length, so the icons never line up
+ * vertically. This isn't always `:first-child` (the General tab's Champion
+ * column sits after Player), so it needs its own explicit left-align.
+ */
+.champion-col {
+  text-align: left;
+}
+
 .data-table thead th {
   font-family: var(--font-display);
   font-weight: 600;
@@ -655,7 +678,7 @@ figure {
   gap: 0.75rem;
 }
 
-.match-card {
+.match-row {
   background: var(--surface);
   border: 1px solid var(--line);
   border-left: 3px solid var(--loss);
@@ -666,19 +689,19 @@ figure {
   gap: 0.6rem;
 }
 
-.match-card--win {
+.match-row--win {
   border-left-color: var(--gold);
 }
 
 .match-head {
   display: flex;
   flex-wrap: wrap;
-  /* Was `baseline`. The champion cell now holds an icon+text unit, and a flex
-     item with no natural text baseline gets a browser-synthesized one (varies
-     by implementation) rather than lining up with the plain-text siblings —
-     that's what made per-item align-self overrides push it the wrong way.
-     `center` sidesteps baseline math entirely and is predictable for mixed
-     icon/text content. */
+  /* `center` rather than `baseline`: this row mixes plain-text spans of
+     different sizes (outcome, role, duration, queue type, date), and a
+     baseline-aligned wrap looks jagged the moment any one of them wraps to its
+     own line. `match-side-portrait` — the icon+text unit — moved out of this
+     row entirely into `.match-mirror` below it, so it is no longer a factor
+     here at all. */
   align-items: center;
   gap: 0.35rem 0.9rem;
 }
@@ -692,12 +715,8 @@ figure {
   color: var(--loss);
 }
 
-.match-card--win .match-outcome {
+.match-row--win .match-outcome {
   color: var(--gold);
-}
-
-.match-champion {
-  font-weight: 600;
 }
 
 .match-role {
@@ -706,40 +725,162 @@ figure {
   text-transform: capitalize;
 }
 
+.match-duration,
+.match-queue-type {
+  color: var(--dim);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .match-date {
   color: var(--loss);
   font-size: 0.82rem;
   margin-left: auto;
 }
 
-.matchup-table {
-  font-size: 0.9rem;
+.matchup-note {
+  color: var(--dim);
+  font-size: 0.88rem;
 }
 
 /*
- * The champion column isn't first-child in this table (the side label is), so
- * it inherits the table's right-align default meant for numeric columns. A
- * name+icon right-anchored in a variable-width cell shifts position row to row
- * depending on the name's length, so the icons never line up vertically —
- * left-aligning gives the column a fixed left edge instead.
+ * The mirrored row: the analyzed player's side and the Enemy_Laner's side as two
+ * equal-width columns. `wrap` rather than a fixed two-column grid because the
+ * no-opponent case replaces the second column with a single note that should
+ * not be forced into a column's width.
  */
-.matchup-table .champion-col {
-  text-align: left;
+.match-mirror {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
 }
 
-/* Two classes so this outranks `.data-table tbody th` (1 class + 2 elements). */
-.matchup-table .side-label {
+.match-side {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* A hairline divider between the two mirrored sides, gold-tinted on the
+   opponent's side to read as "the other half" without a second hue. */
+.match-side--opponent {
+  border-left: 1px solid var(--line);
+  padding-left: 1.2rem;
+}
+
+.match-side-name {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.match-side-tagline {
+  color: var(--dim);
+  font-size: 0.74rem;
+  font-weight: 400;
+  margin-left: 0.1rem;
+}
+
+.match-side--opponent .match-side-name {
+  text-align: right;
+}
+
+.match-side-portrait {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.match-side-champion-icon {
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.match-side-loadout {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  width: 36px; /* exactly two 16px icons plus one 4px gap, wrapping to a 2x2 block */
+  gap: 0.25rem;
+}
+
+.match-side-spell-icon,
+.match-side-rune-icon,
+.match-side-rune-tree-icon {
+  border-radius: var(--radius);
+}
+
+.match-side-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.match-side-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.match-side-stat dt {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--dim);
 }
 
-.matchup-note {
-  color: var(--dim);
-  font-size: 0.88rem;
+.match-side-stat dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The opponent's side mirrors the player's, horizontally: the DOM order is
+ * untouched (a screen reader still reads player-first, portrait-before-stats,
+ * on both sides — Requirement 8.5 forbids conveying anything through
+ * visual-only means), but every row-level flex container reverses direction,
+ * so the champion portrait sits at the outer-right edge and the two sides
+ * read as reflections of each other around the divider.
+ *
+ * `justify-content` is deliberately left at its default (`flex-start`) on all
+ * of these — with `flex-direction: row-reverse`, the reversed main-axis makes
+ * `flex-start` pack content at the RIGHT edge, which is what "mirrored" means
+ * here. Setting `flex-end` would pack it at the left instead, undoing the
+ * reversal — that was this rule's first, wrong draft.
+ */
+.match-side--opponent .match-side-portrait,
+.match-side--opponent .match-side-loadout,
+.match-side--opponent .match-side-stats,
+.match-side--opponent .item-build-row {
+  flex-direction: row-reverse;
+}
+
+.match-side--opponent .match-side-stat {
+  align-items: flex-end;
+}
+
+/* `ChampionIcon` always renders icon-then-name internally — it has no notion
+   of "side". Reversing its own wrapper here is what puts the name first and
+   the portrait last (i.e. the image on the right of the name) for this side. */
+.match-side--opponent .champion-icon-label {
+  flex-direction: row-reverse;
+}
+
+/* The trinket separator reads left-to-right in DOM order (item slots, then
+   trinket last) — reversed, the trinket lands on the visual left, so its
+   hairline divider and spacing must flip sides with it. */
+.match-side--opponent .item-build-slot--trinket {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+  margin-right: 0.4rem;
+  padding-right: 0.4rem;
+  border-right: 1px solid var(--line);
 }
 
 /* Fun facts and recommendations */
@@ -871,30 +1012,6 @@ figure {
 
 /* ------------------------------------------------------------------- item builds */
 
-.build-compare {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.2rem;
-  margin-top: 0.8rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid var(--line);
-}
-
-.build-compare-side {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.build-compare-label {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.68rem;
-  letter-spacing: var(--track);
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
 .item-build-row {
   display: flex;
   gap: 0.3rem;
@@ -919,4 +1036,226 @@ figure {
   margin-left: 0.4rem;
   padding-left: 0.4rem;
   border-left: 1px solid var(--line);
+}
+
+/* -------------------------------------------------------------- detail panel */
+
+.match-expand-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius);
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+/* `.match-date` already claims `margin-left: auto` when it's the last element
+   in `.match-head`; the toggle is now last, so it takes that role instead. */
+.match-head .match-date {
+  margin-left: 0;
+}
+
+.match-expand-toggle:hover,
+.match-expand-toggle:focus-visible {
+  background: var(--surface-2);
+}
+
+.detail-panel {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.detail-tablist {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.detail-tab {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--dim);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+.detail-tab--selected {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+  background: var(--surface-2);
+}
+
+.detail-tab:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.detail-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+/* ------------------------------------------------------------- general tab */
+
+.general-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.scoreboard-table {
+  font-size: 0.85rem;
+}
+
+.scoreboard-team-heading {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  padding-bottom: 0.4rem;
+}
+
+.scoreboard-team-heading--enemy {
+  color: var(--loss);
+}
+
+.scoreboard-identity {
+  font-weight: 500;
+}
+
+.scoreboard-tagline {
+  color: var(--dim);
+  font-size: 0.78rem;
+  margin-left: 0.15rem;
+}
+
+/* Requirement 3.7: a visible label, not a colour, marks the analyzed player. */
+.you-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--gold-dim);
+  border-radius: 999px;
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+}
+
+.scoreboard-row--analyzed {
+  background: var(--surface-2);
+}
+
+.scoreboard-champion-icon {
+  border-radius: var(--radius);
+  vertical-align: middle;
+}
+
+.scoreboard-level {
+  color: var(--dim);
+  font-size: 0.78rem;
+  margin-left: 0.4rem;
+}
+
+.scoreboard-loadout {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 0.2rem;
+  justify-content: end;
+}
+
+/* --------------------------------------------------------------- runes tab */
+
+.runes-tab,
+.augments-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.rune-team-heading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  margin: 0 0 0.6rem;
+}
+
+.rune-team-heading--enemy {
+  color: var(--loss);
+}
+
+.rune-page-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rune-page-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.rune-page-card:last-child {
+  border-bottom: 0;
+}
+
+.rune-page-card--analyzed {
+  background: var(--surface-2);
+}
+
+.rune-page-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 8rem;
+}
+
+.rune-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--line);
+}
+
+.rune-page-unavailable {
+  color: var(--loss);
+  font-size: 0.85rem;
+}
+
+/* ---------------------------------------------------------- build path tab */
+
+.build-path-unavailable {
+  color: var(--dim);
+  font-size: 0.9rem;
 }

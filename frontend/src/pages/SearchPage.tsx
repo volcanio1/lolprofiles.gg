@@ -30,12 +30,14 @@ import { useNavigate } from 'react-router-dom';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 
-/** Builds the report URL. `URLSearchParams` owns the encoding. */
+/**
+ * Builds the report URL. `URLSearchParams` owns the encoding.
+ *
+ * lookup-pipeline-fixes: no `region`/`platform` query params anymore — the
+ * platform is discovered server-side from the Riot ID alone.
+ */
 export function reportPathFor(submission: SearchSubmission): string {
-  const params = new URLSearchParams({ riotId: submission.riotId, region: submission.region });
-  if (submission.platform !== undefined && submission.platform.length > 0) {
-    params.set('platform', submission.platform);
-  }
+  const params = new URLSearchParams({ riotId: submission.riotId });
   return `/profile?${params.toString()}`;
 }
 

@@ -154,6 +154,16 @@ describe('URL construction and routing values', () => {
     );
   });
 
+  it('builds the Account-V1 region-by-game-by-puuid URL on the (non-routing) regional value', async () => {
+    const harness = makeHarness();
+
+    await harness.client.getRegionByPuuid('europe', 'lol', 'puuid/with slash');
+
+    expect(harness.calls[0].url).toBe(
+      'https://europe.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/puuid%2Fwith%20slash',
+    );
+  });
+
   it('builds the Summoner-V4 URL on the platform routing value', async () => {
     const harness = makeHarness();
 
@@ -196,12 +206,13 @@ describe('request wiring', () => {
     const harness = makeHarness({ responses: [jsonResponse(200, [])] });
 
     await harness.client.getAccountByRiotId('americas', 'A', 'B');
+    await harness.client.getRegionByPuuid('americas', 'lol', 'p');
     await harness.client.getSummonerByPuuid('na1', 'p');
     await harness.client.getLeagueEntriesByPuuid('na1', 'p');
     await harness.client.getMatchIdsByPuuid('americas', 'p', 20);
     await harness.client.getMatchById('americas', 'm');
 
-    expect(harness.calls).toHaveLength(5);
+    expect(harness.calls).toHaveLength(6);
     for (const call of harness.calls) {
       expect(call.init.headers[API_KEY_HEADER]).toBe(API_KEY);
       expect(call.init.method).toBe('GET');
@@ -249,6 +260,7 @@ describe('request wiring', () => {
     const harness = makeHarness({ responses: [jsonResponse(200, [])] });
 
     await harness.client.getAccountByRiotId('americas', 'A', 'B');
+    await harness.client.getRegionByPuuid('americas', 'lol', 'p');
     await harness.client.getSummonerByPuuid('na1', 'p');
     await harness.client.getLeagueEntriesByPuuid('na1', 'p');
     await harness.client.getMatchIdsByPuuid('americas', 'p', 20);
@@ -256,6 +268,7 @@ describe('request wiring', () => {
 
     expect(harness.reservations.map((reservation) => reservation.method)).toEqual([
       'account',
+      'accountRegion',
       'summoner',
       'league',
       'matchIds',
@@ -296,6 +309,16 @@ describe('status mapping', () => {
     await expect(harness.client.getAccountByRiotId('asia', 'Faker', 'KR1')).resolves.toEqual({
       kind: 'ok',
       data: account,
+    });
+  });
+
+  it('parses a region-by-puuid 200 body into an ok result', async () => {
+    const accountRegion = { puuid: 'p-1', game: 'lol', region: 'euw1' };
+    const harness = makeHarness({ responses: [jsonResponse(200, accountRegion)] });
+
+    await expect(harness.client.getRegionByPuuid('europe', 'lol', 'p-1')).resolves.toEqual({
+      kind: 'ok',
+      data: accountRegion,
     });
   });
 

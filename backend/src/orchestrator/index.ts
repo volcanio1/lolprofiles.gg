@@ -2,21 +2,38 @@
  * Lookup Orchestrator.
  *
  * The coordination layer Requirements 2, 3, 9, 10 and 11 are really specifying:
- * it turns a validated Riot ID plus a region into a `ProfileReport`, or into a
- * typed failure. It owns cache-or-fetch sequencing, the queue-type filter, the
+ * it turns a validated Riot ID into a `ProfileReport`, or into a typed failure.
+ * It owns cache-or-fetch sequencing, platform resolution (lookup-pipeline-fixes
+ * Requirement 1, via the injected Region Resolver), the queue-type filter, the
  * Insight Engine invocation, the Requirement 9 error mapping, and the 15s
  * fresh-path budget with its fall back to last-known cache.
  *
- * Every collaborator is injected — cache, Riot API client, clock, budget
- * scheduler, logger — so no test needs a network, a real timer or a credential,
- * matching every other module in this build.
+ * Every collaborator is injected — cache, Riot API client, region resolver,
+ * clock, budget scheduler, logger — so no test needs a network, a real timer or
+ * a credential, matching every other module in this build.
+ *
+ * lookup-pipeline-fixes note: this file's input no longer carries a region at
+ * all — see `LookupInput` — because the platform is now DISCOVERED from the
+ * PUUID via Account-V1's region-by-game-by-puuid endpoint (the Region Resolver)
+ * rather than guessed from a visitor-selected dropdown. Every "Implements" bullet
+ * and decision below that referenced the old guessed-region flow has been
+ * updated in place; nothing here still describes the pre-lookup-pipeline-fixes
+ * behavior.
  *
  * Implements:
- *  - 2.1: Account-V1 resolves the PUUID first, using the regional routing value.
- *  - 2.2 / 2.3: Summoner-V4 and League-V4 by PUUID, using the PLATFORM routing
- *    value chosen by the Region Router (2.5 / 5.4).
- *  - 2.4: an Account-V1 not-found halts the pipeline before any Summoner-V4,
- *    League-V4 or Match-V5 call, and leaves nothing behind.
+ *  - 2.1: Account-V1 resolves the PUUID first, against the fixed Discovery_Region.
+ *  - 1.1-1.4: the Region Resolver determines the Resolved_Platform and
+ *    Derived_Region from the PUUID (or a diagnostic `platformOverride`), and
+ *    every subsequent platform-routed and region-routed call uses it.
+ *  - 2.2 / 2.3: Summoner-V4 (now an Enrichment_Call, Requirement 4) and League-V4
+ *    by PUUID, using the Resolved_Platform.
+ *  - 2.4: an Account-V1 not-found halts the pipeline before any region
+ *    resolution, League-V4 or Match-V5 call, and leaves nothing behind.
+ *  - 4.1-4.5: Summoner-V4 is an Enrichment_Call whose outcome never produces an
+ *    error code or halts the pipeline; see `enrich`.
+ *  - 5.1-5.4: the Region Resolver's four outcomes map onto `NO_LOL_ACCOUNT`,
+ *    `UNSUPPORTED_PLATFORM`, a normal pipeline continuation, or a surfaced
+ *    underlying error with no guessed fallback, respectively.
  *  - 2.7: a post-PUUID failure never yields a report synthesized from partial
  *    data (see decision 4 for how this composes with 11.3).
  *  - 2.8: zero ranked entries is a valid unranked state, never a failure.
@@ -129,24 +146,32 @@
  *    it a distinct user-visible consequence in `limitedDataNotice`. Conflating the
  *    two would make the warning fire so often it would stop carrying information.
  *
- * 9. THE PARALLEL TRIO REPORTS ITS FIRST FAILURE IN REQUIREMENT ORDER. Summoner,
- *    league and match-ids are fetched concurrently (design.md's sequence flow), so
- *    several can fail in one lookup. The reported failure is the first in the fixed
- *    order summoner, league, match-ids — the order Requirements 2.2, 2.3 and 3.1
- *    are written in — so the outcome never depends on which promise happened to
- *    settle first. Every auth failure among them is logged regardless of which one
- *    is reported, because Requirement 9.5's obligation is to log the occurrence,
- *    not the winner of a precedence contest.
+ * 9. THE REQUIRED PAIR REPORTS ITS FIRST FAILURE IN REQUIREMENT ORDER
+ *    (lookup-pipeline-fixes revision). League-V4 and Match-V5 match-ids are
+ *    fetched concurrently alongside the Summoner-V4 Enrichment_Call (design.md's
+ *    sequence flow), so either of the first two can fail in one lookup —
+ *    Summoner-V4 no longer can, structurally (Requirement 4.5; see `enrich`). The
+ *    reported failure is the first in the fixed order league, match-ids — the
+ *    order Requirements 2.3 and 3.1 are written in — so the outcome never depends
+ *    on which promise happened to settle first. Every auth failure among all
+ *    three, INCLUDING the enrichment call, is logged regardless of which one (if
+ *    any) is reported as a `LookupResult` error, because Requirement 9.5's
+ *    obligation is to log the occurrence, not the winner of a precedence contest.
  *
- * 10. REGION VALIDITY IS RE-CHECKED HERE, THOUGH THE TYPE ALREADY GUARANTEES IT.
- *    design.md assigns Requirement 5.5's rejection to callers, and the parameter
- *    is typed `RegionalRoutingValue`, so this guard is unreachable from
- *    type-checked code. It exists because the routing value is interpolated into
- *    the Riot host name: an unvalidated value arriving from an untyped caller (a
- *    JavaScript consumer, or a future route that forgets to validate) would
- *    otherwise be sent at a host we did not intend to contact. It is the one place
- *    where being redundant is cheaper than being sorry, and it makes
- *    `UNSUPPORTED_REGION` reachable rather than decorative.
+ * 10. lookup-pipeline-fixes REMOVED THIS DECISION'S GUARD ENTIRELY. It used to
+ *    re-validate a visitor-supplied region here as defense in depth, because that
+ *    value was interpolated into the Riot host name. `LookupInput` no longer
+ *    carries a region at all — the Discovery_Region is a fixed configuration
+ *    value (never visitor input) and the Derived_Region comes from
+ *    `regionForPlatform`, which is total over the closed `PlatformRoutingValue`
+ *    domain by construction — so there is no longer an untyped region string
+ *    that could reach a host interpolation. The equivalent defense-in-depth
+ *    concern for `platformOverride` is handled inline in `runPipeline`: an
+ *    unsupported override is treated as no override at all (falls through to the
+ *    Region Resolver) rather than being rejected outright, since it is a
+ *    diagnostic-only field never exposed in the default UI (Requirement 2.4) and
+ *    silently falling back to correct resolution is strictly safer than a
+ *    fatal error for a field visitors don't see.
  *
  * 11. THE FAN-OUT IS BOUNDED IN BOTH WIDTH AND LENGTH. Match details are fetched
  *    `MATCH_DETAIL_CONCURRENCY` at a time: fetching up to 100 sequentially could
@@ -167,13 +192,21 @@ import {
 import { computeFunFacts, isLimitedData, averageMatchDurationMinutesOf, type FunFact } from '../insight/funFacts';
 import { computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
 import { computeRecommendations, type Recommendation } from '../insight/recommendations';
-import { computeStats, type IncludedMatch, type ProfileStats } from '../insight/stats';
-import { isValidRegion, resolvePlatform, type PlatformRoutingValue, type RegionalRoutingValue } from '../region';
+import { computeStats, type IncludedMatch, type LanelessMatch, type ProfileStats } from '../insight/stats';
+import {
+  DEFAULT_REGION,
+  isSupportedPlatform,
+  regionForPlatform,
+  type PlatformRoutingValue,
+  type RegionalRoutingValue,
+} from '../region';
+import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
   AccountDto,
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
+  RiotApiResult,
   SummonerDto,
   TimeoutScheduler,
 } from '../riotApiClient';
@@ -184,7 +217,7 @@ import {
   type CacheOrFetchOutcome,
   type RiotApiFailure,
 } from './cacheOrFetch';
-import { toIncludedMatch, toLeagueEntries } from './mapping';
+import { toIncludedMatch, toLanelessMatch, toLeagueEntries } from './mapping';
 
 export {
   cacheOrFetch,
@@ -213,26 +246,39 @@ export const FRESH_PATH_BUDGET_MS = 15_000;
 /** Decision 11: match details in flight at once. */
 export const MATCH_DETAIL_CONCURRENCY = 10;
 
-/** The pipeline stages, used for error attribution and server-side logging. */
-export type LookupStage = 'account' | 'summoner' | 'league' | 'matchIds' | 'matchDetail';
+/**
+ * The pipeline stages, used for error attribution and server-side logging.
+ *
+ * lookup-pipeline-fixes: `regionResolution` is new (the Region Resolver's own
+ * call can fail the same ways any Riot call can). `summoner` remains in this
+ * union for Requirement 9.5's auth-failure logging only — Summoner-V4 is now an
+ * Enrichment_Call (Requirement 4) and never reaches `errorFor`, so `summoner`
+ * never appears in a `StageFailure` or drives a `LookupResult` anymore.
+ */
+export type LookupStage = 'account' | 'regionResolution' | 'summoner' | 'league' | 'matchIds' | 'matchDetail';
 
 /**
- * design.md's declared error codes, plus `PLAYER_NOT_ON_PLATFORM`.
+ * design.md's declared error codes, revised by lookup-pipeline-fixes.
  *
- * `PLAYER_NOT_ON_PLATFORM` was added after live testing (Finding A in the
- * implementation log). Riot accounts are global, so Account-V1 resolves a PUUID
- * regardless of where the player actually plays; Summoner-V4 then returns 404 on a
- * platform where they have no summoner. Before this code existed that surfaced as
- * `RIOT_UNAVAILABLE` — "Riot's services are temporarily unavailable" — which is
- * false and unactionable: nothing was unavailable and the visitor's input was
- * correct, they simply picked the wrong region. It is the most likely real failure
- * a region selector produces, so it earns its own code and its own message.
+ * `PLAYER_NOT_ON_PLATFORM` and `UNSUPPORTED_REGION` are REMOVED. Both existed to
+ * name a wrong-region guess after the fact — `PLAYER_NOT_ON_PLATFORM` was
+ * Summoner-V4's 404 standing in for "the visitor picked the wrong region"
+ * (Finding A in the implementation log), and `UNSUPPORTED_REGION` validated a
+ * visitor-supplied region that no longer exists as an input at all now that the
+ * Region Resolver determines it from the PUUID. Neither condition can occur
+ * anymore: there is no region to guess wrong, and no region field to validate.
+ *
+ * `NO_LOL_ACCOUNT` and `UNSUPPORTED_PLATFORM` are NEW, and replace them
+ * structurally rather than cosmetically — they are Requirement 5's two
+ * Region_Resolver outcomes that mean the visitor's Riot ID is correct but this
+ * system still cannot proceed, which is exactly the gap `PLAYER_NOT_ON_PLATFORM`
+ * used to (mis)cover via a symptom two calls downstream.
  */
 export type ErrorCode =
   | 'VALIDATION_FAILED'
-  | 'UNSUPPORTED_REGION'
   | 'PLAYER_NOT_FOUND'
-  | 'PLAYER_NOT_ON_PLATFORM'
+  | 'NO_LOL_ACCOUNT'
+  | 'UNSUPPORTED_PLATFORM'
   | 'RIOT_UNAVAILABLE'
   | 'TIMEOUT'
   | 'RATE_LIMITED'
@@ -246,7 +292,12 @@ export type ErrorCode =
 export interface ProfileReport {
   riotId: RiotIdParts;
   puuid: string;
-  summonerLevel: number;
+  /**
+   * Null exactly when `profileIconId` is (Requirement 4.2/4.3): the Summoner-V4
+   * Enrichment_Call failed. Was unconditionally `number` (coerced with
+   * `finiteOrZero`) before this spec demoted Summoner-V4 off the required path.
+   */
+  summonerLevel: number | null;
   /**
    * Null when the summoner payload carried no usable icon id.
    *
@@ -261,6 +312,10 @@ export interface ProfileReport {
    *     successful report.
    */
   profileIconId: number | null;
+  /** Requirement 2: the Platform_Routing_Value the Region Resolver settled on. */
+  resolvedPlatform: PlatformRoutingValue;
+  /** Requirement 2.4: true when `platformOverride` was supplied and used verbatim. */
+  usedPlatformOverride: boolean;
   stats: ProfileStats;
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5: fewer than 5 included matches. */
@@ -279,7 +334,18 @@ export interface ProfileReport {
 export type LookupResult =
   | { kind: 'success'; report: ProfileReport }
   | { kind: 'not_found'; gameName: string; tagLine: string }
-  | { kind: 'error'; code: ErrorCode; retriable: boolean };
+  | {
+      kind: 'error';
+      code: ErrorCode;
+      retriable: boolean;
+      /**
+       * lookup-pipeline-fixes Requirement 5.3: set only for `UNSUPPORTED_PLATFORM`,
+       * the platform Riot itself named — the route cannot recompute this the way
+       * it used to recompute a guessed platform (Finding A), because it came from
+       * Riot's own response, not from a deterministic function of the request.
+       */
+      platform?: string;
+    };
 
 /**
  * design.md's `MatchHistoryWindow`. `attemptedCount` is the number of match ids
@@ -289,13 +355,21 @@ export type LookupResult =
 export interface MatchHistoryWindow {
   puuid: string;
   matches: IncludedMatch[];
+  /** `match-detail-tabs` Requirement 11.1: ARAM and ARAM Mayhem matches, kept separate from `matches`. */
+  lanelessMatches: LanelessMatch[];
   attemptedCount: number;
 }
 
 export interface LookupInput {
   riotId: RiotIdParts;
-  region: RegionalRoutingValue;
-  platform?: string;
+  /**
+   * Requirement 2.4: a diagnostic escape hatch, absent from the default UI. When
+   * supplied, it is used in place of the Region Resolver's call, and the
+   * resulting report is marked `usedPlatformOverride: true`. An unsupported value
+   * here is treated as if no override were given (falls through to normal
+   * resolution) rather than as a fatal input error — see `runPipeline`.
+   */
+  platformOverride?: PlatformRoutingValue;
 }
 
 export interface LookupOrchestrator {
@@ -341,6 +415,14 @@ export interface LookupOrchestratorOptions {
   freshPathBudgetMs?: number;
   matchHistoryCount?: number;
   matchDetailConcurrency?: number;
+  /**
+   * The Discovery_Region: a configuration value, not a visitor input, since
+   * Account-V1's by-riot-id and region-by-game-by-puuid calls are global and any
+   * regional host answers them (design.md). Defaults to `DEFAULT_REGION`.
+   */
+  discoveryRegion?: RegionalRoutingValue;
+  /** Injectable for tests; defaults to one built from the options above. */
+  regionResolver?: RegionResolver;
 }
 
 const defaultTimeoutScheduler: TimeoutScheduler = (ms, onElapsed) => {
@@ -368,13 +450,26 @@ interface ComponentAge {
   retrievedAt: number;
 }
 
+/** Requirement 1: the outcome of platform resolution, however it was obtained. */
+interface ResolvedRouting {
+  platform: PlatformRoutingValue;
+  region: RegionalRoutingValue;
+  /** Requirement 2.4. */
+  usedOverride: boolean;
+}
+
 /** Mutable per-lookup state, so the fallback can run after the race is abandoned. */
 interface LookupContext {
-  region: RegionalRoutingValue;
-  platform: PlatformRoutingValue;
   submittedRiotId: RiotIdParts;
   /** Set as soon as Account-V1 resolves; absent means no PUUID yet. */
   account?: { dto: AccountDto; age: ComponentAge };
+  /**
+   * Set once the platform is known, whether by the Region Resolver or by
+   * `platformOverride`. Absent means the fallback (Requirement 11.3) has nothing
+   * to route platform-scoped cache reads with, and cannot proceed — see
+   * `buildFallbackReport`.
+   */
+  resolved?: ResolvedRouting;
 }
 
 interface StageFailure {
@@ -391,6 +486,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly freshPathBudgetMs: number;
   private readonly matchHistoryCount: number;
   private readonly matchDetailConcurrency: number;
+  private readonly discoveryRegion: RegionalRoutingValue;
+  private readonly regionResolver: RegionResolver;
 
   constructor(options: LookupOrchestratorOptions) {
     this.cache = options.cache;
@@ -401,6 +498,15 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.freshPathBudgetMs = options.freshPathBudgetMs ?? FRESH_PATH_BUDGET_MS;
     this.matchHistoryCount = options.matchHistoryCount ?? MATCH_HISTORY_COUNT;
     this.matchDetailConcurrency = Math.max(1, options.matchDetailConcurrency ?? MATCH_DETAIL_CONCURRENCY);
+    this.discoveryRegion = options.discoveryRegion ?? DEFAULT_REGION;
+    this.regionResolver =
+      options.regionResolver ??
+      createRegionResolver({
+        client: this.client,
+        cache: this.cache,
+        discoveryRegion: this.discoveryRegion,
+        now: this.now,
+      });
   }
 
   /**
@@ -408,21 +514,12 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    * is a typed `LookupResult`, matching the Riot API Client's contract.
    */
   async runLookup(input: LookupInput): Promise<LookupResult> {
-    // Decision 10: defense in depth for untyped callers.
-    if (!isValidRegion(input.region)) {
-      return { kind: 'error', code: 'UNSUPPORTED_REGION', retriable: false };
-    }
-
-    const ctx: LookupContext = {
-      region: input.region,
-      platform: resolvePlatform(input.region, input.platform), // Requirements 2.5 / 5.4
-      submittedRiotId: input.riotId,
-    };
+    const ctx: LookupContext = { submittedRiotId: input.riotId };
 
     const gate = this.openBudgetGate();
     try {
       // Decision 5: the budget cancels the WAIT, it does not merely observe it.
-      const outcome = await Promise.race([this.runPipeline(ctx, gate), gate.expiry]);
+      const outcome = await Promise.race([this.runPipeline(ctx, gate, input.platformOverride), gate.expiry]);
 
       if (outcome !== BUDGET_EXPIRED) {
         return outcome;
@@ -443,22 +540,31 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    * budget race, so it may be abandoned mid-flight; everything it needs to hand
    * over to the fallback is recorded on `ctx` as soon as it is known.
    */
-  private async runPipeline(ctx: LookupContext, gate: BudgetGate): Promise<LookupResult> {
-    // --- Phase 1: Account-V1 (Requirement 2.1) ---------------------------------
+  private async runPipeline(
+    ctx: LookupContext,
+    gate: BudgetGate,
+    platformOverride: PlatformRoutingValue | undefined,
+  ): Promise<LookupResult> {
+    // --- Phase 1: Account-V1 (Requirement 2.1), against the Discovery_Region --
     const account = await cacheOrFetch<AccountDto>(
       this.cache,
       this.accountKey(ctx),
       TTL_BY_ENDPOINT.account,
-      () => this.client.getAccountByRiotId(ctx.region, ctx.submittedRiotId.gameName, ctx.submittedRiotId.tagLine),
+      () =>
+        this.client.getAccountByRiotId(
+          this.discoveryRegion,
+          ctx.submittedRiotId.gameName,
+          ctx.submittedRiotId.tagLine,
+        ),
       this.now,
     );
 
     if (isCacheOrFetchFailure(account)) {
-      this.logAuthFailure('account', ctx.region, account.failure);
+      this.logAuthFailure('account', this.discoveryRegion, account.failure);
       if (account.failure.kind === 'not_found') {
         // Requirements 2.4 / 9.2. Returning here is what guarantees no
-        // Summoner-V4/League-V4/Match-V5 call is issued, and `cacheOrFetch` only
-        // writes on success, so no partial state was persisted either.
+        // region-resolution/League-V4/Match-V5 call is issued, and `cacheOrFetch`
+        // only writes on success, so no partial state was persisted either.
         return {
           kind: 'not_found',
           gameName: ctx.submittedRiotId.gameName,
@@ -477,41 +583,71 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     }
     ctx.account = { dto: account.value, age: ageOf(account) };
 
-    // --- Phase 2: summoner + league + match ids, concurrently -----------------
-    const [summoner, league, matchIds] = await Promise.all([
-      cacheOrFetch<SummonerDto>(
-        this.cache,
-        { endpoint: 'summoner', routingValue: ctx.platform, params: { puuid } },
-        TTL_BY_ENDPOINT.summoner,
-        () => this.client.getSummonerByPuuid(ctx.platform, puuid), // Requirement 2.2
-        this.now,
-      ),
+    // --- Phase 1.5: platform resolution (Requirement 1) ------------------------
+    let resolved: ResolvedRouting;
+    if (platformOverride !== undefined && isSupportedPlatform(platformOverride)) {
+      // Requirement 2.4: skips the resolver entirely. An unsupported override
+      // falls through to normal resolution instead (see `LookupInput`'s doc).
+      resolved = { platform: platformOverride, region: regionForPlatform(platformOverride), usedOverride: true };
+    } else {
+      const resolution = await this.regionResolver.resolve(puuid);
+      if (resolution.kind === 'no_lol_account') {
+        return { kind: 'error', code: 'NO_LOL_ACCOUNT', retriable: false }; // Requirement 5.2
+      }
+      if (resolution.kind === 'unsupported_platform') {
+        // Requirement 5.3: name the platform Riot reported.
+        return { kind: 'error', code: 'UNSUPPORTED_PLATFORM', retriable: false, platform: resolution.platform };
+      }
+      if (resolution.kind === 'failed') {
+        // Requirement 5.4: no guessed fallback — surface the underlying error.
+        return this.errorFor('regionResolution', resolution.cause);
+      }
+      resolved = { platform: resolution.platform, region: resolution.region, usedOverride: false };
+    }
+    ctx.resolved = resolved;
+    const { platform, region } = resolved;
+
+    // --- Phase 2: League-V4 + Match-V5 match-ids (required), Summoner-V4 -------
+    // -----------(Enrichment_Call, Requirement 4) --------------------------------
+    // The raw result is captured once and awaited twice (settled promises are
+    // cheap to re-await): once via `enrich` for the value, once here so an
+    // auth failure can still be logged (Requirement 9.5) without Requirement
+    // 4.5's "no error code, routing decision, or pipeline-halting condition"
+    // ever seeing it.
+    const summonerResultPromise = this.client.getSummonerByPuuid(platform, puuid);
+    const [league, matchIds, summoner] = await Promise.all([
       cacheOrFetch<LeagueEntryDto[]>(
         this.cache,
-        { endpoint: 'league', routingValue: ctx.platform, params: { puuid } },
+        { endpoint: 'league', routingValue: platform, params: { puuid } },
         TTL_BY_ENDPOINT.league,
-        () => this.client.getLeagueEntriesByPuuid(ctx.platform, puuid), // Requirement 2.3
+        () => this.client.getLeagueEntriesByPuuid(platform, puuid), // Requirement 2.3
         this.now,
       ),
       cacheOrFetch<string[]>(
         this.cache,
-        { endpoint: 'matchIds', routingValue: ctx.region, params: { puuid } },
+        { endpoint: 'matchIds', routingValue: region, params: { puuid } },
         TTL_BY_ENDPOINT.matchIds,
-        () => this.client.getMatchIdsByPuuid(ctx.region, puuid, this.matchHistoryCount), // Requirement 3.1
+        () => this.client.getMatchIdsByPuuid(region, puuid, this.matchHistoryCount), // Requirement 3.1
         this.now,
       ),
+      enrich(() => summonerResultPromise),
     ]);
+    const summonerResult = await summonerResultPromise;
+    if (summonerResult.kind !== 'ok') {
+      this.logAuthFailure('summoner', platform, summonerResult);
+    }
 
-    // Decision 9: fixed reporting order, but log every auth failure.
+    // Decision 9 (revised): summoner can no longer fail the pipeline, so only
+    // league and match-ids are reported in fixed order; every auth failure is
+    // still logged.
     const stages: { stage: LookupStage; outcome: CacheOrFetchOutcome<unknown> }[] = [
-      { stage: 'summoner', outcome: summoner },
       { stage: 'league', outcome: league },
       { stage: 'matchIds', outcome: matchIds },
     ];
     const failures: StageFailure[] = [];
     for (const { stage, outcome } of stages) {
       if (isCacheOrFetchFailure(outcome)) {
-        this.logAuthFailure(stage, stage === 'matchIds' ? ctx.region : ctx.platform, outcome.failure);
+        this.logAuthFailure(stage, stage === 'matchIds' ? region : platform, outcome.failure);
         failures.push({ stage, failure: outcome.failure });
       }
     }
@@ -525,23 +661,26 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       return this.errorFor(failures[0].stage, failures[0].failure);
     }
 
-    // Type narrowing: the loop above proved all three succeeded.
-    if (isCacheOrFetchFailure(summoner) || isCacheOrFetchFailure(league) || isCacheOrFetchFailure(matchIds)) {
+    // Type narrowing: the loop above proved both succeeded.
+    if (isCacheOrFetchFailure(league) || isCacheOrFetchFailure(matchIds)) {
       return { kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true };
     }
 
     // --- Phase 3: match details (Requirements 3.2, 3.3, 3.5) ------------------
-    const window = await this.fetchMatchDetails(ctx, puuid, matchIds.value, gate);
+    const window = await this.fetchMatchDetails(region, puuid, matchIds.value, gate);
 
     return {
       kind: 'success',
       report: this.assembleReport({
         ctx,
         puuid,
-        summoner: summoner.value,
+        resolvedPlatform: platform,
+        usedPlatformOverride: resolved.usedOverride,
+        summoner,
         league: league.value,
         matches: window.matches,
-        ages: [ageOf(account), ageOf(summoner), ageOf(league), ageOf(matchIds)],
+        lanelessMatches: window.lanelessMatches,
+        ages: [ageOf(account), ageOf(league), ageOf(matchIds)],
         partialDataWarning: false,
       }),
     };
@@ -556,7 +695,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    * once the budget has elapsed (decision 5).
    */
   private async fetchMatchDetails(
-    ctx: LookupContext,
+    region: RegionalRoutingValue,
     puuid: string,
     rawMatchIds: string[],
     gate: BudgetGate,
@@ -566,6 +705,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       .slice(0, this.matchHistoryCount);
 
     const matches: IncludedMatch[] = [];
+    const lanelessMatches: LanelessMatch[] = [];
     let attemptedCount = 0;
 
     for (let start = 0; start < matchIds.length; start += this.matchDetailConcurrency) {
@@ -579,9 +719,9 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
         batch.map((matchId) =>
           cacheOrFetch<MatchDto>(
             this.cache,
-            { endpoint: 'matchDetail', routingValue: ctx.region, params: { matchId } },
+            { endpoint: 'matchDetail', routingValue: region, params: { matchId } },
             TTL_BY_ENDPOINT.matchDetail,
-            () => this.client.getMatchById(ctx.region, matchId), // Requirement 3.2
+            () => this.client.getMatchById(region, matchId), // Requirement 3.2
             this.now,
           ),
         ),
@@ -590,18 +730,26 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       for (const outcome of outcomes) {
         if (isCacheOrFetchFailure(outcome)) {
           // Requirement 3.3: exclude this match, keep going.
-          this.logAuthFailure('matchDetail', ctx.region, outcome.failure);
+          this.logAuthFailure('matchDetail', region, outcome.failure);
           continue;
         }
         // Requirement 3.5 and the mapping module's exclusion rules.
         const included = toIncludedMatch(outcome.value, puuid);
         if (included !== undefined) {
           matches.push(included);
+          continue;
+        }
+        // `match-detail-tabs` Requirement 11.1: a match `toIncludedMatch` excluded
+        // (unrecognized queue) may still be a Laneless_Match — tried only after
+        // the six-queue path declines it, and never the reverse.
+        const laneless = toLanelessMatch(outcome.value, puuid);
+        if (laneless !== undefined) {
+          lanelessMatches.push(laneless);
         }
       }
     }
 
-    return { puuid, matches, attemptedCount };
+    return { puuid, matches, lanelessMatches, attemptedCount };
   }
 
   /**
@@ -612,34 +760,40 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    *
    * Returns `undefined` when a complete snapshot is not available, which is the
    * signal to report an error instead (Requirements 2.7 / 3.6). "Complete" means
-   * the PUUID is known and the summoner, league and match-ids entries all exist;
-   * individual match details may be missing, which is the same tolerated
-   * exclusion Requirement 3.3 defines on the fresh path.
+   * the PUUID is known, the platform is resolved, and the league and match-ids
+   * entries both exist; individual match details may be missing, which is the
+   * same tolerated exclusion Requirement 3.3 defines on the fresh path.
+   *
+   * Summoner-V4 is deliberately absent from this method entirely: it is an
+   * Enrichment_Call that is never written to the cache (see `runPipeline`'s
+   * comment on `enrich`), so there is nothing to read here even in principle —
+   * every fallback report has `summonerLevel`/`profileIconId` null, which is a
+   * substantively true statement (Requirement 4.2 applies uniformly, not only
+   * on the fresh path) rather than a limitation of this method.
    */
   private async buildFallbackReport(ctx: LookupContext): Promise<ProfileReport | undefined> {
     const account = ctx.account;
-    if (account === undefined) {
+    const resolved = ctx.resolved;
+    if (account === undefined || resolved === undefined) {
+      // No fallback is possible before the platform is known — Requirement 5.4's
+      // "no guessed fallback" holds structurally, not just as a policy choice.
       return undefined;
     }
     const puuid = account.dto.puuid;
+    const { platform, region, usedOverride } = resolved;
 
-    const summoner = await this.readCached<SummonerDto>({
-      endpoint: 'summoner',
-      routingValue: ctx.platform,
-      params: { puuid },
-    });
     const league = await this.readCached<LeagueEntryDto[]>({
       endpoint: 'league',
-      routingValue: ctx.platform,
+      routingValue: platform,
       params: { puuid },
     });
     const matchIds = await this.readCached<string[]>({
       endpoint: 'matchIds',
-      routingValue: ctx.region,
+      routingValue: region,
       params: { puuid },
     });
 
-    if (summoner === undefined || league === undefined || matchIds === undefined) {
+    if (league === undefined || matchIds === undefined) {
       return undefined;
     }
 
@@ -648,10 +802,11 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       .slice(0, this.matchHistoryCount);
 
     const matches: IncludedMatch[] = [];
+    const lanelessMatches: LanelessMatch[] = [];
     for (const matchId of ids) {
       const entry = await this.readCached<MatchDto>({
         endpoint: 'matchDetail',
-        routingValue: ctx.region,
+        routingValue: region,
         params: { matchId },
       });
       if (entry === undefined) {
@@ -660,18 +815,25 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       const included = toIncludedMatch(entry.value, puuid);
       if (included !== undefined) {
         matches.push(included);
+        continue;
+      }
+      const laneless = toLanelessMatch(entry.value, puuid);
+      if (laneless !== undefined) {
+        lanelessMatches.push(laneless);
       }
     }
 
     return this.assembleReport({
       ctx,
       puuid,
-      summoner: summoner.value,
+      resolvedPlatform: platform,
+      usedPlatformOverride: usedOverride,
+      summoner: null,
       league: league.value,
       matches,
+      lanelessMatches,
       ages: [
         account.age,
-        { fromCache: true, retrievedAt: summoner.retrievedAt },
         { fromCache: true, retrievedAt: league.retrievedAt },
         { fromCache: true, retrievedAt: matchIds.retrievedAt },
       ],
@@ -696,13 +858,18 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private assembleReport(args: {
     ctx: LookupContext;
     puuid: string;
-    summoner: SummonerDto;
+    resolvedPlatform: PlatformRoutingValue;
+    usedPlatformOverride: boolean;
+    /** Requirement 4.2: `null` exactly when the Enrichment_Call failed. */
+    summoner: SummonerDto | null;
     league: LeagueEntryDto[];
     matches: IncludedMatch[];
+    /** `match-detail-tabs` Requirement 11.1. Never passed to `computeStats`/`computeFunFacts`/`computeRecommendations`/`averageMatchDurationMinutesOf`. */
+    lanelessMatches: LanelessMatch[];
     ages: ComponentAge[];
     partialDataWarning: boolean;
   }): ProfileReport {
-    const { ctx, puuid, summoner, matches, ages, partialDataWarning } = args;
+    const { ctx, puuid, resolvedPlatform, usedPlatformOverride, summoner, matches, lanelessMatches, ages, partialDataWarning } = args;
     // Requirements 2.8 / 6.1: an empty or unreadable entry list is Unranked.
     const league = toLeagueEntries(args.league);
     const stats = computeStats(matches, league, puuid);
@@ -710,21 +877,24 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     return {
       riotId: canonicalRiotId(ctx),
       puuid,
-      summonerLevel: finiteOrZero(summoner?.summonerLevel),
+      summonerLevel: finiteOrNull(summoner?.summonerLevel), // Requirement 4.2/4.3
       profileIconId: finiteOrNull(summoner?.profileIconId), // see ProfileReport
+      resolvedPlatform,
+      usedPlatformOverride,
       stats,
       funFacts: computeFunFacts(matches), // Requirements 7.1-7.6
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
       recommendations: computeRecommendations(matches, stats), // Requirements 8.1-8.5
       averageMatchDurationMinutes: averageMatchDurationMinutesOf(matches), // Requirement 7.3
-      recentMatches: computeRecentMatches(matches),
+      recentMatches: computeRecentMatches(matches, lanelessMatches),
       lastUpdated: lastUpdatedOf(ages), // Requirements 11.4 / 11.5
       partialDataWarning,
     };
   }
 
   /**
-   * Requirement 9's error table (decisions 2 and 3).
+   * Requirement 9's error table (decisions 2 and 3), revised by
+   * lookup-pipeline-fixes.
    *
    * | failure kind  | code                                              | retriable |
    * |---------------|---------------------------------------------------|-----------|
@@ -734,17 +904,21 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    * | network_error | NETWORK_ERROR                            (9.9)    | true      |
    * | server_error  | MATCH_HISTORY_UNAVAILABLE at matchIds    (3.6),   | true      |
    * |               | RIOT_UNAVAILABLE elsewhere               (9.3)    |           |
-   * | not_found     | PLAYER_NOT_ON_PLATFORM at summoner       (9.10),  | false     |
-   * |               | MATCH_HISTORY_UNAVAILABLE at matchIds    (3.6),   |           |
+   * | not_found     | MATCH_HISTORY_UNAVAILABLE at matchIds    (3.6),   | false     |
    * |               | RIOT_UNAVAILABLE elsewhere                        |           |
    *
-   * The `not_found`-at-summoner row is Requirement 9.10 (Finding A): Summoner-V4
-   * answering 404 for a PUUID that Account-V1 just resolved means precisely one
-   * thing — the player has no summoner on the platform we asked about. That is a
-   * statement about the region selection, not about Riot's health, so it must not
-   * share `RIOT_UNAVAILABLE`'s message. League-V4 is deliberately NOT included: it
-   * returns 200 with an empty array for an unranked player (Requirement 2.8), so a
-   * 404 there is an unreadable response rather than evidence about the platform.
+   * The former `not_found`-at-summoner row (Requirement 9.10 / Finding A,
+   * `PLAYER_NOT_ON_PLATFORM`) is GONE, not merely renamed: Summoner-V4 no longer
+   * reaches this method at all (it is an Enrichment_Call, Requirement 4), and the
+   * condition it used to detect — a correct Riot ID on the wrong platform — is
+   * now caught earlier and more directly by the Region Resolver as
+   * `NO_LOL_ACCOUNT` or `UNSUPPORTED_PLATFORM`, handled separately in
+   * `runPipeline` before this method is ever called for those cases. This
+   * method's callers now are only `account`, `regionResolution`, `league`,
+   * `matchIds` and `matchDetail`. League-V4 is deliberately NOT given its own
+   * `not_found` row: it returns 200 with an empty array for an unranked player
+   * (Requirement 2.8), so a 404 there is an unreadable response, not a
+   * meaningful signal.
    *
    * `retriable` drives Requirement 9.3's bounded, explicitly-initiated retry
    * affordance, so it is `true` exactly for the three rows design.md's error
@@ -771,10 +945,6 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
           retriable: true,
         };
       case 'not_found':
-        if (stage === 'summoner') {
-          // Requirement 9.10 / Finding A.
-          return { kind: 'error', code: 'PLAYER_NOT_ON_PLATFORM', retriable: false };
-        }
         return {
           kind: 'error',
           code: stage === 'matchIds' ? 'MATCH_HISTORY_UNAVAILABLE' : 'RIOT_UNAVAILABLE',
@@ -811,10 +981,16 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     };
   }
 
+  /**
+   * Keyed on the Discovery_Region, which is a fixed configuration value now
+   * (Requirement 1.5) rather than a visitor choice — so two visitors looking up
+   * the same Riot ID always share one cache entry, where before a different
+   * region selection produced a distinct, redundant entry for the same account.
+   */
   private accountKey(ctx: LookupContext): CacheKey {
     return {
       endpoint: 'account',
-      routingValue: ctx.region,
+      routingValue: this.discoveryRegion,
       params: { gameName: ctx.submittedRiotId.gameName, tagLine: ctx.submittedRiotId.tagLine },
     };
   }
@@ -859,8 +1035,17 @@ function canonicalRiotId(ctx: LookupContext): RiotIdParts {
   };
 }
 
-function finiteOrZero(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+/**
+ * Requirement 4.1/4.4/4.5. Translates an Enrichment_Call's `RiotApiResult` into
+ * `T | null` with no error channel at all — there is no failure branch to
+ * inspect, which is what makes Requirement 4.5 ("no error code, routing
+ * decision, or pipeline-halting condition derives from this call") checkable by
+ * looking at this function's return type rather than by auditing every call
+ * site that might have branched on it.
+ */
+async function enrich<T>(fetch: () => Promise<RiotApiResult<T>>): Promise<T | null> {
+  const result = await fetch();
+  return result.kind === 'ok' ? result.data : null;
 }
 
 /**

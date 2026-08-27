@@ -19,6 +19,27 @@ function Probe() {
 
 const CHAMPION_JSON = { data: { MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' } } } };
 const ITEM_JSON = { data: { '3031': { name: 'Infinity Edge', image: { full: '3031.png' }, depth: 2, gold: { total: 3500 } } } };
+const SUMMONER_JSON = { data: { SummonerFlash: { key: '4', name: 'Flash', image: { full: 'SummonerFlash.png' } } } };
+const RUNES_JSON = [
+  {
+    id: 8100,
+    name: 'Domination',
+    icon: 'perk-images/Styles/7200_Domination.png',
+    slots: [{ runes: [{ id: 8112, name: 'Electrocute', icon: 'perk-images/Styles/Domination/Electrocute/Electrocute.png' }] }],
+  },
+];
+const CHERRY_AUGMENTS_JSON = [
+  { id: 1205, nameTRA: 'ADAPt', augmentSmallIconPath: '/lol-game-data/assets/ASSETS/UX/Cherry/Augments/Icons/ADAPt_small.png' },
+];
+
+function metadataResponse(url: string): unknown {
+  if (url.includes('champion.json')) return CHAMPION_JSON;
+  if (url.includes('item.json')) return ITEM_JSON;
+  if (url.includes('summoner.json')) return SUMMONER_JSON;
+  if (url.includes('runesReforged.json')) return RUNES_JSON;
+  if (url.includes('cherry-augments.json')) return CHERRY_AUGMENTS_JSON;
+  throw new Error(`unexpected ${url}`);
+}
 
 function stubFetch(handler: (url: string) => Promise<Response> | Response) {
   const spy = vi.fn((input: RequestInfo | URL) => Promise.resolve(handler(String(input))));
@@ -53,9 +74,7 @@ describe('StaticDataContextProvider', () => {
   it('becomes ready and resolves assets after the version and metadata arrive', async () => {
     stubFetch((url) => {
       if (url.includes('/api/static-data')) return ok({ dataDragonVersion: '16.17.1' });
-      if (url.includes('champion.json')) return ok(CHAMPION_JSON);
-      if (url.includes('item.json')) return ok(ITEM_JSON);
-      throw new Error(`unexpected ${url}`);
+      return ok(metadataResponse(url));
     });
 
     render(
@@ -73,7 +92,7 @@ describe('StaticDataContextProvider', () => {
   it('fetches metadata straight from the CDN, never through the backend', async () => {
     const spy = stubFetch((url) => {
       if (url.includes('/api/static-data')) return ok({ dataDragonVersion: '16.17.1' });
-      return ok(url.includes('champion.json') ? CHAMPION_JSON : ITEM_JSON);
+      return ok(metadataResponse(url));
     });
 
     render(
@@ -84,13 +103,23 @@ describe('StaticDataContextProvider', () => {
     await waitFor(() => expect(screen.getByTestId('ready').textContent).toBe('true'));
 
     const urls = spy.mock.calls.map((call) => String(call[0]));
-    const metadata = urls.filter((u) => u.includes('champion.json') || u.includes('item.json'));
-    expect(metadata).toHaveLength(2);
+    const metadata = urls.filter(
+      (u) => u.includes('champion.json') || u.includes('item.json') || u.includes('summoner.json') || u.includes('runesReforged.json'),
+    );
+    expect(metadata).toHaveLength(4);
     // Requirements 4.5 / 4.6: the CDN directly, not proxied by our API.
     for (const url of metadata) {
       expect(url.startsWith('https://ddragon.leagueoflegends.com/')).toBe(true);
       expect(url).not.toContain('/api/');
     }
+
+    // Requirement 12.5/12.6: augments come from Community_Dragon — a different
+    // CDN from Data_Dragon — pinned and never proxied through this backend.
+    const cherryAugmentsUrls = urls.filter((u) => u.includes('cherry-augments.json'));
+    expect(cherryAugmentsUrls).toHaveLength(1);
+    expect(cherryAugmentsUrls[0].startsWith('https://raw.communitydragon.org/16.17/')).toBe(true);
+    expect(cherryAugmentsUrls[0]).not.toContain('/api/');
+    expect(cherryAugmentsUrls[0]).not.toContain('latest');
   });
 
   it('keeps the report readable when the version endpoint fails', async () => {
@@ -126,7 +155,7 @@ describe('StaticDataContextProvider', () => {
   it('serves a second mount from the persisted index without re-fetching metadata', async () => {
     const spy = stubFetch((url) => {
       if (url.includes('/api/static-data')) return ok({ dataDragonVersion: '16.17.1' });
-      return ok(url.includes('champion.json') ? CHAMPION_JSON : ITEM_JSON);
+      return ok(metadataResponse(url));
     });
 
     const first = render(
@@ -147,8 +176,17 @@ describe('StaticDataContextProvider', () => {
 
     const urls = spy.mock.calls.map((call) => String(call[0]));
     expect(urls.some((u) => u.includes('/api/static-data'))).toBe(true);
-    // Requirement 4.4: within the TTL the 846 KB metadata is not fetched again.
-    expect(urls.filter((u) => u.includes('champion.json') || u.includes('item.json'))).toHaveLength(0);
+    // Requirement 4.4: within the TTL the metadata is not fetched again.
+    expect(
+      urls.filter(
+        (u) =>
+          u.includes('champion.json') ||
+          u.includes('item.json') ||
+          u.includes('summoner.json') ||
+          u.includes('runesReforged.json') ||
+          u.includes('cherry-augments.json'),
+      ),
+    ).toHaveLength(0);
   });
 
   it('degrades to placeholders when used outside a provider rather than throwing', () => {

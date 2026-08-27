@@ -9,6 +9,7 @@ import {
 
 const ONE_HOUR_MS = 3_600_000;
 const TEN_MINUTES_MS = 600_000;
+const TWENTY_FOUR_HOURS_MS = 86_400_000;
 
 /** Fake clock: tests never rely on wall-clock time. */
 function fakeClock(start = 1_000_000) {
@@ -26,6 +27,7 @@ describe('TTL_BY_ENDPOINT', () => {
   it('matches the design TTL table exactly', () => {
     expect(TTL_BY_ENDPOINT).toEqual({
       account: ONE_HOUR_MS,
+      accountRegion: TWENTY_FOUR_HOURS_MS,
       summoner: ONE_HOUR_MS,
       league: TEN_MINUTES_MS,
       matchIds: TEN_MINUTES_MS,

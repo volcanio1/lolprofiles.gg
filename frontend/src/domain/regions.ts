@@ -1,26 +1,23 @@
 /**
- * Region and platform choices for the selector.
+ * Region/platform mapping table and platform display labels.
  *
  * PURE MODULE. No I/O, no React.
  *
- * Implements:
- *  - 1.6: `DEFAULT_REGION` is `americas`, used when the visitor has not chosen.
- *  - 1.7: the selector offers exactly `americas`, `europe`, `asia`, `sea`.
- *  - 5.3: the platform choices offered for a region are exactly that region's
- *    members, so the UI cannot construct a (region, platform) pair the backend
- *    would have to correct under Requirement 5.4.
+ * lookup-pipeline-fixes: the region and platform SELECTOR this module used to
+ * support is gone — the platform is now discovered by the backend's Region
+ * Resolver from the Riot ID alone (Requirement 2.1/2.2), so there is nothing
+ * left for the visitor to choose. What remains here is display-only:
+ * `PLATFORM_LABELS` turns the `resolvedPlatform` a report carries (Requirement
+ * 2.3) into a name a player recognizes ("euw1" -> "Europe West (EUW)").
  *
- * Mirrors `backend/src/region` for the same reason `riotId.ts` mirrors the
- * backend validator: the workspaces share no code, and the selector cannot be
- * built without the mapping. The backend remains authoritative — it re-validates
- * the region (rejecting anything outside the set) and substitutes a mismatched
- * platform — so a drift here degrades the UI's choices but cannot produce an
- * incorrect lookup. Order within each region is significant: the first entry is
- * the platform the backend falls back to (Requirement 5.4), which is why the
- * "any platform in this region" option is presented as the default.
- *
- * The display labels are UI text and have no counterpart in the backend; the
- * routing values are what travel over the wire.
+ * `REGION_TO_PLATFORMS`/`SUPPORTED_REGIONS` are kept even though nothing in
+ * this workspace uses them for routing anymore, because
+ * `frontend/src/domain/parity.test.ts` still guards this table against the
+ * backend's authoritative copy (`backend/src/region/index.ts`) — the backend
+ * derives its own reverse platform-to-region map from that same table
+ * (lookup-pipeline-fixes task 1.2), so a drift here would mean this file no
+ * longer describes a set of platforms Riot actually groups the way the backend
+ * thinks it does.
  */
 
 export type RegionalRoutingValue = 'americas' | 'europe' | 'asia' | 'sea';
@@ -38,7 +35,7 @@ export type PlatformRoutingValue =
   | 'jp1'
   | 'oc1';
 
-/** Requirement 5.2's closed mapping; first entry per region is the fallback. */
+/** Requirement 5.2's closed mapping (backend/src/region), kept for parity only. */
 export const REGION_TO_PLATFORMS: Readonly<Record<RegionalRoutingValue, readonly PlatformRoutingValue[]>> = {
   americas: ['na1', 'br1', 'la1', 'la2'],
   europe: ['euw1', 'eun1', 'tr1', 'ru'],
@@ -46,19 +43,8 @@ export const REGION_TO_PLATFORMS: Readonly<Record<RegionalRoutingValue, readonly
   sea: ['oc1'],
 };
 
-/** Requirement 1.7: exactly these four, in mapping order. */
+/** Kept for the parity guard; not used for any selector anymore. */
 export const SUPPORTED_REGIONS: readonly RegionalRoutingValue[] = ['americas', 'europe', 'asia', 'sea'];
-
-/** Requirement 1.6. */
-export const DEFAULT_REGION: RegionalRoutingValue = 'americas';
-
-/** Human-readable region names for the selector. */
-export const REGION_LABELS: Readonly<Record<RegionalRoutingValue, string>> = {
-  americas: 'Americas',
-  europe: 'Europe',
-  asia: 'Asia',
-  sea: 'Southeast Asia & Oceania',
-};
 
 /** Human-readable platform names, so `euw1` reads as something a player knows. */
 export const PLATFORM_LABELS: Readonly<Record<PlatformRoutingValue, string>> = {
@@ -75,24 +61,16 @@ export const PLATFORM_LABELS: Readonly<Record<PlatformRoutingValue, string>> = {
   oc1: 'Oceania (OCE)',
 };
 
-export function isValidRegion(value: string): value is RegionalRoutingValue {
-  return Object.prototype.hasOwnProperty.call(REGION_TO_PLATFORMS, value);
+function isKnownPlatform(value: string): value is PlatformRoutingValue {
+  return Object.prototype.hasOwnProperty.call(PLATFORM_LABELS, value);
 }
 
-/** Requirement 5.3: exactly the platforms belonging to `region`, in order. */
-export function platformsFor(region: RegionalRoutingValue): readonly PlatformRoutingValue[] {
-  return REGION_TO_PLATFORMS[region];
-}
-
-/** True when `platform` belongs to `region`, used to reset a stale selection. */
-export function platformBelongsTo(region: RegionalRoutingValue, platform: string): boolean {
-  return (REGION_TO_PLATFORMS[region] as readonly string[]).includes(platform);
-}
-
-/** Narrows an untrusted string (e.g. from a URL) to a region, or the default. */
-export function regionFromParam(raw: string | null | undefined): RegionalRoutingValue {
-  if (typeof raw === 'string' && isValidRegion(raw)) {
-    return raw;
-  }
-  return DEFAULT_REGION;
+/**
+ * Requirement 2.3: a display label for a report's `resolvedPlatform`. Falls
+ * back to the raw value uppercased — never empty — for a platform this
+ * frontend build predates, the same "degrade, don't hide" approach the rest of
+ * this codebase uses for unknown backend values.
+ */
+export function platformLabel(resolvedPlatform: string): string {
+  return isKnownPlatform(resolvedPlatform) ? PLATFORM_LABELS[resolvedPlatform] : resolvedPlatform.toUpperCase();
 }

@@ -96,7 +96,7 @@ The shared `CdnImage` primitive lands before the four new icon components rather
     - **Validates: Requirements 6.7, 6.8**
     - Must include a mirror-lane example — the same champion on both teams in the same position — since that is the case a champion-name match gets wrong
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 4. Consolidate the CDN image primitive
@@ -161,49 +161,50 @@ The shared `CdnImage` primitive lands before the four new icon components rather
     - Collapsed on first render; per-row independence; tab restored on re-expansion; both tabs list the same participants in identical order; analyzed player distinguishable; Build Path message present; no `<img>` when the provider is not ready
     - _Requirements: 2.2, 2.4, 2.5, 3.7, 4.1, 5.2, 9.3_
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Degradation, compliance, documentation and the `item-timeline` handoff
-  - [ ] 8.1 Verify the degraded paths
+- [x] 8. Degradation, compliance, documentation and the `item-timeline` handoff
+  - [x] 8.1 Verify the degraded paths
     - Rows and tabs render in full with placeholders when the spell or rune metadata fetch fails
     - A match with fewer than ten participants renders what it has
     - The General and Runes tabs are unaffected by the absence of an Enemy_Laner
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 6.11_
 
-  - [ ] 8.2 Confirm compliance and update the README
+  - [x] 8.2 Confirm compliance and update the README
     - Confirm the Detail_Panel inherits `RiotDataPage`'s attribution and no-advertising default rather than re-implementing either, and that no advertising slot exists inside a Match_Row or Detail_Panel
     - Extend the README's Assets section with the two new metadata files and the unversioned rune path, stating plainly that rune imagery is the one asset class `DDRAGON_VERSION` does not pin
     - _Requirements: 10.1, 10.2, 10.3, 7.6_
 
-  - [ ] 8.3 Confirm the `item-timeline` amendment still holds
+  - [x] 8.3 Confirm the `item-timeline` amendment still holds
     - That spec was amended when this one was written (its Requirements 3.8-3.10, its `BuildPathView` design section, its sequence flow, and its task 8.2)
     - Re-read it against the shipped Build Path tab and correct any drift before starting `item-timeline`
     - _Requirements: 5.4, 5.5, 5.6_
 
-- [ ] 9. Laneless queue support (ARAM and ARAM Mayhem)
-  - [ ] 9.1 Add the laneless capture path in `mapping.ts`
+- [x] 9. Laneless queue support (ARAM and ARAM Mayhem)
+  - [x] 9.1 Add the laneless capture path in `mapping.ts`
     - Declare `LANELESS_QUEUE_TYPE_BY_QUEUE_ID` (`{450: 'aram', 2400: 'aram mayhem'}`), disjoint from `QUEUE_TYPE_BY_QUEUE_ID` — do not add these ids to it or to `AllowedQueueType`
     - Implement `toLanelessMatch`, calling `toMatchParticipant` for all ten rows with `isEnemyLaner` hardcoded `false`; never call `opponentRowOf` or `opponentOf` from it
     - Declare `playerAugment1` through `playerAugment6` on `MatchParticipantDto`, optional, matching the existing pattern
     - Extend `toMatchParticipant` to read them unconditionally into `MatchParticipant.augments` (non-zero values only, Riot's field order) — no queue check inside this function; the field is simply zero everywhere but queue 2400
     - _Requirements: 11.1, 11.2, 11.3, 12.1, 12.2_
 
-  - [ ] 9.2 Verify the augment identifier mapping against a real match
+  - [x] 9.2 Verify the augment identifier mapping against a real match
     - Obtain a real queue-2400 (ARAM Mayhem) match — the mode was not queueable by any account checked during design, so this may require waiting for the event to be active or sourcing a match id from another verified source
     - Confirm `playerAugmentN`'s reported values are found as `id`s in `cherry-augments.json`, and that the resulting icon URLs return 200
     - This is the design's most consequential open item (see design.md's Open Questions): unlike the stat shard table, a wrong id space here silently mislabels every augment, not a handful of icons. Do not ship `augmentIconUrl`/`augmentDisplayName` as trustworthy until this passes
     - If no real match can be obtained before this feature ships, ship behind a note in the README identical in spirit to the stat shard caveat, and re-run this check the first time the mode is confirmed active
+    - **Outcome:** no real queue-2400 match could be obtained — re-checked against ~90 accounts across two sampling passes during this feature's implementation, zero hits both times. Shipped behind the README caveat this task specifies. `augmentIconUrl`/`augmentDisplayName` remain unverified against real Match-V5 data; re-run this check the first time ARAM Mayhem is confirmed active
     - _Requirements: 12.5_
 
-  - [ ] 9.3 Wire the laneless path into the orchestrator and `computeRecentMatches`
+  - [x] 9.3 Wire the laneless path into the orchestrator and `computeRecentMatches`
     - Extend the match-fetch loop: when `toIncludedMatch` returns `undefined`, try `toLanelessMatch` before discarding the match; collect hits into a new `lanelessMatches: LanelessMatch[]`, kept alongside the unchanged `matches: IncludedMatch[]`
     - Widen `computeRecentMatches` to take both arrays and merge by `startTimestamp` descending before slicing to `RECENT_MATCH_LIMIT`; a `LanelessMatch` competes for a slot on equal footing
     - Set `role: ''` when mapping a `LanelessMatch` — this is the existing "role could not be determined" sentinel already handled downstream, not a new one
     - Verify no other caller of `matches` (`computeStats`, `roleAggregatesOf`, `topChampionsOf`, `mostPlayedRoleOf`) changed signature or behavior
     - _Requirements: 11.1, 11.2, 11.4, 11.5_
 
-  - [ ] 9.4 Extend the Static_Data_Provider with augment accessors
+  - [x] 9.4 Extend the Static_Data_Provider with augment accessors
     - Fetch `cherry-augments.json` from Community_Dragon at `https://raw.communitydragon.org/{major}.{minor}/plugins/rcp-be-lol-game-data/global/default/v1/cherry-augments.json`, deriving `{major}.{minor}` from `DDRAGON_VERSION` — never request Community_Dragon's `"latest"`
     - Build the id → `{ name, iconPath }` index; build icon URLs by lowercasing `augmentSmallIconPath`, stripping its leading `/lol-game-data/assets/` segment, and appending to the pinned Community_Dragon base path
     - Implement `augmentIconUrl`, `augmentDisplayName`, total on the same terms as the other eight accessors — a URL or `null`, a name or the numeric id, never a throw
@@ -211,29 +212,29 @@ The shared `CdnImage` primitive lands before the four new icon components rather
     - Bump the persisted index's storage key again, for the same reason task 1.4 already bumps it for spells and runes
     - _Requirements: 12.5, 12.6, 12.7_
 
-  - [ ] 9.5 Implement the Augments tab and wire the queue-based tab switch
+  - [x] 9.5 Implement the Augments tab and wire the queue-based tab switch
     - `AugmentsTab`, a thin sibling of `RunesTab` reading `MatchParticipant.augments` instead of `.runes`, same participant ordering and grouping
     - In `DetailPanel`, render `AugmentsTab` in the third tab's place when `queueType === 'aram mayhem'`, and `RunesTab` for every other value including `'aram'`; relabel the tab accordingly
     - Render empty slots, not an unavailable state, for a participant with fewer than six captured augments
     - Render no description or tooltip text for an augment — name only, per decision 13
     - _Requirements: 11.7, 12.3, 12.4, 12.8, 12.9_
 
-  - [ ] 9.6 Suppress role and opponent display for Laneless_Matches in the row
+  - [x] 9.6 Suppress role and opponent display for Laneless_Matches in the row
     - `MatchRow`/`MatchSide` render no role text when `role === ''` and a `LanelessMatch` produced it — reuse the existing no-opponent-notice path for the right-hand side unconditionally
     - Every other row field (KDA, CS, CS/min, vision score, Final_Build, duration, queue type) renders exactly as it does for any other match
     - _Requirements: 11.4, 11.5_
 
-  - [ ]* 9.7 Write property test for the laneless boundary and augment capture
+  - [x]* 9.7 Write property test for the laneless boundary and augment capture
     - **Property 7: A Laneless_Match never reaches a role-relative computation**
     - **Validates: Requirements 11.2, 11.3, 12.1, 12.2**
 
-  - [ ]* 9.8 Write unit and component tests
+  - [x]* 9.8 Write unit and component tests
     - `toLanelessMatch` against queue 450 and queue 2400 fixtures, and `undefined` for every other queue
     - A queue-2400 participant with zero, some, and six captured augments
     - A queue-450 match renders the Runes tab; a queue-2400 match renders the Augments tab
     - A Laneless_Match's row shows no role text and no opposing side
 
-- [ ] 10. Final checkpoint - Ensure all tests pass
+- [x] 10. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

@@ -54,8 +54,8 @@ export const DEFAULT_COOLDOWN_SECONDS = 5;
 
 export interface LookupRequest {
   riotId: string;
-  region: string;
-  platform?: string;
+  /** lookup-pipeline-fixes Requirement 2.4/2.5: diagnostic only, never set by the default search UI. */
+  platformOverride?: string;
 }
 
 export type LookupOutcome =
@@ -74,10 +74,9 @@ export interface LookupClientOptions {
 /** Fallback messages for statuses the backend did not describe (decision 3). */
 const SYNTHESIZED_MESSAGES: Readonly<Record<ErrorCode, string>> = {
   VALIDATION_FAILED: 'That request could not be understood. Check the Riot ID and try again.',
-  UNSUPPORTED_REGION: 'That region is not supported.',
   PLAYER_NOT_FOUND: 'No player was found for that Riot ID.',
-  PLAYER_NOT_ON_PLATFORM:
-    'That player exists, but has no League of Legends profile on the selected region. Select a different region and search again.',
+  NO_LOL_ACCOUNT: 'That Riot account exists, but has no League of Legends play history.',
+  UNSUPPORTED_PLATFORM: "This player's League of Legends region is not one this site supports yet.",
   RIOT_UNAVAILABLE: "Riot's services are temporarily unavailable. Please try again in a moment.",
   TIMEOUT: 'The lookup timed out before Riot responded. Please try again.',
   RATE_LIMITED: `This lookup was rate-limited. Please wait ${String(DEFAULT_COOLDOWN_SECONDS)} seconds and try again.`,
@@ -159,10 +158,7 @@ export function readErrorPayload(body: unknown, status: number): ApiErrorPayload
   if (typeof raw.tagLine === 'string') {
     payload.tagLine = raw.tagLine;
   }
-  // Requirement 9.10: which region and platform were actually searched.
-  if (typeof raw.region === 'string') {
-    payload.region = raw.region;
-  }
+  // Requirement 5.3: the platform Riot itself reported, on UNSUPPORTED_PLATFORM.
   if (typeof raw.platform === 'string') {
     payload.platform = raw.platform;
   }
@@ -183,7 +179,7 @@ export function isProfileReport(body: unknown): body is ProfileReport {
   const candidate = body as Partial<ProfileReport>;
   return (
     typeof candidate.puuid === 'string' &&
-    typeof candidate.summonerLevel === 'number' &&
+    (typeof candidate.summonerLevel === 'number' || candidate.summonerLevel === null) &&
     candidate.stats !== null &&
     typeof candidate.stats === 'object' &&
     Array.isArray(candidate.funFacts) &&
@@ -211,9 +207,9 @@ export async function lookupProfile(
   }, timeoutMs);
 
   try {
-    const body: LookupRequest = { riotId: request.riotId, region: request.region };
-    if (request.platform !== undefined && request.platform.length > 0) {
-      body.platform = request.platform;
+    const body: LookupRequest = { riotId: request.riotId };
+    if (request.platformOverride !== undefined && request.platformOverride.length > 0) {
+      body.platformOverride = request.platformOverride;
     }
 
     let response: Response;

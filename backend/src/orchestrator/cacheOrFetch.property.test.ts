@@ -22,7 +22,14 @@ import { cacheOrFetch, isCacheOrFetchFailure, type RiotApiFailure } from './cach
  * timer, no network and no credential appears anywhere in this file.
  */
 
-const ENDPOINTS: readonly CacheEndpoint[] = ['account', 'summoner', 'league', 'matchIds', 'matchDetail'];
+const ENDPOINTS: readonly CacheEndpoint[] = [
+  'account',
+  'accountRegion',
+  'summoner',
+  'league',
+  'matchIds',
+  'matchDetail',
+];
 
 /**
  * Retention transcribed independently from Requirements 10.2-10.4 rather than
@@ -31,6 +38,7 @@ const ENDPOINTS: readonly CacheEndpoint[] = ['account', 'summoner', 'league', 'm
  */
 const EXPECTED_RETENTION_MS: Readonly<Record<CacheEndpoint, number | 'infinite'>> = {
   account: 60 * 60 * 1000,
+  accountRegion: 24 * 60 * 60 * 1000,
   summoner: 60 * 60 * 1000,
   league: 10 * 60 * 1000,
   matchIds: 10 * 60 * 1000,
@@ -141,6 +149,7 @@ describe('cacheOrFetch properties', () => {
 
     const endpointCounts: Record<CacheEndpoint, number> = {
       account: 0,
+      accountRegion: 0,
       summoner: 0,
       league: 0,
       matchIds: 0,

@@ -40,6 +40,8 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     puuid: 'p-1',
     summonerLevel: 496,
     profileIconId: 7,
+    resolvedPlatform: 'na1',
+    usedPlatformOverride: false,
     stats: { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM' },
     funFacts: [],
     limitedDataNotice: false,
@@ -60,28 +62,28 @@ describe('lookupProfile — request shape', () => {
       return Promise.resolve(jsonResponse(200, sampleReport()));
     };
 
-    await lookupProfile({ riotId: 'Doffy#Smile', region: 'europe' }, { fetch: fetchLike, baseUrl: BASE });
+    await lookupProfile({ riotId: 'Doffy#Smile' }, { fetch: fetchLike, baseUrl: BASE });
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe(`${BASE}/api/lookup`);
     expect(calls[0].init.method).toBe('POST');
-    expect(JSON.parse(String(calls[0].init.body))).toEqual({ riotId: 'Doffy#Smile', region: 'europe' });
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ riotId: 'Doffy#Smile' });
   });
 
-  it('omits platform when none was chosen, and includes it when one was', async () => {
+  it('omits platformOverride when none was chosen, and includes it when one was', async () => {
     const bodies: unknown[] = [];
     const fetchLike: FetchLike = (_url, init) => {
       bodies.push(JSON.parse(String(init.body)));
       return Promise.resolve(jsonResponse(200, sampleReport()));
     };
 
-    await lookupProfile({ riotId: 'A#B', region: 'europe' }, { fetch: fetchLike, baseUrl: BASE });
-    await lookupProfile({ riotId: 'A#B', region: 'europe', platform: '' }, { fetch: fetchLike, baseUrl: BASE });
-    await lookupProfile({ riotId: 'A#B', region: 'europe', platform: 'euw1' }, { fetch: fetchLike, baseUrl: BASE });
+    await lookupProfile({ riotId: 'A#B' }, { fetch: fetchLike, baseUrl: BASE });
+    await lookupProfile({ riotId: 'A#B', platformOverride: '' }, { fetch: fetchLike, baseUrl: BASE });
+    await lookupProfile({ riotId: 'A#B', platformOverride: 'euw1' }, { fetch: fetchLike, baseUrl: BASE });
 
-    expect(bodies[0]).toEqual({ riotId: 'A#B', region: 'europe' });
-    expect(bodies[1]).toEqual({ riotId: 'A#B', region: 'europe' });
-    expect(bodies[2]).toEqual({ riotId: 'A#B', region: 'europe', platform: 'euw1' });
+    expect(bodies[0]).toEqual({ riotId: 'A#B' });
+    expect(bodies[1]).toEqual({ riotId: 'A#B' });
+    expect(bodies[2]).toEqual({ riotId: 'A#B', platformOverride: 'euw1' });
   });
 });
 
@@ -89,7 +91,7 @@ describe('lookupProfile — success', () => {
   it('returns the report on 200', async () => {
     const report = sampleReport();
     const outcome = await lookupProfile(
-      { riotId: 'Doffy#Smile', region: 'europe' },
+      { riotId: 'Doffy#Smile' },
       { fetch: () => Promise.resolve(jsonResponse(200, report)), baseUrl: BASE },
     );
 
@@ -98,7 +100,7 @@ describe('lookupProfile — success', () => {
 
   it('treats a 200 whose body is not a report as an error, not an empty report', async () => {
     const outcome = await lookupProfile(
-      { riotId: 'A#B', region: 'europe' },
+      { riotId: 'A#B' },
       { fetch: () => Promise.resolve(jsonResponse(200, { nonsense: true })), baseUrl: BASE },
     );
 
@@ -107,7 +109,7 @@ describe('lookupProfile — success', () => {
 
   it('treats a 200 with an unparseable body as an error', async () => {
     const outcome = await lookupProfile(
-      { riotId: 'A#B', region: 'europe' },
+      { riotId: 'A#B' },
       { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE },
     );
 
@@ -129,7 +131,7 @@ describe('lookupProfile — error mapping (Requirement 9)', () => {
   for (const { status, code, body } of cases) {
     it(`passes through the backend's ${code} payload from a ${String(status)}`, async () => {
       const outcome = await lookupProfile(
-        { riotId: 'A#B', region: 'europe' },
+        { riotId: 'A#B' },
         { fetch: () => Promise.resolve(jsonResponse(status, body)), baseUrl: BASE },
       );
 
@@ -144,7 +146,7 @@ describe('lookupProfile — error mapping (Requirement 9)', () => {
 
   it('never rejects, whatever the transport does (Requirement 9.7 depends on this)', async () => {
     const outcome = await lookupProfile(
-      { riotId: 'A#B', region: 'europe' },
+      { riotId: 'A#B' },
       { fetch: () => Promise.reject(new Error('DNS failure')), baseUrl: BASE },
     );
 
@@ -167,7 +169,7 @@ describe('lookupProfile — error mapping (Requirement 9)', () => {
       });
 
     const outcome = await lookupProfile(
-      { riotId: 'A#B', region: 'europe' },
+      { riotId: 'A#B' },
       { fetch: hangingFetch, baseUrl: BASE, timeoutMs: 5 },
     );
 
@@ -181,7 +183,7 @@ describe('lookupProfile — error mapping (Requirement 9)', () => {
   it('synthesizes a payload when the body is not our envelope (proxy HTML, empty 502)', async () => {
     for (const body of [null, 'an html page', { unexpected: true }, { error: 'a string' }]) {
       const outcome = await lookupProfile(
-        { riotId: 'A#B', region: 'europe' },
+        { riotId: 'A#B' },
         { fetch: () => Promise.resolve(jsonResponse(503, body)), baseUrl: BASE },
       );
       expect(outcome.kind).toBe('error');
@@ -196,7 +198,7 @@ describe('lookupProfile — error mapping (Requirement 9)', () => {
   it('always supplies a rate-limit cooldown of at least 5 seconds (Requirement 9.8)', async () => {
     // Backend omitted retryAfterSeconds.
     const outcome = await lookupProfile(
-      { riotId: 'A#B', region: 'europe' },
+      { riotId: 'A#B' },
       {
         fetch: () => Promise.resolve(jsonResponse(429, { error: { code: 'RATE_LIMITED', message: 'slow', retriable: true } })),
         baseUrl: BASE,
@@ -224,7 +226,7 @@ describe('response narrowing helpers', () => {
   });
 
   it('gives every synthesized error a non-empty message', () => {
-    for (const code of ['VALIDATION_FAILED', 'PLAYER_NOT_FOUND', 'RATE_LIMITED', 'TIMEOUT', 'AUTH_FAILURE', 'NETWORK_ERROR', 'RIOT_UNAVAILABLE', 'MATCH_HISTORY_UNAVAILABLE', 'UNSUPPORTED_REGION'] as const) {
+    for (const code of ['VALIDATION_FAILED', 'PLAYER_NOT_FOUND', 'RATE_LIMITED', 'TIMEOUT', 'AUTH_FAILURE', 'NETWORK_ERROR', 'RIOT_UNAVAILABLE', 'MATCH_HISTORY_UNAVAILABLE', 'NO_LOL_ACCOUNT', 'UNSUPPORTED_PLATFORM'] as const) {
       expect(synthesizedError(code).message.length, code).toBeGreaterThan(0);
     }
   });

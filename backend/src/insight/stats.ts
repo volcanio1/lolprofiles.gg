@@ -129,6 +129,88 @@ export interface OpponentSummary {
   build: ItemBuild;
 }
 
+/** `match-detail-tabs` Requirement 6.2. A Participant's complete rune selection. */
+export interface RunePage {
+  primaryStyle: number;
+  secondaryStyle: number;
+  /** Four perk ids in Riot's reported slot order (Requirement 4.5). */
+  primarySelections: readonly number[];
+  /** Two perk ids in Riot's reported slot order. */
+  secondarySelections: readonly number[];
+  /** offense, flex, defense — in that order, matching Riot's statPerks keys. */
+  statShards: readonly [number, number, number];
+}
+
+/**
+ * `match-detail-tabs` Requirement 6. One of a match's Participants, trimmed to
+ * what the General and Runes tabs render. Constructed by `mapping.ts`'s
+ * `toMatchParticipant`, which is why this type lives beside `ItemBuild` and
+ * `OpponentSummary` rather than in `mapping.ts` — the same domain-output-type
+ * placement those two already use.
+ */
+export interface MatchParticipant {
+  /** Requirement 6.6/6.7. No participant record carries a PUUID, including the analyzed player's own. */
+  isAnalyzedPlayer: boolean;
+  /** Requirement 6.7/6.8. Set from the same row `opponentOf`/`opponentRowOf` chose, never from a champion-name match. */
+  isEnemyLaner: boolean;
+  /** 100 or 200. */
+  teamId: number;
+  /** From riotIdGameName/riotIdTagline; summonerName is deprecated and empty. */
+  riotIdGameName: string;
+  riotIdTagline: string;
+  championName: string;
+  champLevel: number;
+  /** '' when Riot could not assign one. */
+  teamPosition: string;
+  summonerSpells: readonly [number, number];
+  runes: RunePage;
+  build: ItemBuild;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  visionScore: number;
+  damageToChampions: number;
+  goldEarned: number;
+  win: boolean;
+  /** Requirement 3.4/3.6. 'N/A' exactly when the team's total kills is 0. */
+  killParticipationPercent: number | 'N/A';
+  /**
+   * Requirement 12.1/12.2. Zero to six non-zero `playerAugmentN` values, Riot's
+   * field order. Always `[]` outside queue 2400 — reading the fields is
+   * unconditional; only ARAM Mayhem ever has a non-zero value to find.
+   */
+  augments: readonly number[];
+}
+
+/**
+ * Requirement 11. A match played in queue 450 (ARAM) or 2400 (ARAM Mayhem) —
+ * admitted to the recent-matches list through `toLanelessMatch`, disjoint from
+ * `QUEUE_TYPE_BY_QUEUE_ID` and never fed to a role-relative computation
+ * (`computeStats`, `roleAggregatesOf`, `topChampionsOf`, `mostPlayedRoleOf`).
+ * Deliberately its own type, not `IncludedMatch`/`RawMatch` — see
+ * `match-detail-tabs` design.md decision 14: keeping the two types structurally
+ * distinct means a role-relative function simply does not compile against a
+ * `LanelessMatch[]`, rather than relying on every future call site to remember
+ * a runtime filter.
+ */
+export interface LanelessMatch {
+  matchId: string;
+  startTimestamp: number;
+  durationSeconds: number;
+  win: boolean;
+  queueType: 'aram' | 'aram mayhem';
+  championName: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  visionScore: number;
+  build: ItemBuild;
+  /** All ten. `isEnemyLaner` is `false` on every one — a Laneless_Match has no lane. */
+  participants: MatchParticipant[];
+}
+
 export interface RawMatch {
   matchId: string;
   queueType: string;
@@ -151,6 +233,12 @@ export interface RawMatch {
    * no change; absent reads as an all-zero build, the same as a genuinely empty one.
    */
   build?: ItemBuild;
+  /**
+   * `match-detail-tabs` Requirement 6.5. All ten Participants, threaded through
+   * unchanged by `computeRecentMatches`. Optional so every fixture written before
+   * this feature needs no change; absent reads as an empty list, not a failure.
+   */
+  participants?: MatchParticipant[];
 }
 
 export type IncludedMatch = RawMatch;
@@ -310,6 +398,21 @@ export function averageCsOf(matches: readonly IncludedMatch[]): number {
 /** A single game's CS/min; 0 for a non-positive duration rather than a division blow-up. */
 export function csPerMinuteOf(cs: number, durationSeconds: number): number {
   return durationSeconds > 0 ? round2(cs / (durationSeconds / 60)) : 0;
+}
+
+/**
+ * `match-detail-tabs` Requirements 3.4/3.6. A participant's share of their own
+ * team's total kills, as a whole-number percentage, or `'N/A'` exactly when the
+ * team's total kills is 0 — the same `number | 'N/A'` encoding `winRatePercentOf`
+ * already uses for a zero denominator. Negative or non-finite inputs are not
+ * expected from a caller that has already coerced them (mapping.ts's `finiteOrZero`
+ * runs first); they are not special-cased here, matching `winRatePercentOf`.
+ */
+export function killParticipationOf(kills: number, assists: number, teamKills: number): number | 'N/A' {
+  if (teamKills === 0) {
+    return 'N/A';
+  }
+  return roundHalfUp((100 * (kills + assists)) / teamKills);
 }
 
 /** Average, across matches, of each game's own CS/min (decision matches `averageCsOf`'s per-game averaging). */

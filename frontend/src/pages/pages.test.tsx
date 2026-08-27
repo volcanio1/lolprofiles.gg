@@ -20,6 +20,8 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     puuid: 'p-1',
     summonerLevel: 496,
     profileIconId: 7,
+    resolvedPlatform: 'na1',
+    usedPlatformOverride: false,
     stats: {
       rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 } },
       overallAverageKda: 3.07,
@@ -59,28 +61,28 @@ function renderApp(initialPath: string, lookupOptions?: UseLookupOptions) {
 
 describe('reportPathFor — the deferred #-in-URL decision', () => {
   it('percent-encodes the # so the Riot ID survives the round trip', () => {
-    const path = reportPathFor({ riotId: 'Doffy#Smile', region: 'europe' });
+    const path = reportPathFor({ riotId: 'Doffy#Smile' });
 
     expect(path).toContain('riotId=Doffy%23Smile');
-    expect(path).toContain('region=europe');
     // The fragment delimiter must not appear raw, or everything after it is lost.
     expect(path.split('?')[1]).not.toContain('#');
   });
 
   it('round-trips the Riot ID through URLSearchParams unchanged', () => {
-    const path = reportPathFor({ riotId: 'Doffy#Smile', region: 'europe' });
+    const path = reportPathFor({ riotId: 'Doffy#Smile' });
     const params = new URLSearchParams(path.split('?')[1]);
 
     expect(params.get('riotId')).toBe('Doffy#Smile');
   });
 
-  it('includes a platform only when one was chosen', () => {
-    expect(reportPathFor({ riotId: 'A#B', region: 'europe' })).not.toContain('platform');
-    expect(reportPathFor({ riotId: 'A#B', region: 'europe', platform: 'euw1' })).toContain('platform=euw1');
+  it('never includes a region or platform query parameter (lookup-pipeline-fixes Requirement 2.1)', () => {
+    const path = reportPathFor({ riotId: 'A#B' });
+    expect(path).not.toContain('region');
+    expect(path).not.toContain('platform');
   });
 
   it('encodes Riot IDs containing characters that are significant in a URL', () => {
-    const params = new URLSearchParams(reportPathFor({ riotId: 'a b&c#d+e', region: 'asia' }).split('?')[1]);
+    const params = new URLSearchParams(reportPathFor({ riotId: 'a b&c#d+e' }).split('?')[1]);
     expect(params.get('riotId')).toBe('a b&c#d+e');
   });
 });
@@ -91,14 +93,12 @@ describe('SearchPage — Requirement 1.1/1.2', () => {
     renderApp('/');
 
     await user.type(screen.getByLabelText('Riot ID'), 'Doffy#Smile');
-    await user.selectOptions(screen.getByLabelText('Region'), 'europe');
     await user.click(screen.getByRole('button', { name: /search/i }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/profile');
     });
     expect(screen.getByTestId('location')).toHaveTextContent('riotId=Doffy%23Smile');
-    expect(screen.getByTestId('location')).toHaveTextContent('region=europe');
   });
 
   it('does not navigate when validation fails (Requirement 9.1)', async () => {
@@ -126,7 +126,7 @@ describe('ProfileReportPage — loading lifecycle (Requirements 9.6, 9.7)', () =
         resolve = r;
       });
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('ProfileReportPage — loading lifecycle (Requirements 9.6, 9.7)', () =
         error: { code: 'TIMEOUT', message: 'The lookup timed out.', retriable: false },
       });
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(screen.getByTestId('error-notice')).toBeInTheDocument();
@@ -158,35 +158,34 @@ describe('ProfileReportPage — loading lifecycle (Requirements 9.6, 9.7)', () =
 });
 
 describe('ProfileReportPage — request derived from the URL', () => {
-  it('decodes the Riot ID and forwards the region and platform', async () => {
+  it('decodes the Riot ID from the URL and dispatches only that (lookup-pipeline-fixes Requirement 2.1)', async () => {
     const calls: LookupRequest[] = [];
     const lookup = (request: LookupRequest) => {
       calls.push(request);
       return Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() });
     };
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe&platform=euw1', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(calls).toHaveLength(1);
     });
-    expect(calls[0]).toEqual({ riotId: 'Doffy#Smile', region: 'europe', platform: 'euw1' });
+    expect(calls[0]).toEqual({ riotId: 'Doffy#Smile' });
   });
 
-  it('falls back to the default region when the URL names an unsupported one', async () => {
+  it('ignores a region or platform query parameter left over from an old link', async () => {
     const calls: LookupRequest[] = [];
     const lookup = (request: LookupRequest) => {
       calls.push(request);
       return Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() });
     };
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=atlantis', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile&region=atlantis&platform=euw1', { lookup });
 
     await waitFor(() => {
       expect(calls).toHaveLength(1);
     });
-    // Requirement 1.6's default, rather than forwarding a value 5.5 would reject.
-    expect(calls[0].region).toBe('americas');
+    expect(calls[0]).toEqual({ riotId: 'Doffy#Smile' });
   });
 
   it('dispatches nothing and prompts when the URL carries no Riot ID', async () => {
@@ -201,19 +200,17 @@ describe('ProfileReportPage — request derived from the URL', () => {
     expect(screen.queryByTestId('error-notice')).not.toBeInTheDocument();
   });
 
-  it('prefills the form from the URL so a wrong region is one interaction to fix', async () => {
+  it('prefills the Riot ID from the URL so correcting a typo is one interaction', async () => {
     const lookup = () => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() });
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe&platform=euw1', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Riot ID')).toHaveValue('Doffy#Smile');
     });
-    expect(screen.getByLabelText('Region')).toHaveValue('europe');
-    expect(screen.getByLabelText('Platform')).toHaveValue('euw1');
   });
 
-  it('re-runs the lookup when the form is resubmitted with a different region', async () => {
+  it('re-runs the lookup when the form is resubmitted with a different Riot ID', async () => {
     const user = userEvent.setup();
     const calls: LookupRequest[] = [];
     const lookup = (request: LookupRequest) => {
@@ -224,20 +221,21 @@ describe('ProfileReportPage — request derived from the URL', () => {
       });
     };
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=americas', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(calls).toHaveLength(1);
     });
-    expect(calls[0].region).toBe('americas');
+    expect(calls[0]).toEqual({ riotId: 'Doffy#Smile' });
 
-    await user.selectOptions(screen.getByLabelText('Region'), 'europe');
+    await user.clear(screen.getByLabelText('Riot ID'));
+    await user.type(screen.getByLabelText('Riot ID'), 'Other#Smile');
     await user.click(screen.getByRole('button', { name: /search/i }));
 
     await waitFor(() => {
       expect(calls).toHaveLength(2);
     });
-    expect(calls[1].region).toBe('europe');
+    expect(calls[1]).toEqual({ riotId: 'Other#Smile' });
   });
 });
 
@@ -254,7 +252,7 @@ describe('ProfileReportPage — error handling and retry (Requirements 9.3, 9.8)
       );
     };
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(screen.getByTestId('retry-button')).toBeEnabled();
@@ -281,7 +279,7 @@ describe('ProfileReportPage — error handling and retry (Requirements 9.3, 9.8)
         },
       });
 
-    renderApp('/profile?riotId=Doffy%23Smile&region=europe', { lookup });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
 
     await waitFor(() => {
       expect(screen.getByTestId('error-notice')).toBeInTheDocument();
@@ -299,7 +297,7 @@ describe('ProfileReportPage — compliance (Requirements 12.1, 12.2)', () => {
     ];
 
     for (const outcome of states) {
-      const { unmount } = renderApp('/profile?riotId=Doffy%23Smile&region=europe', {
+      const { unmount } = renderApp('/profile?riotId=Doffy%23Smile', {
         lookup: () => Promise.resolve(outcome),
       });
 

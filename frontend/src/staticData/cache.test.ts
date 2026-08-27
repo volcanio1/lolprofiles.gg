@@ -13,6 +13,10 @@ const index: StaticDataIndex = {
   version: '16.17.1',
   champions: { MonkeyKing: { name: 'Wukong', image: 'MonkeyKing.png' } },
   items: { '3031': { name: 'Infinity Edge', image: '3031.png', completed: true } },
+  spells: {},
+  runes: {},
+  runeTrees: {},
+  augments: {},
 };
 
 afterEach(() => {
@@ -43,7 +47,7 @@ describe('static data persistence', () => {
 
   it('rejects an entry whose index is an object but has no maps', () => {
     window.localStorage.setItem(
-      'lolprofiles.staticData.v1',
+      'lolprofiles.staticData.v3',
       JSON.stringify({ version: '16.17.1', storedAt: 1_000, index: { version: '16.17.1' } }),
     );
     expect(readStoredIndex('16.17.1', 1_000)).toBeNull();
@@ -51,16 +55,16 @@ describe('static data persistence', () => {
 
   it('evicts a shapeless entry so the CDN is re-fetched rather than skipped for 24h', () => {
     window.localStorage.setItem(
-      'lolprofiles.staticData.v1',
+      'lolprofiles.staticData.v3',
       JSON.stringify({ version: '16.17.1', storedAt: 1_000, index: { version: '16.17.1' } }),
     );
     readStoredIndex('16.17.1', 1_000);
-    expect(window.localStorage.getItem('lolprofiles.staticData.v1')).toBeNull();
+    expect(window.localStorage.getItem('lolprofiles.staticData.v3')).toBeNull();
   });
 
   it('rejects an entry whose inner version disagrees with the outer one', () => {
     window.localStorage.setItem(
-      'lolprofiles.staticData.v1',
+      'lolprofiles.staticData.v3',
       JSON.stringify({
         version: '16.17.1',
         storedAt: 1_000,
@@ -86,14 +90,14 @@ describe('static data persistence', () => {
   });
 
   it('discards a corrupt entry without throwing', () => {
-    window.localStorage.setItem('lolprofiles.staticData.v1', '{not json');
+    window.localStorage.setItem('lolprofiles.staticData.v3', '{not json');
     expect(() => readStoredIndex('16.17.1', 1_000)).not.toThrow();
     expect(readStoredIndex('16.17.1', 1_000)).toBeNull();
   });
 
   it('discards a structurally invalid entry', () => {
     window.localStorage.setItem(
-      'lolprofiles.staticData.v1',
+      'lolprofiles.staticData.v3',
       JSON.stringify({ version: '16.17.1', storedAt: 'soon', index }),
     );
     expect(readStoredIndex('16.17.1', 1_000)).toBeNull();

@@ -31,14 +31,14 @@ describe('distinct states per Requirement 9', () => {
   const states: { code: ErrorCode; message: string; retriable: boolean }[] = [
     { code: 'VALIDATION_FAILED', message: 'Enter a Riot ID in the format gameName#tagLine.', retriable: false },
     { code: 'PLAYER_NOT_FOUND', message: 'No player was found for the Riot ID Doffy#Smile.', retriable: false },
-    { code: 'PLAYER_NOT_ON_PLATFORM', message: 'Doffy#Smile has no profile on NA1 (americas).', retriable: false },
+    { code: 'NO_LOL_ACCOUNT', message: 'Doffy#Smile is a Riot account, but has no League play history.', retriable: false },
+    { code: 'UNSUPPORTED_PLATFORM', message: "This player's region (\"vn2\") is not supported yet.", retriable: false },
     { code: 'RIOT_UNAVAILABLE', message: "Riot's services are temporarily unavailable.", retriable: true },
     { code: 'TIMEOUT', message: 'The lookup timed out before Riot responded.', retriable: false },
     { code: 'AUTH_FAILURE', message: 'This service is temporarily unavailable.', retriable: false },
     { code: 'RATE_LIMITED', message: 'This lookup was rate-limited.', retriable: true },
     { code: 'NETWORK_ERROR', message: 'A connection error occurred.', retriable: true },
     { code: 'MATCH_HISTORY_UNAVAILABLE', message: 'Match history could not be retrieved.', retriable: true },
-    { code: 'UNSUPPORTED_REGION', message: 'That region is not supported.', retriable: false },
   ];
 
   for (const state of states) {
@@ -72,44 +72,48 @@ describe('distinct states per Requirement 9', () => {
     expect(headings.size).toBe(states.length - 1);
   });
 
-  it('gives the wrong-region state its own heading and a pointer to the fix (Requirement 9.10)', () => {
+  it('gives NO_LOL_ACCOUNT its own heading, distinct from PLAYER_NOT_FOUND (lookup-pipeline-fixes Requirement 5.2)', () => {
     renderNotice(
-      payload(
-        'PLAYER_NOT_ON_PLATFORM',
-        'Doffy#Smile exists, but has no League of Legends profile on NA1 (americas). Select the region where this player plays and search again.',
-        false,
-        { gameName: 'Doffy', tagLine: 'Smile', region: 'americas', platform: 'na1', field: 'region' },
-      ),
+      payload('NO_LOL_ACCOUNT', 'Doffy#Smile is a Riot account, but it has no League of Legends play history.', false, {
+        gameName: 'Doffy',
+        tagLine: 'Smile',
+      }),
     );
 
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Not on this region');
-    expect(screen.getByTestId('error-message')).toHaveTextContent('NA1');
-    expect(screen.getByTestId('wrong-region-hint')).toHaveTextContent(/region selector/i);
-    // It must not read as an outage — that was the bug this state exists to fix.
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('No League of Legends history');
+    expect(screen.getByTestId('error-message')).toHaveTextContent('Doffy#Smile');
+    // It must not read as an outage.
     expect(screen.getByTestId('error-message')).not.toHaveTextContent(/unavailable/i);
     expect(screen.queryByTestId('retry-button')).not.toBeInTheDocument();
   });
 
-  it('does not show the region hint for other error states', () => {
-    renderNotice(payload('PLAYER_NOT_FOUND', 'No player was found.', false));
-    expect(screen.queryByTestId('wrong-region-hint')).not.toBeInTheDocument();
+  it('gives UNSUPPORTED_PLATFORM its own heading naming the platform Riot reported (Requirement 5.3)', () => {
+    renderNotice(
+      payload('UNSUPPORTED_PLATFORM', 'This player’s region ("vn2") is not supported yet.', false, {
+        platform: 'vn2',
+      }),
+    );
+
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Region not supported yet');
+    expect(screen.getByTestId('error-message')).toHaveTextContent('vn2');
+    expect(screen.queryByTestId('retry-button')).not.toBeInTheDocument();
   });
 
-  it('distinguishes "not on this region" from "no such player" by heading', () => {
+  it('distinguishes NO_LOL_ACCOUNT from "no such player" by heading', () => {
     const { unmount } = render(
       <ErrorNotice
-        error={payload('PLAYER_NOT_ON_PLATFORM', 'exists elsewhere', false)}
+        error={payload('NO_LOL_ACCOUNT', 'exists but never played', false)}
         canRetry={false}
         retriesRemaining={3}
         cooldownSecondsRemaining={0}
         onRetry={vi.fn()}
       />,
     );
-    const notOnPlatform = screen.getByRole('heading', { level: 2 }).textContent;
+    const noLolAccount = screen.getByRole('heading', { level: 2 }).textContent;
     unmount();
 
     renderNotice(payload('PLAYER_NOT_FOUND', 'no such player', false));
-    expect(screen.getByRole('heading', { level: 2 }).textContent).not.toBe(notOnPlatform);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).not.toBe(noLolAccount);
   });
 
   it('presents Requirement 9.2 with the submitted Riot ID that the backend echoed', () => {

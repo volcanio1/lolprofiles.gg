@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import type { LeagueEntryDto, MatchDto } from '../riotApiClient';
 import {
   ALLOWED_QUEUE_TYPES,
+  LANELESS_QUEUE_TYPE_BY_QUEUE_ID,
   QUEUE_TYPE_BY_QUEUE_ID,
   queueTypeForQueueId,
   toIncludedMatch,
+  toLanelessMatch,
   toLeagueEntries,
   toLeagueEntry,
 } from './mapping';
@@ -107,6 +109,31 @@ describe('toIncludedMatch', () => {
       cs: 0,
       opponent: undefined,
       build: { items: [0, 0, 0, 0, 0, 0], trinket: 0 },
+      participants: [
+        {
+          isAnalyzedPlayer: true,
+          isEnemyLaner: false,
+          teamId: 0,
+          riotIdGameName: '',
+          riotIdTagline: '',
+          championName: 'Ahri',
+          champLevel: 0,
+          teamPosition: 'MIDDLE',
+          summonerSpells: [0, 0],
+          runes: { primaryStyle: 0, secondaryStyle: 0, primarySelections: [], secondarySelections: [], statShards: [0, 0, 0] },
+          build: { items: [0, 0, 0, 0, 0, 0], trinket: 0 },
+          kills: 7,
+          deaths: 3,
+          assists: 9,
+          cs: 0,
+          visionScore: 21,
+          damageToChampions: 0,
+          goldEarned: 0,
+          win: true,
+          killParticipationPercent: 'N/A',
+          augments: [],
+        },
+      ],
     });
   });
 
@@ -304,5 +331,99 @@ describe('toLeagueEntry / toLeagueEntries', () => {
     expect(toLeagueEntries([{} as LeagueEntryDto])).toEqual([
       { queueType: '', tier: '', division: '', leaguePoints: 0, wins: 0, losses: 0 },
     ]);
+  });
+});
+
+// `match-detail-tabs` task 9.8 — Requirements 11.1, 11.2, 11.3, 12.1, 12.2, 12.9.
+describe('toLanelessMatch', () => {
+  it('admits queue 450 (ARAM) and classifies it "aram"', () => {
+    const match = matchDto({ queueId: 450 });
+    const laneless = toLanelessMatch(match, PUUID);
+    expect(laneless).toBeDefined();
+    expect(laneless?.queueType).toBe('aram');
+  });
+
+  it('admits queue 2400 (ARAM Mayhem) and classifies it "aram mayhem"', () => {
+    const match = matchDto({ queueId: 2400 });
+    const laneless = toLanelessMatch(match, PUUID);
+    expect(laneless).toBeDefined();
+    expect(laneless?.queueType).toBe('aram mayhem');
+  });
+
+  it('returns undefined for every laned (six-queue) id, and for an arbitrary unrecognized id', () => {
+    for (const queueId of [400, 420, 430, 440, 480, 490, 700, 900]) {
+      expect(toLanelessMatch(matchDto({ queueId }), PUUID)).toBeUndefined();
+    }
+  });
+
+  it('never adds a laneless id to the role-relative allowlist, and the two maps are disjoint', () => {
+    for (const queueId of Object.keys(LANELESS_QUEUE_TYPE_BY_QUEUE_ID).map(Number)) {
+      expect(Object.prototype.hasOwnProperty.call(QUEUE_TYPE_BY_QUEUE_ID, queueId)).toBe(false);
+      expect(ALLOWED_QUEUE_TYPES).not.toContain(LANELESS_QUEUE_TYPE_BY_QUEUE_ID[queueId]);
+    }
+  });
+
+  it('marks isEnemyLaner false on every participant, even when a same-role rival exists', () => {
+    const match = matchDto({
+      queueId: 450,
+      participants: [
+        participant({ teamId: 100, teamPosition: 'MIDDLE' }),
+        participant({ puuid: 'other', teamId: 200, teamPosition: 'MIDDLE', championName: 'Zed' }),
+      ],
+    });
+    const laneless = toLanelessMatch(match, PUUID);
+    expect(laneless?.participants.every((p) => !p.isEnemyLaner)).toBe(true);
+  });
+
+  it('marks exactly one participant isAnalyzedPlayer, and captures none as an opponent summary field (LanelessMatch has no `opponent`)', () => {
+    const match = matchDto({
+      queueId: 450,
+      participants: [participant({ teamId: 100 }), participant({ puuid: 'other', teamId: 200 })],
+    });
+    const laneless = toLanelessMatch(match, PUUID);
+    expect(laneless?.participants.filter((p) => p.isAnalyzedPlayer)).toHaveLength(1);
+    expect(laneless).not.toHaveProperty('opponent');
+  });
+
+  it('excludes the match when the requester has no participant row, same as toIncludedMatch', () => {
+    const match = matchDto({ queueId: 450, participants: [participant({ puuid: 'someone-else' })] });
+    expect(toLanelessMatch(match, PUUID)).toBeUndefined();
+  });
+
+  it('captures zero, some, and all six augments, filtering zero slots and preserving Riot’s field order', () => {
+    const zero = participant({
+      playerAugment1: 0,
+      playerAugment2: 0,
+      playerAugment3: 0,
+      playerAugment4: 0,
+      playerAugment5: 0,
+      playerAugment6: 0,
+    });
+    const some = participant({
+      playerAugment1: 1205,
+      playerAugment2: 0,
+      playerAugment3: 1141,
+      playerAugment4: 0,
+      playerAugment5: 0,
+      playerAugment6: 0,
+    });
+    const six = participant({
+      playerAugment1: 101,
+      playerAugment2: 102,
+      playerAugment3: 103,
+      playerAugment4: 104,
+      playerAugment5: 105,
+      playerAugment6: 106,
+    });
+
+    for (const [fixture, expected] of [
+      [zero, []],
+      [some, [1205, 1141]],
+      [six, [101, 102, 103, 104, 105, 106]],
+    ] as const) {
+      const match = matchDto({ queueId: 2400, participants: [fixture] });
+      const laneless = toLanelessMatch(match, PUUID);
+      expect(laneless?.participants[0].augments).toEqual(expected);
+    }
   });
 });

@@ -40,7 +40,7 @@
  * in-place redaction task 5.4 originally implemented.
  */
 
-export type CacheEndpoint = 'account' | 'summoner' | 'league' | 'matchIds' | 'matchDetail';
+export type CacheEndpoint = 'account' | 'accountRegion' | 'summoner' | 'league' | 'matchIds' | 'matchDetail';
 
 export interface CacheKey {
   endpoint: CacheEndpoint;
@@ -90,13 +90,21 @@ export interface CacheStore {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const TEN_MINUTES_MS = 10 * 60 * 1000;
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Single source of truth for per-endpoint retention (design.md's TTL table,
  * Requirements 10.2-10.4). Callers must not hardcode durations.
+ *
+ * `accountRegion` (lookup-pipeline-fixes Requirement 6.1): a PUUID's Riot-account
+ * region essentially never changes, so it is retained far longer than `account`
+ * — 24 hours, matching the Static_Data_Provider's retention window elsewhere in
+ * this codebase, chosen as a round, generous value rather than tuned to any
+ * specific Riot-side change frequency (Riot doesn't document one).
  */
 export const TTL_BY_ENDPOINT: Readonly<Record<CacheEndpoint, number | 'infinite'>> = {
   account: ONE_HOUR_MS,
+  accountRegion: TWENTY_FOUR_HOURS_MS,
   summoner: ONE_HOUR_MS,
   league: TEN_MINUTES_MS,
   matchIds: TEN_MINUTES_MS,

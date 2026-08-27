@@ -29,11 +29,22 @@
  *    page visually shows a gap. Hiding it would make the absence undetectable to a
  *    non-visual reader while remaining obvious to a visual one.
  *
- * 2. THE LABEL DESCRIBES THE ABSENCE, NOT THE SUBJECT. "Champion icon unavailable"
- *    rather than "Wukong": the champion's name is already rendered as text beside
- *    the icon at every call site (Requirement 6.5), so repeating it here would make
- *    a screen reader say it twice and would misrepresent a missing image as a
- *    present one.
+ * 2. THE LABEL NAMES THE SUBJECT WHEN NO ADJACENT TEXT ALREADY DOES, AND
+ *    DESCRIBES ONLY THE ABSENCE WHEN IT DOES. `ChampionIcon` and `ProfileIcon`
+ *    pass "Champion icon unavailable" / "Profile icon unavailable" — generic,
+ *    because a champion's name is already rendered as adjacent text at every call
+ *    site (Requirement 6.5), and repeating it here would make a screen reader say
+ *    it twice. That was this decision's original, and only, rule — written when
+ *    every call site had adjacent text, which made the subject redundant.
+ *
+ *    `match-detail-tabs`'s spell, rune, rune tree and stat shard icons have no
+ *    adjacent text at all (a bare scoreboard icon), so the same "absence only"
+ *    label would tell a screen reader an icon failed without ever saying which
+ *    one. `ItemBuildRow` (`visual-assets`) hit this first for an item slot and
+ *    resolved it as `"${name} unavailable"`; Requirement 8.4 generalises that
+ *    precedent rather than inventing a third convention. The rule is therefore:
+ *    name the subject in the label WHERE nothing else on the page already names
+ *    it, and describe the absence alone only where something does.
  *
  * 3. NO ERROR STYLING. An unresolvable asset is an ordinary outcome — an item
  *    removed from the game since the pinned patch, a champion released after it, a

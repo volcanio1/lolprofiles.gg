@@ -93,7 +93,17 @@
  *    a blank role name rather than emitting a sentence about nothing.
  */
 
-import { csPerMinuteOf, type IncludedMatch, type ItemBuild, type LeagueEntry, type OpponentSummary } from '../insight/stats';
+import {
+  csPerMinuteOf,
+  killParticipationOf,
+  type IncludedMatch,
+  type ItemBuild,
+  type LanelessMatch,
+  type LeagueEntry,
+  type MatchParticipant,
+  type OpponentSummary,
+  type RunePage,
+} from '../insight/stats';
 import type { LeagueEntryDto, MatchDto, MatchParticipantDto } from '../riotApiClient';
 
 /** The exact set Requirement 3.5 permits. */
@@ -112,6 +122,19 @@ export const QUEUE_TYPE_BY_QUEUE_ID: Readonly<Record<number, AllowedQueueType>> 
   440: 'ranked flex', // 5v5 Ranked Flex
   480: 'normal', // Swiftplay
   490: 'normal', // Normal (Quickplay)
+};
+
+/**
+ * `match-detail-tabs` Requirement 11.1/11.2. Disjoint from `QUEUE_TYPE_BY_QUEUE_ID`
+ * on purpose — that map's whole purpose (decision 2 above) is gating role-relative
+ * computations a laneless match would corrupt, and these two ids must never join
+ * it or `AllowedQueueType`. A separate map, read by a separate function
+ * (`toLanelessMatch`), is what keeps a Laneless_Match out of every role-relative
+ * computation by construction rather than by a runtime filter someone could forget.
+ */
+export const LANELESS_QUEUE_TYPE_BY_QUEUE_ID: Readonly<Record<number, 'aram' | 'aram mayhem'>> = {
+  450: 'aram', // 5v5 ARAM
+  2400: 'aram mayhem', // ARAM: Mayhem
 };
 
 /**
@@ -180,21 +203,28 @@ export function itemBuildOf(participant: {
 }
 
 /**
- * The opposing participant in `player`'s lane, or `undefined` when none can be
- * identified — no lane could be determined for `player`, `teamId` is missing or
- * malformed on either side, or no other participant shares both the lane and a
- * different team.
+ * The opposing participant sharing `player`'s lane, or `undefined` when none can
+ * be identified — no lane could be determined for `player`, `teamId` is missing
+ * or malformed on either side, or no other participant shares both the lane and
+ * a different team.
+ *
+ * `match-detail-tabs` extracted this predicate verbatim out of `opponentOf` so a
+ * second consumer (`toMatchParticipant`'s `isEnemyLaner` marker) could read the
+ * same selection without re-deriving it — see that feature's design.md decision
+ * on why matching by champion identifier is unsafe (Blind Pick permits mirror
+ * picks). The predicate itself is byte-for-byte what `opponentOf` used inline
+ * before the extraction; `mapping.test.ts`'s opponent tests, unchanged, are the
+ * evidence of that.
  */
-function opponentOf(
+function opponentRowOf(
   participants: readonly MatchParticipantDto[],
   player: MatchParticipantDto,
-  durationSeconds: number,
-): OpponentSummary | undefined {
+): MatchParticipantDto | undefined {
   const lane = roleOf(player);
   if (lane === '' || typeof player.teamId !== 'number') {
     return undefined;
   }
-  const rival = participants.find(
+  return participants.find(
     (candidate) =>
       candidate !== player &&
       candidate !== null &&
@@ -203,6 +233,15 @@ function opponentOf(
       candidate.teamId !== player.teamId &&
       roleOf(candidate) === lane,
   );
+}
+
+/**
+ * Summarizes an already-selected opponent row, or `undefined` when none was
+ * selected. `rival` is `opponentRowOf`'s result — this function performs no
+ * selection of its own, so `toIncludedMatch` can select once and hand the same
+ * row to both this summary and `toMatchParticipant`'s `isEnemyLaner` marker.
+ */
+function opponentOf(rival: MatchParticipantDto | undefined, durationSeconds: number): OpponentSummary | undefined {
   if (rival === undefined) {
     return undefined;
   }
@@ -216,9 +255,115 @@ function opponentOf(
     csPerMinute: csPerMinuteOf(rivalCs, durationSeconds),
     visionScore: finiteOrZero(rival.visionScore),
     // Requirement 3.2/3.9: the SAME participant row this summary describes, never
-    // a different one — `rival` is what `opponentOf`'s selection already chose.
+    // a different one — `rival` is what `opponentRowOf`'s selection already chose.
     build: itemBuildOf(rival),
   };
+}
+
+/**
+ * `match-detail-tabs` Requirement 6.2. All zero/blank when `perks` is absent or
+ * malformed — never throws, matching this module's existing contract.
+ */
+function runePageOf(participant: MatchParticipantDto): RunePage {
+  const perks = participant.perks;
+  const styles = Array.isArray(perks?.styles) ? perks.styles : [];
+  const primary = styles[0];
+  const secondary = styles[1];
+  const selectionsOf = (style: { selections?: { perk?: number }[] } | undefined): number[] =>
+    Array.isArray(style?.selections)
+      ? style.selections.map((selection) => finiteOrZero(selection?.perk)).filter((id) => id !== 0)
+      : [];
+  return {
+    primaryStyle: finiteOrZero(primary?.style),
+    secondaryStyle: finiteOrZero(secondary?.style),
+    primarySelections: selectionsOf(primary),
+    secondarySelections: selectionsOf(secondary),
+    statShards: [
+      finiteOrZero(perks?.statPerks?.offense),
+      finiteOrZero(perks?.statPerks?.flex),
+      finiteOrZero(perks?.statPerks?.defense),
+    ],
+  };
+}
+
+/**
+ * `match-detail-tabs` Requirement 6. Total and never throwing, matching this
+ * module's existing contract: a malformed, absent or non-numeric field becomes a
+ * neutral value rather than an exclusion. `markers` is supplied by the caller,
+ * which still has the PUUID and the `opponentRowOf` selection in scope — this
+ * function itself never sees a PUUID and never derives either marker.
+ */
+export function toMatchParticipant(
+  participant: MatchParticipantDto,
+  markers: { isAnalyzedPlayer: boolean; isEnemyLaner: boolean },
+  teamKills: number,
+): MatchParticipant {
+  const kills = finiteOrZero(participant.kills);
+  const assists = finiteOrZero(participant.assists);
+  return {
+    isAnalyzedPlayer: markers.isAnalyzedPlayer,
+    isEnemyLaner: markers.isEnemyLaner,
+    teamId: finiteOrZero(participant.teamId),
+    // Requirement 6.2: summonerName is deprecated and empty on current matches.
+    riotIdGameName: typeof participant.riotIdGameName === 'string' ? participant.riotIdGameName : '',
+    riotIdTagline: typeof participant.riotIdTagline === 'string' ? participant.riotIdTagline : '',
+    championName: typeof participant.championName === 'string' ? participant.championName : '',
+    champLevel: finiteOrZero(participant.champLevel),
+    // Requirement 3.8/design.md: read DIRECTLY, never through `roleOf`, whose
+    // fallback to Riot's coarser `role` field is a different vocabulary
+    // (SOLO/CARRY/SUPPORT/DUO/NONE) from which no lane ordering is derivable.
+    teamPosition: typeof participant.teamPosition === 'string' ? participant.teamPosition.trim() : '',
+    summonerSpells: [finiteOrZero(participant.summoner1Id), finiteOrZero(participant.summoner2Id)],
+    runes: runePageOf(participant),
+    build: itemBuildOf(participant),
+    kills,
+    deaths: finiteOrZero(participant.deaths),
+    assists,
+    cs: csOf(participant),
+    visionScore: finiteOrZero(participant.visionScore),
+    damageToChampions: finiteOrZero(participant.totalDamageDealtToChampions),
+    goldEarned: finiteOrZero(participant.goldEarned),
+    win: participant.win === true,
+    killParticipationPercent: killParticipationOf(kills, assists, teamKills),
+    augments: augmentsOf(participant),
+  };
+}
+
+/**
+ * `match-detail-tabs` Requirement 12.1/12.2. Reading these fields is
+ * unconditional — no queue check here — because Riot reports them as `0` in
+ * every queue but 2400 (ARAM Mayhem), verified live against real ARAM matches.
+ * A `0` slot is "not yet picked" (Requirement 12.9), never a value to keep.
+ */
+function augmentsOf(participant: MatchParticipantDto): readonly number[] {
+  return [
+    participant.playerAugment1,
+    participant.playerAugment2,
+    participant.playerAugment3,
+    participant.playerAugment4,
+    participant.playerAugment5,
+    participant.playerAugment6,
+  ]
+    .map((id) => finiteOrZero(id))
+    .filter((id) => id !== 0);
+}
+
+/**
+ * `match-detail-tabs` Requirement 3.5. Sums kills per `teamId` across the
+ * participants actually being displayed, rather than reading Riot's
+ * `info.teams[].objectives.champion.kills` — see design.md decision 3: this keeps
+ * a displayed Kill_Participation column self-consistent with the kills rendered
+ * beside it, by construction, even in the (unobserved) case the two disagree.
+ */
+export function teamKillsOf(participants: readonly MatchParticipantDto[]): Map<number, number> {
+  const totals = new Map<number, number>();
+  for (const participant of participants) {
+    if (participant === null || typeof participant !== 'object' || typeof participant.teamId !== 'number') {
+      continue;
+    }
+    totals.set(participant.teamId, (totals.get(participant.teamId) ?? 0) + finiteOrZero(participant.kills));
+  }
+  return totals;
 }
 
 /**
@@ -273,6 +418,13 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
 
   const durationSeconds = finiteOrZero(typedInfo.gameDuration);
 
+  // One selection, two consumers (design.md decision 1): the opponent summary and
+  // the `isEnemyLaner` marker both read the SAME row `opponentRowOf` chose, rather
+  // than each re-deriving it or matching on champion identity (unsafe — Blind
+  // Pick permits mirror picks).
+  const rival = opponentRowOf(typedParticipants, participant);
+  const teamKills = teamKillsOf(typedParticipants);
+
   return {
     matchId,
     queueType,
@@ -286,8 +438,92 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
     assists: finiteOrZero(participant.assists),
     visionScore: finiteOrZero(participant.visionScore),
     cs: csOf(participant),
-    opponent: opponentOf(typedParticipants, participant, durationSeconds),
+    opponent: opponentOf(rival, durationSeconds),
     build: itemBuildOf(participant),
+    participants: typedParticipants
+      .filter((candidate): candidate is MatchParticipantDto => candidate !== null && typeof candidate === 'object')
+      .map((candidate) =>
+        toMatchParticipant(
+          candidate,
+          { isAnalyzedPlayer: candidate === participant, isEnemyLaner: rival !== undefined && candidate === rival },
+          teamKills.get(typeof candidate.teamId === 'number' ? candidate.teamId : NaN) ?? 0,
+        ),
+      ),
+  };
+}
+
+/**
+ * `match-detail-tabs` Requirement 11. Parallel to `toIncludedMatch`, admitting
+ * exactly the two queues `LANELESS_QUEUE_TYPE_BY_QUEUE_ID` lists — never touches
+ * `QUEUE_TYPE_BY_QUEUE_ID` and is never called by anything that feeds a
+ * role-relative computation. Never calls `opponentRowOf` or `opponentOf`: a
+ * Laneless_Match has no lane, so `isEnemyLaner` is `false` on every participant
+ * by construction, not because no opponent happened to be found.
+ */
+export function toLanelessMatch(match: MatchDto | undefined, puuid: string): LanelessMatch | undefined {
+  if (match === null || typeof match !== 'object') {
+    return undefined;
+  }
+
+  const info: unknown = match.info;
+  if (info === null || typeof info !== 'object') {
+    return undefined;
+  }
+  const typedInfo = info as MatchDto['info'];
+
+  const queueType = LANELESS_QUEUE_TYPE_BY_QUEUE_ID[typedInfo.queueId];
+  if (queueType === undefined) {
+    return undefined;
+  }
+
+  const startTimestamp = typedInfo.gameStartTimestamp;
+  if (typeof startTimestamp !== 'number' || !Number.isFinite(startTimestamp)) {
+    return undefined;
+  }
+
+  const participants: unknown = typedInfo.participants;
+  if (!Array.isArray(participants)) {
+    return undefined;
+  }
+  const typedParticipants = participants as MatchDto['info']['participants'];
+  const participant = typedParticipants.find(
+    (candidate) => candidate !== null && typeof candidate === 'object' && candidate.puuid === puuid,
+  );
+  if (participant === undefined) {
+    return undefined;
+  }
+
+  const metadata: unknown = match.metadata;
+  const matchId =
+    metadata !== null && typeof metadata === 'object' && typeof (metadata as MatchDto['metadata']).matchId === 'string'
+      ? (metadata as MatchDto['metadata']).matchId
+      : '';
+
+  const durationSeconds = finiteOrZero(typedInfo.gameDuration);
+  const teamKills = teamKillsOf(typedParticipants);
+
+  return {
+    matchId,
+    queueType,
+    startTimestamp,
+    durationSeconds,
+    championName: typeof participant.championName === 'string' ? participant.championName : '',
+    win: participant.win === true,
+    kills: finiteOrZero(participant.kills),
+    deaths: finiteOrZero(participant.deaths),
+    assists: finiteOrZero(participant.assists),
+    visionScore: finiteOrZero(participant.visionScore),
+    cs: csOf(participant),
+    build: itemBuildOf(participant),
+    participants: typedParticipants
+      .filter((candidate): candidate is MatchParticipantDto => candidate !== null && typeof candidate === 'object')
+      .map((candidate) =>
+        toMatchParticipant(
+          candidate,
+          { isAnalyzedPlayer: candidate === participant, isEnemyLaner: false },
+          teamKills.get(typeof candidate.teamId === 'number' ? candidate.teamId : NaN) ?? 0,
+        ),
+      ),
   };
 }
 

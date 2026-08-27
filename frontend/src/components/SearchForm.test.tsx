@@ -1,13 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { PLATFORM_LABELS, REGION_LABELS, platformsFor, type RegionalRoutingValue } from '../domain/regions';
 import { RIOT_ID_ERROR_DISPLAY } from '../domain/riotId';
 import { SearchForm } from './SearchForm';
 
 /**
- * Tasks 16.1, 16.2 and part of 16.7 (region selector content per Requirement 1.7).
- * Pure component tests: nothing here reaches the network.
+ * Tasks 16.1, 16.2. Pure component tests: nothing here reaches the network.
+ *
+ * lookup-pipeline-fixes Requirement 2.1/2.2: no region or platform selector
+ * exists anymore, so this file no longer covers them — see
+ * `ProfileReportView.test.tsx` for the `resolvedPlatform` display assertion
+ * instead.
  */
 
 function renderForm(overrides: Partial<Parameters<typeof SearchForm>[0]> = {}) {
@@ -17,8 +20,6 @@ function renderForm(overrides: Partial<Parameters<typeof SearchForm>[0]> = {}) {
 }
 
 const riotIdInput = () => screen.getByLabelText('Riot ID');
-const regionSelect = () => screen.getByLabelText('Region') as HTMLSelectElement;
-const platformSelect = () => screen.getByLabelText('Platform') as HTMLSelectElement;
 const submitButton = () => screen.getByRole('button', { name: /search/i });
 
 describe('Requirement 1.1 — the Riot ID input', () => {
@@ -32,29 +33,28 @@ describe('Requirement 1.1 — the Riot ID input', () => {
   });
 });
 
+describe('lookup-pipeline-fixes Requirement 2.1/2.2 — no region or platform selector', () => {
+  it('does not render a region selector', () => {
+    renderForm();
+    expect(screen.queryByLabelText('Region')).not.toBeInTheDocument();
+  });
+
+  it('does not render a platform selector', () => {
+    renderForm();
+    expect(screen.queryByLabelText('Platform')).not.toBeInTheDocument();
+  });
+});
+
 describe('Requirement 1.2 — a well-formed value initiates a lookup', () => {
-  it('submits the trimmed Riot ID and the selected region', async () => {
+  it('submits the trimmed Riot ID alone', async () => {
     const user = userEvent.setup();
     const { onSubmit } = renderForm();
 
     await user.type(riotIdInput(), '  Doffy#Smile  ');
-    await user.selectOptions(regionSelect(), 'europe');
     await user.click(submitButton());
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile', region: 'europe', platform: undefined });
-  });
-
-  it('submits the chosen platform when one is selected', async () => {
-    const user = userEvent.setup();
-    const { onSubmit } = renderForm();
-
-    await user.type(riotIdInput(), 'Doffy#Smile');
-    await user.selectOptions(regionSelect(), 'europe');
-    await user.selectOptions(platformSelect(), 'euw1');
-    await user.click(submitButton());
-
-    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile', region: 'europe', platform: 'euw1' });
+    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile' });
   });
 });
 
@@ -130,109 +130,11 @@ describe('Requirements 1.3-1.5 / 9.1 — inline validation before dispatch', () 
   });
 });
 
-describe('Requirement 1.6 / 1.7 — region selector', () => {
-  it('defaults to americas', () => {
-    renderForm();
-    expect(regionSelect()).toHaveValue('americas');
-  });
-
-  it('offers exactly the four supported regions, in order', () => {
-    renderForm();
-
-    const values = Array.from(regionSelect().options).map((option) => option.value);
-    expect(values).toEqual(['americas', 'europe', 'asia', 'sea']);
-  });
-
-  it('labels each region readably rather than exposing the routing value', () => {
-    renderForm();
-
-    for (const region of ['americas', 'europe', 'asia', 'sea'] as RegionalRoutingValue[]) {
-      expect(screen.getByRole('option', { name: REGION_LABELS[region] })).toBeInTheDocument();
-    }
-  });
-});
-
-describe('Requirement 5.3 — platform choices are restricted to the selected region', () => {
-  const expected: Record<RegionalRoutingValue, string[]> = {
-    americas: ['na1', 'br1', 'la1', 'la2'],
-    europe: ['euw1', 'eun1', 'tr1', 'ru'],
-    asia: ['kr', 'jp1'],
-    sea: ['oc1'],
-  };
-
-  for (const region of Object.keys(expected) as RegionalRoutingValue[]) {
-    it(`offers exactly ${region}'s platforms when ${region} is selected`, async () => {
-      const user = userEvent.setup();
-      renderForm();
-
-      await user.selectOptions(regionSelect(), region);
-
-      const values = Array.from(platformSelect().options)
-        .map((option) => option.value)
-        .filter((value) => value.length > 0);
-      expect(values).toEqual(expected[region]);
-      // And nothing from another region leaked in.
-      expect(values).toEqual([...platformsFor(region)]);
-    });
-  }
-
-  it('offers an explicit "any platform" default, so no platform is pre-chosen for the visitor', () => {
-    renderForm();
-
-    expect(platformSelect()).toHaveValue('');
-    expect(screen.getByRole('option', { name: 'Any platform in this region' })).toBeInTheDocument();
-  });
-
-  it('labels platforms with names a player recognizes', async () => {
-    const user = userEvent.setup();
-    renderForm();
-
-    await user.selectOptions(regionSelect(), 'europe');
-
-    expect(screen.getByRole('option', { name: PLATFORM_LABELS.euw1 })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: PLATFORM_LABELS.eun1 })).toBeInTheDocument();
-  });
-
-  it('resets a platform that does not belong to the newly selected region', async () => {
-    const user = userEvent.setup();
-    const { onSubmit } = renderForm();
-
-    await user.selectOptions(regionSelect(), 'europe');
-    await user.selectOptions(platformSelect(), 'euw1');
-    expect(platformSelect()).toHaveValue('euw1');
-
-    // Switching region must not leave a stale, out-of-region platform selected.
-    await user.selectOptions(regionSelect(), 'asia');
-    expect(platformSelect()).toHaveValue('');
-
-    await user.type(riotIdInput(), 'Doffy#Smile');
-    await user.click(submitButton());
-    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile', region: 'asia', platform: undefined });
-  });
-
-  it('keeps a platform that is still valid for the newly selected region', async () => {
-    // No such platform exists across regions (they are disjoint), so switching
-    // always resets — asserted so the behavior is pinned rather than incidental.
-    const user = userEvent.setup();
-    renderForm();
-
-    await user.selectOptions(regionSelect(), 'americas');
-    await user.selectOptions(platformSelect(), 'na1');
-    await user.selectOptions(regionSelect(), 'americas');
-
-    expect(platformSelect()).toHaveValue('na1');
-  });
-});
-
 describe('prefill and busy state', () => {
-  it('prefills from the supplied values, so correcting a region is one interaction', () => {
-    render(
-      <SearchForm onSubmit={vi.fn()} initialRiotId="Doffy#Smile" initialRegion="europe" initialPlatform="euw1" />,
-    );
+  it('prefills the Riot ID from the supplied value', () => {
+    render(<SearchForm onSubmit={vi.fn()} initialRiotId="Doffy#Smile" />);
 
     expect(riotIdInput()).toHaveValue('Doffy#Smile');
-    expect(regionSelect()).toHaveValue('europe');
-    expect(platformSelect()).toHaveValue('euw1');
   });
 
   it('disables submission while a lookup is in flight', () => {

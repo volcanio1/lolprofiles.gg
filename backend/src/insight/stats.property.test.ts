@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { computeStats, type IncludedMatch, type LeagueEntry } from './stats';
+import { computeStats, killParticipationOf, type IncludedMatch, type LeagueEntry } from './stats';
 
 /**
  * Property tests for the Insight Engine's stats (Properties 9, 10, 11).
@@ -320,5 +320,49 @@ describe('Property 11: most-played role tie-break', () => {
     // Both branches exercised.
     expect(sawUniqueMax).toBe(true);
     expect(sawCountTie).toBe(true);
+  });
+});
+
+// Feature: match-detail-tabs, Property 1: Kill participation is total, bounded, and team-local
+// **Validates: Requirements 3.4, 3.5, 3.6**
+describe('Property 1: kill participation', () => {
+  it("is 'N/A' exactly when team kills is 0, otherwise a non-negative whole percentage, and never affected by the other team's kills", () => {
+    let sawZeroDenominator = false;
+    let sawPositiveDenominator = false;
+
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 20 }),
+        fc.integer({ min: 0, max: 20 }),
+        fc.integer({ min: 0, max: 60 }),
+        fc.integer({ min: 0, max: 60 }), // an unrelated "other team's kills" value, never passed in
+        (kills, assists, teamKills, otherTeamKills) => {
+          const result = killParticipationOf(kills, assists, teamKills);
+
+          if (teamKills === 0) {
+            sawZeroDenominator = true;
+            expect(result).toBe('N/A');
+          } else {
+            sawPositiveDenominator = true;
+            expect(typeof result).toBe('number');
+            expect(result as number).toBeGreaterThanOrEqual(0);
+            expect(Number.isInteger(result)).toBe(true);
+            expect(result).toBe(Math.round((100 * (kills + assists)) / teamKills));
+          }
+
+          // Team-local: the same call, ignoring `otherTeamKills` entirely, is
+          // exactly reproducible — nothing about the other team's total can
+          // reach this function's inputs at all, which is the property itself.
+          expect(killParticipationOf(kills, assists, teamKills)).toBe(result);
+          void otherTeamKills;
+
+          return true;
+        },
+      ),
+      { numRuns: 200 },
+    );
+
+    expect(sawZeroDenominator).toBe(true);
+    expect(sawPositiveDenominator).toBe(true);
   });
 });

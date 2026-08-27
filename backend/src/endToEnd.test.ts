@@ -106,6 +106,8 @@ interface Harness {
   requests: { url: string; token: string | undefined }[];
   setAccountStatus: (status: number) => void;
   setSummonerStatus: (status: number) => void;
+  /** lookup-pipeline-fixes: drives the Region Resolver's own live call. */
+  setRegionResolutionStatus: (status: number) => void;
 }
 
 /** Assembles the real graph over a canned transport. */
@@ -113,6 +115,10 @@ function makeHarness(): Harness {
   const requests: { url: string; token: string | undefined }[] = [];
   let accountStatus = 200;
   let summonerStatus = 200;
+  // lookup-pipeline-fixes: the platform this fake Riot resolves the PUUID to.
+  // 200 by default, resolving to euw1/europe (this file's existing test bodies
+  // already assume euw1/europe routing for summoner/league/match history).
+  let regionResolutionStatus = 200;
   const now = () => 1_700_000_100_000;
 
   const transport: RiotHttpTransport = (url, init) => {
@@ -120,6 +126,13 @@ function makeHarness(): Harness {
 
     if (url.includes('/riot/account/v1/accounts/by-riot-id/')) {
       return Promise.resolve(accountStatus === 200 ? json(200, accountBody()) : json(accountStatus, {}));
+    }
+    if (url.includes('/riot/account/v1/region/by-game/')) {
+      return Promise.resolve(
+        regionResolutionStatus === 200
+          ? json(200, { puuid: PUUID, game: 'lol', region: 'euw1' })
+          : json(regionResolutionStatus, {}),
+      );
     }
     if (url.includes('/lol/summoner/v4/summoners/by-puuid/')) {
       return Promise.resolve(summonerStatus === 200 ? json(200, summonerBody()) : json(summonerStatus, {}));
@@ -173,6 +186,9 @@ function makeHarness(): Harness {
     setSummonerStatus: (status) => {
       summonerStatus = status;
     },
+    setRegionResolutionStatus: (status) => {
+      regionResolutionStatus = status;
+    },
   };
 }
 
@@ -182,7 +198,7 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
 
     const response = await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+      .send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     expect(response.status).toBe(200);
     const report = response.body;
@@ -216,12 +232,20 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
 
     await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+      .send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     const urls = harness.requests.map((entry) => entry.url);
-    // Requirement 2.1: regional routing for Account-V1.
-    expect(urls.some((url) => url.startsWith('https://europe.api.riotgames.com/riot/account/v1/'))).toBe(true);
-    // Requirements 2.2/2.3: platform routing, defaulted to europe's first platform.
+    // lookup-pipeline-fixes: Account-V1 and the Region Resolver both go against
+    // the fixed Discovery_Region (`DEFAULT_REGION`, americas) — a visitor-supplied
+    // `region` field is no longer read at all.
+    expect(urls.some((url) => url.startsWith('https://americas.api.riotgames.com/riot/account/v1/accounts/'))).toBe(
+      true,
+    );
+    expect(
+      urls.some((url) => url.startsWith('https://americas.api.riotgames.com/riot/account/v1/region/by-game/')),
+    ).toBe(true);
+    // Requirements 1.2/2.2/2.3: platform routing, resolved by the Region Resolver
+    // (the fake Riot backend resolves this PUUID to euw1).
     expect(urls.some((url) => url.startsWith('https://euw1.api.riotgames.com/lol/summoner/v4/'))).toBe(true);
     expect(urls.some((url) => url.startsWith('https://euw1.api.riotgames.com/lol/league/v4/'))).toBe(true);
     // Requirements 3.1/3.2: regional routing for Match-V5, bounded at 100.
@@ -236,16 +260,16 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
 
     const response = await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+      .send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     const serialized = JSON.stringify(response.body) + JSON.stringify(response.headers);
     expect(serialized).not.toContain(API_KEY);
     expect(serialized).not.toContain('RGAPI');
   });
 
-  it('serves a repeat lookup from cache without calling Riot again (Requirement 10.5)', async () => {
+  it('serves a repeat lookup from cache except the Summoner-V4 enrichment call (Requirement 10.5)', async () => {
     const harness = makeHarness();
-    const body = { riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' };
+    const body = { riotId: `${GAME_NAME}#${TAG_LINE}` };
 
     await request(harness.app).post('/api/lookup').send(body);
     const callsAfterFirst = harness.requests.length;
@@ -254,7 +278,10 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
     const second = await request(harness.app).post('/api/lookup').send(body);
 
     expect(second.status).toBe(200);
-    expect(harness.requests).toHaveLength(callsAfterFirst);
+    // Summoner-V4 is an Enrichment_Call that is deliberately never cached, so
+    // it is the one Riot call every repeat lookup still makes.
+    expect(harness.requests).toHaveLength(callsAfterFirst + 1);
+    expect(harness.requests[harness.requests.length - 1].url).toContain('/lol/summoner/v4/');
     // Requirement 11.4: the data now has a retrieval timestamp.
     expect(second.body.lastUpdated).not.toBeNull();
   });
@@ -267,7 +294,7 @@ describe('end-to-end: error paths through the assembled stack', () => {
 
     const response = await request(harness.app)
       .post('/api/lookup')
-      .send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+      .send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('PLAYER_NOT_FOUND');
@@ -277,27 +304,33 @@ describe('end-to-end: error paths through the assembled stack', () => {
     expect(harness.cache.size).toBe(0);
   });
 
-  it('reports the wrong-region case distinctly (Requirement 9.10)', async () => {
+  it('completes successfully with null summonerLevel/profileIconId when Summoner-V4 404s (Requirement 4.2) — the old wrong-region symptom no longer fails the pipeline', async () => {
     const harness = makeHarness();
-    // The account resolves globally, but there is no summoner on this platform —
-    // exactly what a live lookup on the wrong region produced.
     harness.setSummonerStatus(404);
 
-    const response = await request(harness.app)
-      .post('/api/lookup')
-      .send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'americas' });
+    const response = await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
+
+    expect(response.status).toBe(200);
+    expect(response.body.summonerLevel).toBeNull();
+    expect(response.body.profileIconId).toBeNull();
+  });
+
+  it('reports NO_LOL_ACCOUNT when the Region Resolver finds no League region for this PUUID (Requirement 5.2)', async () => {
+    const harness = makeHarness();
+    harness.setRegionResolutionStatus(404);
+
+    const response = await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     expect(response.status).toBe(404);
-    expect(response.body.error.code).toBe('PLAYER_NOT_ON_PLATFORM');
-    expect(response.body.error.region).toBe('americas');
-    expect(response.body.error.platform).toBe('na1');
+    expect(response.body.error.code).toBe('NO_LOL_ACCOUNT');
+    expect(response.body.error.message).toContain(`${GAME_NAME}#${TAG_LINE}`);
     expect(response.body.error.message).not.toMatch(/unavailable/i);
   });
 
   it('rejects a malformed Riot ID before any Riot call (Requirement 9.1)', async () => {
     const harness = makeHarness();
 
-    const response = await request(harness.app).post('/api/lookup').send({ riotId: 'NoHash', region: 'europe' });
+    const response = await request(harness.app).post('/api/lookup').send({ riotId: 'NoHash' });
 
     expect(response.status).toBe(400);
     expect(response.body.error.validationRule).toBe('MISSING_HASH');
@@ -308,7 +341,7 @@ describe('end-to-end: error paths through the assembled stack', () => {
 describe('end-to-end: deletion flow (Requirements 12.5, 12.6)', () => {
   it('populates the cache, deletes it, and leaves the PUUID nowhere', async () => {
     const harness = makeHarness();
-    const body = { riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' };
+    const body = { riotId: `${GAME_NAME}#${TAG_LINE}` };
 
     await request(harness.app).post('/api/lookup').send(body);
     expect(harness.cache.size).toBeGreaterThan(0);
@@ -325,7 +358,7 @@ describe('end-to-end: deletion flow (Requirements 12.5, 12.6)', () => {
 
   it('is idempotent and answers found: false on a repeat (Requirement 12.6)', async () => {
     const harness = makeHarness();
-    await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+    await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
 
     await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
     const second = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
@@ -343,7 +376,7 @@ describe('end-to-end: deletion flow (Requirements 12.5, 12.6)', () => {
      * re-fetched. Eviction makes the next lookup re-fetch them.
      */
     const harness = makeHarness();
-    const body = { riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' };
+    const body = { riotId: `${GAME_NAME}#${TAG_LINE}` };
 
     const before = await request(harness.app).post('/api/lookup').send(body);
     const championsBefore = before.body.stats.topChampions.length;
@@ -363,7 +396,7 @@ describe('end-to-end: deletion flow (Requirements 12.5, 12.6)', () => {
 
   it('does not evict a co-participant\u2019s own cached entries', async () => {
     const harness = makeHarness();
-    await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}`, region: 'europe' });
+    await request(harness.app).post('/api/lookup').send({ riotId: `${GAME_NAME}#${TAG_LINE}` });
     // A bystander's summoner entry, unrelated to the subject.
     await harness.cache.set(
       { endpoint: 'summoner', routingValue: 'euw1', params: { puuid: 'other-player' } },

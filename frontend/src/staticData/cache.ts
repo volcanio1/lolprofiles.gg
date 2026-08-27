@@ -33,7 +33,17 @@
 
 import type { StaticDataIndex } from './provider';
 
-const STORAGE_KEY = 'lolprofiles.staticData.v1';
+/**
+ * Bumped v1 -> v2 when `match-detail-tabs` added spells, runes, rune trees and
+ * stat shards to `StaticDataIndex` (task 1.4), then v2 -> v3 when the same
+ * feature added augments (task 9.4). Each time, an older entry lacks the new
+ * map but would otherwise still validate by shape and match the pinned
+ * version — passing `isWellShapedIndex` and serving as "ready" while the new
+ * asset class resolves to a placeholder for a full 24-hour retention period,
+ * indistinguishable from a genuine CDN failure. The version bump forces every
+ * older entry to miss and refetch.
+ */
+const STORAGE_KEY = 'lolprofiles.staticData.v3';
 
 /** Requirement 4.4 — "no less than 24 hours". */
 export const STATIC_DATA_TTL_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +79,15 @@ function isWellShapedIndex(candidate: unknown, version: string): candidate is St
     index.champions !== null &&
     typeof index.champions === 'object' &&
     index.items !== null &&
-    typeof index.items === 'object'
+    typeof index.items === 'object' &&
+    index.spells !== null &&
+    typeof index.spells === 'object' &&
+    index.runes !== null &&
+    typeof index.runes === 'object' &&
+    index.runeTrees !== null &&
+    typeof index.runeTrees === 'object' &&
+    index.augments !== null &&
+    typeof index.augments === 'object'
   );
 }
 

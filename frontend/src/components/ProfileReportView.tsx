@@ -49,9 +49,12 @@
  *    appear only when recent matches exist.
  */
 
-import type { OpponentSummary, ProfileReport, RankedQueueStanding, RecentMatchSummary } from '../api/types';
+import { useMemo, useState } from 'react';
+
+import type { ProfileReport, RankedQueueStanding } from '../api/types';
+import { platformLabel } from '../domain/regions';
 import { ChampionIcon } from './ChampionIcon';
-import { ItemBuildRow } from './ItemBuildRow';
+import { MatchRow } from './MatchRow';
 import { ProfileIcon } from './ProfileIcon';
 
 export interface ProfileReportViewProps {
@@ -97,129 +100,11 @@ function formatTimestamp(iso: string): string {
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString();
 }
 
-/** Renders an epoch-ms match timestamp the same way as `formatTimestamp`. */
-function formatMatchDate(epochMs: number): string {
-  const parsed = new Date(epochMs);
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
-}
-
-function formatKda3(kills: number, deaths: number, assists: number): string {
-  return `${String(kills)}/${String(deaths)}/${String(assists)}`;
-}
-
 /** CS/min with the raw CS count in brackets, e.g. `5.6(124)`. */
 export function formatCsPerMinute(csPerMinute: number, cs: number): string {
   const rate = Number.isFinite(csPerMinute) ? csPerMinute.toFixed(1) : '0.0';
   const raw = Number.isInteger(cs) ? String(cs) : cs.toFixed(2);
   return `${rate}(${raw})`;
-}
-
-function LaneStatsRow({ label, championName, kills, deaths, assists, cs, csPerMinute, visionScore }: {
-  label: string;
-  championName: string;
-  kills: number;
-  deaths: number;
-  assists: number;
-  cs: number;
-  csPerMinute: number;
-  visionScore: number;
-}) {
-  return (
-    <tr>
-      <th scope="row" className="side-label">
-        {label}
-      </th>
-      <td className="champion-col">
-        <ChampionIcon championKey={championName} size={24} className="lane-champion-icon" />
-      </td>
-      <td>{formatKda3(kills, deaths, assists)}</td>
-      <td>{formatCsPerMinute(csPerMinute, cs)}</td>
-      <td>{visionScore}</td>
-    </tr>
-  );
-}
-
-function RecentMatchCard({ match }: { match: RecentMatchSummary }) {
-  const opponent: OpponentSummary | null = match.opponent;
-  return (
-    <li
-      data-testid={`recent-match-${match.matchId}`}
-      className={match.win ? 'match-card match-card--win' : 'match-card'}
-    >
-      <p className="match-head">
-        <span className="match-outcome">{match.win ? 'Victory' : 'Defeat'}</span>
-        <span className="match-champion">
-          <ChampionIcon championKey={match.championName} size={32} className="match-champion-icon" />
-        </span>
-        <span className="match-role">{match.role}</span>
-        <span className="match-date">{formatMatchDate(match.startTimestamp)}</span>
-      </p>
-      <div className="table-scroll">
-        <table className="data-table matchup-table">
-          <caption className="sr-only">
-            {match.championName} vs {opponent === null ? 'unknown opponent' : opponent.championName}
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">
-                <span className="sr-only">Side</span>
-              </th>
-              <th scope="col" className="champion-col">Champion</th>
-              <th scope="col">K/D/A</th>
-              <th scope="col">CS/min</th>
-              <th scope="col">Vision</th>
-            </tr>
-          </thead>
-          <tbody>
-            <LaneStatsRow
-              label="You"
-              championName={match.championName}
-              kills={match.kills}
-              deaths={match.deaths}
-              assists={match.assists}
-              cs={match.cs}
-              csPerMinute={match.csPerMinute}
-              visionScore={match.visionScore}
-            />
-            {opponent === null ? (
-              <tr>
-                <th scope="row" className="side-label">
-                  Opponent
-                </th>
-                <td colSpan={4} data-testid={`recent-match-${match.matchId}-no-opponent`} className="matchup-note">
-                  No lane opponent could be identified for this match.
-                </td>
-              </tr>
-            ) : (
-              <LaneStatsRow
-                label="Opponent"
-                championName={opponent.championName}
-                kills={opponent.kills}
-                deaths={opponent.deaths}
-                assists={opponent.assists}
-                cs={opponent.cs}
-                csPerMinute={opponent.csPerMinute}
-                visionScore={opponent.visionScore}
-              />
-            )}
-          </tbody>
-        </table>
-      </div>
-      {/* Requirements 3.3, 3.4, 3.7, 3.8: final inventory at game end, never a purchase order. */}
-      <div className="build-compare" data-testid={`recent-match-${match.matchId}-builds`}>
-        <div className="build-compare-side">
-          <span className="build-compare-label">Your final build</span>
-          <ItemBuildRow build={match.build} size={24} />
-        </div>
-        {opponent === null ? null : (
-          <div className="build-compare-side">
-            <span className="build-compare-label">Opponent's final build</span>
-            <ItemBuildRow build={opponent.build} size={24} />
-          </div>
-        )}
-      </div>
-    </li>
-  );
 }
 
 const FUN_FACT_LABELS: Readonly<Record<string, string>> = {
@@ -235,8 +120,37 @@ const RECOMMENDATION_LABELS: Readonly<Record<string, string>> = {
   visionControl: 'Vision control',
 };
 
+/**
+ * Recent-matches queue filter. `queueTypes` lists the raw `match.queueType`
+ * values (as classified in `orchestrator/mapping.ts`) an option matches; `all`
+ * matches everything. "Ranked 5v5" covers the legacy premade-team queue values,
+ * which the backend does not currently classify but may in future.
+ */
+export const RECENT_MATCH_QUEUE_FILTERS: readonly {
+  value: string;
+  label: string;
+  queueTypes: readonly string[];
+}[] = [
+  { value: 'all', label: 'All queues', queueTypes: [] },
+  { value: 'ranked-solo', label: 'Ranked Solo/Duo', queueTypes: ['ranked solo/duo'] },
+  { value: 'ranked-flex', label: 'Ranked Flex', queueTypes: ['ranked flex'] },
+  { value: 'ranked-5s', label: 'Ranked 5v5', queueTypes: ['ranked 5s', 'ranked premade'] },
+  { value: 'normal', label: 'Normal', queueTypes: ['normal'] },
+  { value: 'aram', label: 'ARAM', queueTypes: ['aram'] },
+  { value: 'aram-mayhem', label: 'ARAM Mayhem', queueTypes: ['aram mayhem'] },
+];
+
 export function ProfileReportView({ report }: ProfileReportViewProps) {
   const queueTypes = orderedQueueTypes(report.stats.rankedByQueue);
+
+  const [queueFilter, setQueueFilter] = useState('all');
+  const filteredMatches = useMemo(() => {
+    const option = RECENT_MATCH_QUEUE_FILTERS.find((entry) => entry.value === queueFilter);
+    if (!option || option.queueTypes.length === 0) {
+      return report.recentMatches;
+    }
+    return report.recentMatches.filter((match) => option.queueTypes.includes(match.queueType));
+  }, [queueFilter, report.recentMatches]);
 
   return (
     <div data-testid="profile-report" className="report">
@@ -250,7 +164,22 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
         </div>
 
         <div className="report-meta">
-          <p data-testid="summoner-level">Level {report.summonerLevel}</p>
+          {/* lookup-pipeline-fixes Requirement 4.2/4.3: a neutral placeholder when
+              the Summoner-V4 enrichment call failed, never a zero or a blank. */}
+          <p data-testid="summoner-level">
+            Level {report.summonerLevel === null ? <span data-testid="summoner-level-unavailable">—</span> : report.summonerLevel}
+          </p>
+
+          {/* Requirement 2.3: which platform the data came from. */}
+          <p data-testid="resolved-platform">
+            Server: {platformLabel(report.resolvedPlatform)}
+            {report.usedPlatformOverride ? (
+              <span data-testid="platform-override-notice" className="notice-muted-inline">
+                {' '}
+                (manual override)
+              </span>
+            ) : null}
+          </p>
 
           {/* Requirements 11.4 / 11.5 */}
           {report.lastUpdated === null ? (
@@ -378,17 +307,38 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
       </section>
 
       <section className="rsec" aria-labelledby="recent-matches-heading">
-        <h3 id="recent-matches-heading" className="rsec-title">
-          Recent matches
-        </h3>
+        <div className="rsec-title-row">
+          <h3 id="recent-matches-heading" className="rsec-title">
+            Recent matches
+          </h3>
+          <label className="rsec-filter">
+            <span className="sr-only">Filter recent matches by queue type</span>
+            <select
+              className="field-select rsec-filter-select"
+              data-testid="recent-matches-queue-filter"
+              value={queueFilter}
+              onChange={(event) => setQueueFilter(event.target.value)}
+            >
+              {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {report.recentMatches.length === 0 ? (
           <p data-testid="no-recent-matches" className="empty-note">
             No recent matches available.
           </p>
+        ) : filteredMatches.length === 0 ? (
+          <p data-testid="no-recent-matches-for-queue" className="empty-note">
+            No recent matches in this queue.
+          </p>
         ) : (
           <ul className="match-list" role="list">
-            {report.recentMatches.map((match) => (
-              <RecentMatchCard key={match.matchId} match={match} />
+            {filteredMatches.map((match) => (
+              <MatchRow key={match.matchId} match={match} />
             ))}
           </ul>
         )}

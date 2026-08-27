@@ -6,9 +6,10 @@ import {
   type CacheStore,
   type InMemoryCacheStore,
 } from '../cache';
-import type { PlatformRoutingValue, RegionalRoutingValue } from '../region';
+import type { PlatformRoutingValue } from '../region';
 import type {
   AccountDto,
+  AccountRegionDto,
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
@@ -47,6 +48,12 @@ interface RecordedCall {
 
 interface ClientScript {
   account?: RiotApiResult<AccountDto>;
+  /**
+   * Defaults to a `na1` resolution, chosen so this fake's default routing
+   * matches the OLD default-region test expectations (`americas`/`na1`) without
+   * every test needing to configure it explicitly.
+   */
+  regionResolution?: RiotApiResult<AccountRegionDto>;
   summoner?: RiotApiResult<SummonerDto>;
   league?: RiotApiResult<LeagueEntryDto[]>;
   matchIds?: RiotApiResult<string[]>;
@@ -142,6 +149,13 @@ function makeFakes(script: ClientScript = {}): Fakes {
   const client: RiotApiClient = {
     getAccountByRiotId: (region, gameName, tagLine) =>
       record('account', region, script.account ?? { kind: 'ok', data: account() }, `${gameName}#${tagLine}`),
+    getRegionByPuuid: (region, _game, puuid) =>
+      record(
+        'regionResolution',
+        region,
+        script.regionResolution ?? { kind: 'ok', data: { puuid, game: 'lol', region: 'na1' } },
+        puuid,
+      ),
     getSummonerByPuuid: (platform, puuid) =>
       record('summoner', platform, script.summoner ?? { kind: 'ok', data: summoner() }, puuid),
     getLeagueEntriesByPuuid: (platform, puuid) =>
@@ -220,15 +234,19 @@ function makeHarness(options: HarnessOptions = {}) {
 }
 
 function run(
-  orchestrator: { runLookup: (input: { riotId: { gameName: string; tagLine: string }; region: RegionalRoutingValue; platform?: string }) => Promise<LookupResult> },
-  region: RegionalRoutingValue = 'americas',
-  platform?: string,
+  orchestrator: {
+    runLookup: (input: {
+      riotId: { gameName: string; tagLine: string };
+      platformOverride?: PlatformRoutingValue;
+    }) => Promise<LookupResult>;
+  },
+  platformOverride?: PlatformRoutingValue,
 ): Promise<LookupResult> {
-  return orchestrator.runLookup({ riotId: { gameName: GAME_NAME, tagLine: TAG_LINE }, region, platform });
+  return orchestrator.runLookup({ riotId: { gameName: GAME_NAME, tagLine: TAG_LINE }, platformOverride });
 }
 
 describe('runLookup — endpoint wiring and routing', () => {
-  it('resolves the PUUID first, then fetches summoner, league and match ids (Requirements 2.1-2.3, 3.1)', async () => {
+  it('resolves the PUUID first, resolves the platform, then fetches summoner, league and match ids (Requirements 1.1-1.4, 2.1-2.3, 3.1)', async () => {
     const harness = makeHarness({ matchIds: { kind: 'ok', data: ['NA1_1', 'NA1_2'] } });
 
     const result = await run(harness.orchestrator);
@@ -239,38 +257,87 @@ describe('runLookup — endpoint wiring and routing', () => {
       routingValue: 'americas',
       detail: `${GAME_NAME}#${TAG_LINE}`,
     });
-    // Requirement 2.2 / 2.3: platform routing for summoner and league.
+    // Requirement 1.1: the Discovery_Region also hosts the region-resolution call.
+    expect(harness.fakes.callsAt('regionResolution')[0]).toMatchObject({ routingValue: 'americas', detail: PUUID });
+    // Requirement 1.2 / 2.2 / 2.3: platform routing for summoner and league,
+    // using the platform the Region Resolver reported (na1, per the fake's default).
     expect(harness.fakes.callsAt('summoner')[0]).toMatchObject({ routingValue: 'na1', detail: PUUID });
     expect(harness.fakes.callsAt('league')[0]).toMatchObject({ routingValue: 'na1', detail: PUUID });
-    // Requirement 3.1: regional routing, bounded at 100.
+    // Requirement 1.3 / 3.1: regional routing derived from the platform (na1 ->
+    // americas), bounded at 100.
     expect(harness.fakes.callsAt('matchIds')[0]).toMatchObject({
       routingValue: 'americas',
       detail: `${PUUID}:${String(MATCH_HISTORY_COUNT)}`,
     });
     expect(harness.fakes.callsAt('matchDetail').map((call) => call.detail)).toEqual(['NA1_1', 'NA1_2']);
+    if (result.kind !== 'success') {
+      return;
+    }
+    expect(result.report.resolvedPlatform).toBe('na1');
+    expect(result.report.usedPlatformOverride).toBe(false);
   });
 
-  it('uses the requested platform when it belongs to the region (Requirement 5.4)', async () => {
-    const harness = makeHarness();
-    await run(harness.orchestrator, 'americas', 'br1');
-    expect(harness.fakes.callsAt('summoner')[0].routingValue).toBe('br1');
-  });
-
-  it('falls back to the region\u2019s first platform when the requested one does not belong to it', async () => {
-    const harness = makeHarness();
-    await run(harness.orchestrator, 'europe', 'na1');
-    expect(harness.fakes.callsAt('summoner')[0].routingValue).toBe('euw1');
-  });
-
-  it('rejects an unsupported region without calling Riot at all (Requirement 5.5)', async () => {
-    const harness = makeHarness();
-    const result = await harness.orchestrator.runLookup({
-      riotId: { gameName: GAME_NAME, tagLine: TAG_LINE },
-      region: 'atlantis' as RegionalRoutingValue,
+  it('uses the platform the Region Resolver reports, deriving the region from it (Requirement 1.2/1.3)', async () => {
+    const harness = makeHarness({
+      regionResolution: { kind: 'ok', data: { puuid: PUUID, game: 'lol', region: 'euw1' } },
     });
 
-    expect(result).toEqual({ kind: 'error', code: 'UNSUPPORTED_REGION', retriable: false });
-    expect(harness.fakes.calls).toHaveLength(0);
+    const result = await run(harness.orchestrator);
+
+    expect(harness.fakes.callsAt('summoner')[0].routingValue).toBe('euw1');
+    expect(harness.fakes.callsAt('league')[0].routingValue).toBe('euw1');
+    expect(harness.fakes.callsAt('matchIds')[0].routingValue).toBe('europe');
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    expect(result.report.resolvedPlatform).toBe('euw1');
+  });
+
+  it('uses platformOverride verbatim and skips the Region Resolver entirely (Requirement 2.4)', async () => {
+    const harness = makeHarness();
+
+    const result = await run(harness.orchestrator, 'euw1');
+
+    expect(harness.fakes.callsAt('regionResolution')).toHaveLength(0);
+    expect(harness.fakes.callsAt('summoner')[0].routingValue).toBe('euw1');
+    expect(harness.fakes.callsAt('matchIds')[0].routingValue).toBe('europe');
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    expect(result.report.resolvedPlatform).toBe('euw1');
+    expect(result.report.usedPlatformOverride).toBe(true);
+  });
+
+  it('returns NO_LOL_ACCOUNT and calls no platform-routed endpoint when the resolver reports no LoL account (Requirement 5.2)', async () => {
+    const harness = makeHarness({ regionResolution: { kind: 'not_found' } });
+
+    const result = await run(harness.orchestrator);
+
+    expect(result).toEqual({ kind: 'error', code: 'NO_LOL_ACCOUNT', retriable: false });
+    expect(harness.fakes.calls.map((call) => call.stage)).toEqual(['account', 'regionResolution']);
+  });
+
+  it('returns UNSUPPORTED_PLATFORM naming the platform Riot reported (Requirement 5.3)', async () => {
+    const harness = makeHarness({
+      regionResolution: { kind: 'ok', data: { puuid: PUUID, game: 'lol', region: 'vn2' } },
+    });
+
+    const result = await run(harness.orchestrator);
+
+    expect(result).toEqual({ kind: 'error', code: 'UNSUPPORTED_PLATFORM', retriable: false, platform: 'vn2' });
+    expect(harness.fakes.calls.map((call) => call.stage)).toEqual(['account', 'regionResolution']);
+  });
+
+  it('surfaces the resolver\u2019s own failure with no guessed fallback (Requirement 5.4)', async () => {
+    const harness = makeHarness({ regionResolution: { kind: 'server_error', status: 503 } });
+
+    const result = await run(harness.orchestrator);
+
+    expect(result).toEqual({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true });
+    // No summoner/league/matchIds call: the platform was never known.
+    expect(harness.fakes.calls.map((call) => call.stage)).toEqual(['account', 'regionResolution']);
   });
 
   it('arms the budget with the Requirement 11.2 duration and always disarms it', async () => {
@@ -335,11 +402,6 @@ describe('runLookup — Requirement 9 error mapping', () => {
       expected: { kind: 'error', code: 'NETWORK_ERROR', retriable: true },
     },
     {
-      name: 'a summoner failure after PUUID resolution is RIOT_UNAVAILABLE (2.7)',
-      script: { summoner: { kind: 'server_error', status: 500 } },
-      expected: { kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true },
-    },
-    {
       name: 'a league failure after PUUID resolution is RIOT_UNAVAILABLE (2.7)',
       script: { league: { kind: 'server_error', status: 502 } },
       expected: { kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true },
@@ -348,13 +410,6 @@ describe('runLookup — Requirement 9 error mapping', () => {
       name: 'a match-ids failure is MATCH_HISTORY_UNAVAILABLE (3.6)',
       script: { matchIds: { kind: 'server_error', status: 504 } },
       expected: { kind: 'error', code: 'MATCH_HISTORY_UNAVAILABLE', retriable: true },
-    },
-    {
-      // Requirement 9.10 / Finding A: this is the wrong-region case, and it must
-      // not masquerade as an outage.
-      name: 'a Summoner-V4 404 is PLAYER_NOT_ON_PLATFORM, not PLAYER_NOT_FOUND or RIOT_UNAVAILABLE',
-      script: { summoner: { kind: 'not_found' } },
-      expected: { kind: 'error', code: 'PLAYER_NOT_ON_PLATFORM', retriable: false },
     },
     {
       // League-V4 returns 200 with [] for an unranked player, so a 404 there is an
@@ -377,21 +432,37 @@ describe('runLookup — Requirement 9 error mapping', () => {
     });
   }
 
-  it('reports the first failure in requirement order when several fail at once', async () => {
+  it('reports the first failure in requirement order (league before match-ids) when both fail at once, and Summoner-V4 never enters the race (Requirement 4.5)', async () => {
     const harness = makeHarness({
-      summoner: { kind: 'server_error', status: 500 },
+      summoner: { kind: 'server_error', status: 500 }, // must not affect the outcome at all
       league: { kind: 'network_error' },
       matchIds: { kind: 'timeout' },
     });
 
     await expect(run(harness.orchestrator)).resolves.toEqual({
       kind: 'error',
-      code: 'RIOT_UNAVAILABLE',
+      code: 'NETWORK_ERROR',
       retriable: true,
     });
   });
 
-  it('logs every 401/403 server-side without any credential material (Requirement 9.5)', async () => {
+  it('completes successfully with null summonerLevel/profileIconId when the Summoner-V4 enrichment call fails for any reason (Requirement 4.1, 4.2, 4.4, 4.5)', async () => {
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: [] },
+      summoner: { kind: 'not_found' },
+    });
+
+    const result = await run(harness.orchestrator);
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    expect(result.report.summonerLevel).toBeNull();
+    expect(result.report.profileIconId).toBeNull();
+  });
+
+  it('logs every 401/403 server-side without any credential material, including from the enrichment call (Requirement 9.5)', async () => {
     const harness = makeHarness({
       summoner: { kind: 'auth_error', status: 401 },
       league: { kind: 'auth_error', status: 403 },
@@ -444,13 +515,15 @@ describe('runLookup — match history assembly (Requirements 3.3, 3.4, 3.5)', ()
     expect(result.report.limitedDataNotice).toBe(true);
   });
 
-  it('excludes disallowed queue types from the report and from the limited-data count', async () => {
+  it('excludes disallowed (non-laneless) queue types from stats and from the limited-data count, and excludes them from recentMatches too', async () => {
     const harness = makeHarness({
       matchIds: { kind: 'ok', data: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] },
       matchDetail: (matchId) => ({
         kind: 'ok',
-        // ARAM for two of the six.
-        data: matchDto(matchId, { queueId: matchId === 'm1' || matchId === 'm2' ? 450 : 400 }),
+        // Clash for two of the six — genuinely excluded from everything,
+        // unlike ARAM/ARAM Mayhem (`match-detail-tabs` Requirement 11), which
+        // is covered separately below.
+        data: matchDto(matchId, { queueId: matchId === 'm1' || matchId === 'm2' ? 700 : 400 }),
       }),
     });
 
@@ -461,6 +534,41 @@ describe('runLookup — match history assembly (Requirements 3.3, 3.4, 3.5)', ()
     }
     expect(result.report.stats.topChampions[0].gamesPlayed).toBe(4);
     expect(result.report.limitedDataNotice).toBe(true);
+    expect(result.report.recentMatches).toHaveLength(4);
+  });
+
+  it('admits ARAM and ARAM Mayhem to recentMatches, but excludes them from stats and the limited-data count (`match-detail-tabs` Requirement 11)', async () => {
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'] },
+      matchDetail: (matchId) => ({
+        kind: 'ok',
+        data: matchDto(matchId, { queueId: matchId === 'm1' ? 450 : matchId === 'm2' ? 2400 : 400 }),
+      }),
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    // Stats and the limited-data count only ever see the four role-relative matches.
+    expect(result.report.stats.topChampions[0].gamesPlayed).toBe(4);
+    expect(result.report.limitedDataNotice).toBe(true);
+    // recentMatches admits all six — the two laneless matches compete for a slot
+    // on equal footing, per computeRecentMatches's merge.
+    expect(result.report.recentMatches).toHaveLength(6);
+    const aram = result.report.recentMatches.find((match) => match.matchId === 'm1');
+    const mayhem = result.report.recentMatches.find((match) => match.matchId === 'm2');
+    expect(aram?.queueType).toBe('aram');
+    expect(mayhem?.queueType).toBe('aram mayhem');
+    // No lane, so no role and no Enemy_Laner — for both.
+    expect(aram?.role).toBe('');
+    expect(aram?.opponent).toBeNull();
+    expect(mayhem?.role).toBe('');
+    expect(mayhem?.opponent).toBeNull();
+    // Both still carry all captured participants, with isEnemyLaner false throughout.
+    expect(aram?.participants).toHaveLength(2);
+    expect(aram?.participants.every((participant) => !participant.isEnemyLaner)).toBe(true);
   });
 
   it('clears the limited-data notice at 5 included matches', async () => {
@@ -635,10 +743,14 @@ describe('runLookup — last-updated timestamp (Requirements 11.4, 11.5)', () =>
       return;
     }
     expect(result.report.lastUpdated).toBe(new Date(1_000_000).toISOString());
-    // League was refreshed; account and summoner were not called at all.
+    // League was refreshed; account and region resolution were cached and not
+    // called at all. Summoner-V4 is an Enrichment_Call that is never cached
+    // (design.md), so it is fetched fresh on every lookup regardless — its
+    // outcome does not participate in `lastUpdated` at all (decision 7 amended).
     expect(second.fakes.callsAt('league')).toHaveLength(1);
     expect(second.fakes.callsAt('account')).toHaveLength(0);
-    expect(second.fakes.callsAt('summoner')).toHaveLength(0);
+    expect(second.fakes.callsAt('regionResolution')).toHaveLength(0);
+    expect(second.fakes.callsAt('summoner')).toHaveLength(1);
   });
 
   it('excludes indefinitely-cached match details from the calculation', () => {
@@ -656,7 +768,7 @@ describe('runLookup — last-updated timestamp (Requirements 11.4, 11.5)', () =>
 });
 
 describe('runLookup — caching behavior (Requirements 10.5-10.7)', () => {
-  it('serves a repeated lookup entirely from cache without calling Riot', async () => {
+  it('serves a repeated lookup entirely from cache except the Summoner-V4 enrichment call', async () => {
     const clock = 2_000_000;
     const cache = createInMemoryCacheStore({ now: () => clock });
     const first = makeHarness({ now: () => clock, cache, matchIds: { kind: 'ok', data: ['m1', 'm2'] } });
@@ -667,10 +779,13 @@ describe('runLookup — caching behavior (Requirements 10.5-10.7)', () => {
     const result = await run(second.orchestrator);
 
     expect(result.kind).toBe('success');
-    expect(second.fakes.calls).toHaveLength(0);
+    // Summoner-V4 is an Enrichment_Call that is deliberately never cached
+    // (design.md's rate-limiting table), so it is the one call every lookup
+    // still makes even when everything else is served from cache.
+    expect(second.fakes.calls.map((call) => call.stage)).toEqual(['summoner']);
   });
 
-  it('does not cache a failed response', async () => {
+  it('never caches the Summoner-V4 enrichment call, success or failure', async () => {
     const clock = 3_000_000;
     const cache = createInMemoryCacheStore({ now: () => clock });
     const harness = makeHarness({ now: () => clock, cache, summoner: { kind: 'server_error', status: 500 } });
@@ -696,9 +811,9 @@ describe('runLookup — Requirement 11.3 fallback to last-known cache', () => {
         ttl: TTL_BY_ENDPOINT.account,
       },
       {
-        key: { endpoint: 'summoner', routingValue: 'na1', params: { puuid: PUUID } },
-        value: summoner({ summonerLevel: 99 }),
-        ttl: TTL_BY_ENDPOINT.summoner,
+        key: { endpoint: 'accountRegion', routingValue: 'americas', params: { puuid: PUUID, game: 'lol' } },
+        value: { puuid: PUUID, game: 'lol', region: 'na1' },
+        ttl: TTL_BY_ENDPOINT.accountRegion,
       },
       {
         key: { endpoint: 'league', routingValue: 'na1', params: { puuid: PUUID } },
@@ -733,7 +848,7 @@ describe('runLookup — Requirement 11.3 fallback to last-known cache', () => {
     const harness = makeHarness({
       now: () => clock,
       cache,
-      summoner: { kind: 'server_error', status: 503 },
+      league: { kind: 'server_error', status: 503 },
       matchIds: { kind: 'ok', data: ['m1', 'm2'] },
     });
 
@@ -744,25 +859,27 @@ describe('runLookup — Requirement 11.3 fallback to last-known cache', () => {
       return;
     }
     expect(result.report.partialDataWarning).toBe(true);
-    // The stale cached values, not the fresh ones the fake would have served.
-    expect(result.report.summonerLevel).toBe(99);
+    // Enrichment is never cached (design.md), so a fallback report can never
+    // have summoner data, regardless of how this data was seeded elsewhere.
+    expect(result.report.summonerLevel).toBeNull();
     expect(result.report.stats.topChampions[0].championName).toBe('Zed');
     expect(result.report.lastUpdated).toBe(new Date(10_000).toISOString());
   });
 
   it('reports an error instead when the cached snapshot is incomplete (Requirement 2.7)', async () => {
-    let clock = 10_000;
+    const clock = 10_000;
     const cache = createInMemoryCacheStore({ now: () => clock });
     await seedSnapshot(cache, ['m1']);
-    // Remove the summoner entry, leaving the snapshot incomplete.
+    // Remove the whole cached snapshot for this PUUID, leaving nothing for the
+    // fallback to read.
     await cache.deleteByPuuid(PUUID);
 
-    clock += (TTL_BY_ENDPOINT.summoner as number) + 1;
-    const harness = makeHarness({ now: () => clock, cache, summoner: { kind: 'server_error', status: 503 } });
-
-    const result = await run(harness.orchestrator);
-
-    expect(result).toEqual({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true });
+    const harness = makeHarness({ now: () => clock, cache, league: { kind: 'server_error', status: 503 } });
+    await expect(run(harness.orchestrator)).resolves.toEqual({
+      kind: 'error',
+      code: 'RIOT_UNAVAILABLE',
+      retriable: true,
+    });
   });
 
   it('stops waiting when the 15s budget expires and serves the cache instead', async () => {

@@ -16,7 +16,10 @@
  *  - 9.8: a rate limit carries a cooldown of at least
  *    `RATE_LIMIT_COOLDOWN_SECONDS` before a retry may be offered.
  *  - 9.9: a transport failure says a connection error occurred.
- *  - 5.5: an unsupported region or platform is rejected.
+ *  - lookup-pipeline-fixes 5.2: a Riot account with no League play history gets
+ *    its own message (`NO_LOL_ACCOUNT`), distinct from "not found".
+ *  - lookup-pipeline-fixes 5.3: a platform Riot reports that this build doesn't
+ *    recognize gets its own message (`UNSUPPORTED_PLATFORM`), naming it.
  *  - 3.6: a match-history failure says match history could not be retrieved.
  *
  * ---------------------------------------------------------------------------
@@ -38,14 +41,16 @@
  *    (a bad gateway, distinct from 503's "reachable but unwell"), and 503 for a
  *    Riot service that answered but could not serve us.
  *
- * 2. `PLAYER_NOT_FOUND` ECHOES THE RIOT ID; `UNSUPPORTED_REGION` DOES NOT ECHO
- *    THE OFFENDING VALUE. Requirement 9.2 explicitly requires identifying the
- *    submitted gameName and tagLine, and by the time that error is possible both
- *    have passed validation — so they are length-bounded, contain exactly one
- *    separator, and are safe to reflect. An unsupported region or platform, by
- *    contrast, is *arbitrary unvalidated input*, and reflecting it back buys the
- *    visitor nothing. Listing the supported values instead is both safer and more
- *    actionable, since it tells them what to pick.
+ * 2. WHETHER AN ERROR ECHOES ITS OFFENDING VALUE DEPENDS ON WHO SUPPLIED IT.
+ *    `PLAYER_NOT_FOUND` and `NO_LOL_ACCOUNT` echo the submitted gameName/tagLine
+ *    because Requirement 9.2/5.2 require it, and by the time either is possible
+ *    both have passed validation — length-bounded, exactly one separator, safe
+ *    to reflect. `UNSUPPORTED_PLATFORM` also echoes its value (the platform),
+ *    but for the opposite reason: that string came from RIOT's own response,
+ *    not from the visitor, so there is no untrusted-input concern and naming it
+ *    is simply informative. (The formerly-existing `UNSUPPORTED_REGION`, which
+ *    validated arbitrary visitor-supplied text and deliberately did NOT echo
+ *    it, no longer exists — there is no region field left to validate.)
  *
  * 3. THE RATE-LIMIT COOLDOWN IS A FIXED 5 SECONDS, NOT RIOT'S `Retry-After`.
  *    Requirement 9.8 asks for a cooldown of "at least 5 seconds" before the retry
@@ -62,7 +67,6 @@
  */
 
 import type { ErrorCode } from '../orchestrator';
-import { SUPPORTED_REGIONS } from '../region';
 import { MAX_GAME_NAME_LENGTH, MAX_TAG_LINE_LENGTH, type RiotIdErrorCode } from '../validator';
 
 /** Requirement 9.3: the cap the client enforces on explicit retries per session. */
@@ -72,35 +76,45 @@ export const MAX_MANUAL_RETRIES = 3;
 export const RATE_LIMIT_COOLDOWN_SECONDS = 5;
 
 /** Which input field a validation failure belongs to, when it belongs to one. */
-export type ValidationField = 'riotId' | 'gameName' | 'tagLine' | 'region' | 'platform' | 'puuid';
+export type ValidationField = 'riotId' | 'gameName' | 'tagLine' | 'platform' | 'puuid' | 'region';
 
 /**
- * Requirement 9.10 (Finding A). Names the region and platform that were actually
- * searched, because the whole point of this state is that the visitor's Riot ID was
- * right and their region was wrong — a message that does not say which region was
- * tried gives them nothing to correct.
+ * lookup-pipeline-fixes Requirement 5.2. Distinct from `playerNotFoundError`:
+ * the Riot account genuinely exists (Account-V1 resolved it), it simply has no
+ * League of Legends region on record, which is a different, more precise fact
+ * than "not found" and deserves its own message rather than being folded into
+ * one generic 404.
  */
-export function playerNotOnPlatformError(
-  gameName: string,
-  tagLine: string,
-  region: string,
-  platform: string,
-): ApiErrorResponse {
+export function noLolAccountError(gameName: string, tagLine: string): ApiErrorResponse {
   return {
-    status: HTTP_STATUS_BY_ERROR_CODE.PLAYER_NOT_ON_PLATFORM,
+    status: HTTP_STATUS_BY_ERROR_CODE.NO_LOL_ACCOUNT,
     body: {
       error: {
-        code: 'PLAYER_NOT_ON_PLATFORM',
-        message:
-          `${gameName}#${tagLine} exists, but has no League of Legends profile on ${platform.toUpperCase()} ` +
-          `(${region}). Select the region where this player plays and search again.`,
-        // Retrying the same region cannot succeed; the visitor must change it.
+        code: 'NO_LOL_ACCOUNT',
+        message: `${gameName}#${tagLine} is a Riot account, but it has no League of Legends play history.`,
         retriable: false,
         gameName,
         tagLine,
-        region,
+      },
+    },
+  };
+}
+
+/**
+ * lookup-pipeline-fixes Requirement 5's `unsupported_platform` outcome. Unlike
+ * the removed `unsupportedRegionError` (decision 2), this DOES name the
+ * offending platform: it came from Riot itself, not from arbitrary visitor
+ * input, so echoing it is informative rather than reflecting untrusted text.
+ */
+export function unsupportedPlatformError(platform: string): ApiErrorResponse {
+  return {
+    status: HTTP_STATUS_BY_ERROR_CODE.UNSUPPORTED_PLATFORM,
+    body: {
+      error: {
+        code: 'UNSUPPORTED_PLATFORM',
+        message: `This player's League of Legends region ("${platform}") is not one this site supports yet.`,
+        retriable: false,
         platform,
-        field: 'region',
       },
     },
   };
@@ -115,11 +129,10 @@ export interface ApiErrorPayload {
   retryAfterSeconds?: number;
   /** Requirement 9.3, on `RIOT_UNAVAILABLE` only. */
   maxRetries?: number;
-  /** Requirements 9.2 / 9.10, on `PLAYER_NOT_FOUND` and `PLAYER_NOT_ON_PLATFORM`. */
+  /** Requirements 9.2 / 5.2, on `PLAYER_NOT_FOUND` and `NO_LOL_ACCOUNT`. */
   gameName?: string;
   tagLine?: string;
-  /** Requirement 9.10: the region and platform that were actually searched. */
-  region?: string;
+  /** lookup-pipeline-fixes Requirement 5: the platform Riot itself reported, on `UNSUPPORTED_PLATFORM`. */
   platform?: string;
   /** Requirement 9.1: the specific rule that was not met. */
   validationRule?: RiotIdErrorCode;
@@ -139,12 +152,14 @@ export interface ApiErrorResponse {
 /** Decision 1. Every member of `ErrorCode` is mapped, so the record is total. */
 export const HTTP_STATUS_BY_ERROR_CODE: Readonly<Record<ErrorCode, number>> = {
   VALIDATION_FAILED: 400,
-  UNSUPPORTED_REGION: 400,
   PLAYER_NOT_FOUND: 404,
-  // Requirement 9.10: not found ON THAT PLATFORM. A 404 like PLAYER_NOT_FOUND,
-  // because the resource genuinely does not exist there, but a distinct code so the
-  // visitor is told to change region rather than that Riot is broken.
-  PLAYER_NOT_ON_PLATFORM: 404,
+  // lookup-pipeline-fixes Requirement 5.2: the Riot account exists but has no
+  // League data — same "the resource isn't there" shape as PLAYER_NOT_FOUND,
+  // but a distinct code so the visitor isn't told to recheck their spelling.
+  NO_LOL_ACCOUNT: 404,
+  // Requirement 5.3: Riot named a platform this build doesn't recognize. Not the
+  // visitor's fault and not actionable by retrying, but also not a Riot outage.
+  UNSUPPORTED_PLATFORM: 404,
   RIOT_UNAVAILABLE: 503,
   TIMEOUT: 504,
   RATE_LIMITED: 429,
@@ -197,10 +212,9 @@ export const VALIDATION_MESSAGES: Readonly<
  * a Riot outage.
  */
 export const MESSAGE_BY_ERROR_CODE: Readonly<
-  Record<Exclude<ErrorCode, 'PLAYER_NOT_FOUND' | 'PLAYER_NOT_ON_PLATFORM'>, string>
+  Record<Exclude<ErrorCode, 'PLAYER_NOT_FOUND' | 'NO_LOL_ACCOUNT' | 'UNSUPPORTED_PLATFORM'>, string>
 > = {
   VALIDATION_FAILED: VALIDATION_MESSAGES.MISSING_HASH.message,
-  UNSUPPORTED_REGION: `That region is not supported. Choose one of: ${SUPPORTED_REGIONS.join(', ')}.`,
   RIOT_UNAVAILABLE: "Riot's services are temporarily unavailable. Please try again in a moment.",
   TIMEOUT: 'The lookup timed out before Riot responded. Please try again.',
   RATE_LIMITED: `This lookup was rate-limited. Please wait ${String(RATE_LIMIT_COOLDOWN_SECONDS)} seconds and try again.`,
@@ -238,15 +252,26 @@ export function missingFieldError(field: ValidationField, message: string): ApiE
   };
 }
 
-/** Requirement 5.5. Lists the supported values rather than echoing input (decision 2). */
-export function unsupportedRegionError(field: 'region' | 'platform'): ApiErrorResponse {
-  const message =
-    field === 'region'
-      ? MESSAGE_BY_ERROR_CODE.UNSUPPORTED_REGION
-      : 'That platform is not supported. Leave it unset to use the default for the selected region.';
+/**
+ * lookup-pipeline-fixes Requirement 2.1: `region` and `platform` are no longer
+ * part of the request contract at all, now that the platform is discovered by
+ * the Region Resolver. Rejecting them outright — rather than silently ignoring
+ * them, which is what a body-shape-tolerant parser would do by default — means
+ * a caller still sending either field (an old frontend build, a stale API
+ * integration) gets a clear signal that its request no longer does what it
+ * used to, instead of an unexplained behavior change.
+ */
+export function unknownFieldError(field: 'region' | 'platform'): ApiErrorResponse {
   return {
-    status: HTTP_STATUS_BY_ERROR_CODE.UNSUPPORTED_REGION,
-    body: { error: { code: 'UNSUPPORTED_REGION', message, retriable: false, field } },
+    status: HTTP_STATUS_BY_ERROR_CODE.VALIDATION_FAILED,
+    body: {
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: `'${field}' is no longer accepted — the platform is now determined automatically from the Riot ID.`,
+        retriable: false,
+        field,
+      },
+    },
   };
 }
 
@@ -257,7 +282,9 @@ export function playerNotFoundError(gameName: string, tagLine: string): ApiError
     body: {
       error: {
         code: 'PLAYER_NOT_FOUND',
-        message: `No player was found for the Riot ID ${gameName}#${tagLine}. Check the spelling and the region.`,
+        // lookup-pipeline-fixes: no longer "and the region" — there is no region
+        // for the visitor to have picked wrong anymore (Requirement 1).
+        message: `No player was found for the Riot ID ${gameName}#${tagLine}. Check the spelling.`,
         retriable: false,
         gameName,
         tagLine,
@@ -277,10 +304,15 @@ export function apiErrorFor(code: ErrorCode, retriable: boolean): ApiErrorRespon
     // function cannot be called into an undefined message.
     return playerNotFoundError('', '');
   }
-  if (code === 'PLAYER_NOT_ON_PLATFORM') {
-    // The route calls `playerNotOnPlatformError` directly, because only it knows
-    // which region and platform were searched. Kept total for the same reason.
-    return playerNotOnPlatformError('', '', '', '');
+  if (code === 'NO_LOL_ACCOUNT') {
+    // The route calls `noLolAccountError` directly, because only it knows the
+    // gameName/tagLine that were searched. Kept total for the same reason.
+    return noLolAccountError('', '');
+  }
+  if (code === 'UNSUPPORTED_PLATFORM') {
+    // The route calls `unsupportedPlatformError` directly, because only it
+    // knows which platform Riot named. Kept total for the same reason.
+    return unsupportedPlatformError('');
   }
 
   const payload: ApiErrorPayload = {

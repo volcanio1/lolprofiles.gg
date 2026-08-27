@@ -92,6 +92,7 @@ export const API_KEY_HEADER = 'X-Riot-Token';
  */
 export const RIOT_METHODS = {
   account: 'account',
+  accountRegion: 'accountRegion',
   summoner: 'summoner',
   league: 'league',
   matchIds: 'matchIds',
@@ -109,6 +110,17 @@ export interface AccountDto {
   puuid: string;
   gameName: string;
   tagLine: string;
+}
+
+/**
+ * Account-V1 region-by-game-by-puuid. lookup-pipeline-fixes: response shape and
+ * casing confirmed live against a real account (see the spec's design.md) —
+ * `region` is a lowercase Platform_Routing_Value, e.g. `"euw1"`.
+ */
+export interface AccountRegionDto {
+  puuid: string;
+  game: string;
+  region: string;
 }
 
 /** Summoner-V4. `id` is the encrypted summoner ID (Requirement 2.2). */
@@ -158,6 +170,29 @@ export interface MatchParticipantDto {
   item5?: number;
   /** Item_Slot 6, the trinket. */
   item6?: number;
+  /** `match-detail-tabs` Requirement 6.2/6.3. */
+  summoner1Id?: number;
+  summoner2Id?: number;
+  perks?: {
+    statPerks?: { offense?: number; flex?: number; defense?: number };
+    styles?: { description?: string; style?: number; selections?: { perk?: number }[] }[];
+  };
+  champLevel?: number;
+  goldEarned?: number;
+  totalDamageDealtToChampions?: number;
+  /** The current, non-deprecated player-name fields; `summonerName` is empty on live matches. */
+  riotIdGameName?: string;
+  riotIdTagline?: string;
+  /**
+   * `match-detail-tabs` Requirement 12.1. Present in every queue, always `0`
+   * outside queue 2400 (ARAM Mayhem) — verified live against real ARAM matches.
+   */
+  playerAugment1?: number;
+  playerAugment2?: number;
+  playerAugment3?: number;
+  playerAugment4?: number;
+  playerAugment5?: number;
+  playerAugment6?: number;
 }
 
 /** Match-V5 match detail, in Riot's metadata/info shape. */
@@ -198,6 +233,17 @@ export interface RiotApiClient {
     gameName: string,
     tagLine: string,
   ): Promise<RiotApiResult<AccountDto>>;
+  /**
+   * Account-V1 region-by-game-by-puuid. Issued against the Discovery_Region
+   * host — `region` here carries no routing meaning of its own, since this
+   * endpoint answers the same regardless of which regional host receives it
+   * (lookup-pipeline-fixes Requirement 1.5).
+   */
+  getRegionByPuuid(
+    region: RegionalRoutingValue,
+    game: 'lol',
+    puuid: string,
+  ): Promise<RiotApiResult<AccountRegionDto>>;
   getSummonerByPuuid(platform: PlatformRoutingValue, puuid: string): Promise<RiotApiResult<SummonerDto>>;
   getLeagueEntriesByPuuid(
     platform: PlatformRoutingValue,
@@ -342,6 +388,21 @@ class HttpRiotApiClient implements RiotApiClient {
       `${baseUrl(region)}/riot/account/v1/accounts/by-riot-id/` +
       `${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
     return this.send<AccountDto>(url, region, RIOT_METHODS.account);
+  }
+
+  /**
+   * lookup-pipeline-fixes Requirement 1.1. Issued against the Discovery_Region
+   * host; not platform-routed, since the platform is what this call discovers.
+   */
+  async getRegionByPuuid(
+    region: RegionalRoutingValue,
+    game: 'lol',
+    puuid: string,
+  ): Promise<RiotApiResult<AccountRegionDto>> {
+    const url =
+      `${baseUrl(region)}/riot/account/v1/region/by-game/${encodeURIComponent(game)}` +
+      `/by-puuid/${encodeURIComponent(puuid)}`;
+    return this.send<AccountRegionDto>(url, region, RIOT_METHODS.accountRegion);
   }
 
   /** Requirement 2.2. Platform routing. */

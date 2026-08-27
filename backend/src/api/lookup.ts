@@ -1,18 +1,25 @@
 /**
  * API layer — `POST /api/lookup`.
  *
- * The HTTP boundary for a Lookup_Session. It validates input, chooses the region,
- * delegates to the Lookup Orchestrator, and maps the typed `LookupResult` onto a
- * status and body. It contains no business logic of its own: no Riot call, no
- * cache access, no insight computation.
+ * The HTTP boundary for a Lookup_Session. It validates input, delegates to the
+ * Lookup Orchestrator, and maps the typed `LookupResult` onto a status and body.
+ * It contains no business logic of its own: no Riot call, no cache access, no
+ * insight computation.
+ *
+ * lookup-pipeline-fixes: this route no longer accepts or validates a region or
+ * a platform selection at all — the platform is now DISCOVERED by the
+ * orchestrator's Region Resolver from the resolved PUUID. The only routing-
+ * related input left is `platformOverride`, an optional diagnostic field never
+ * exposed by the default search UI (Requirement 2.4).
  *
  * Implements:
  *  - 1.2-1.5 / 9.1: the Riot ID is validated here, BEFORE the orchestrator is
  *    invoked, so a malformed Riot ID cannot cause any Riot API call.
- *  - 1.6: an absent or blank region defaults to `DEFAULT_REGION` (`americas`).
- *  - 5.5: a region outside the supported set, or a platform outside the whole
- *    mapping, is rejected without initiating any Riot call.
  *  - 2.4 / 9.2: a missing player is 404 with the submitted Riot ID echoed.
+ *  - 5.2 / 5.3: the Region Resolver's `no_lol_account` and `unsupported_platform`
+ *    outcomes each get their own message, built here since only the route
+ *    (for gameName/tagLine) or the `LookupResult` (for the platform Riot named)
+ *    has what each message needs.
  *  - 9.3, 9.4, 9.5, 9.8, 9.9: each Riot failure becomes its own status and message.
  *  - 11.4 / 11.5: `lastUpdated` is passed through untouched, including its `null`
  *    first-retrieval case.
@@ -21,31 +28,24 @@
  * DOCUMENTED DECISIONS
  * ---------------------------------------------------------------------------
  *
- * 1. VALIDATION ORDER: Riot ID, then region, then platform. Requirement 9.1 makes
+ * 1. VALIDATION ORDER: Riot ID, then `platformOverride`. Requirement 9.1 makes
  *    the Riot ID the primary input, and it is the field the visitor is most likely
  *    to have got wrong, so reporting it first gives the most useful single error.
- *    The order is fixed and documented rather than incidental, so the same bad
- *    request always produces the same error. All three checks precede the
- *    orchestrator call, which is what satisfies "without initiating any Riot API
- *    calls".
+ *    Both checks precede the orchestrator call, which is what satisfies "without
+ *    initiating any Riot API calls".
  *
- * 2. HOW REQUIREMENTS 5.4 AND 5.5 SPLIT ON `platform`. They look contradictory —
- *    5.4 says silently replace a platform that does not belong to the selected
- *    region, 5.5 says reject an unsupported platform outright — but they address
- *    different inputs. A platform that exists in `REGION_TO_PLATFORMS` but under a
- *    different region is 5.4's case, and the Region Router's `resolvePlatform`
- *    replaces it with the region's first platform. A platform that appears nowhere
- *    in the mapping at all is 5.5's case, and is rejected here via
- *    `isValidPlatform`. So this route rejects only genuinely unknown platforms and
- *    leaves the region-mismatch substitution to the orchestrator, which is exactly
- *    the division design.md describes when it says callers reject unsupported
- *    input "before this point".
+ * 2. AN UNRECOGNIZED `platformOverride` DEGRADES TO "NO OVERRIDE", RATHER THAN
+ *    BEING REJECTED. It is a diagnostic-only field with no default-UI exposure
+ *    (Requirement 2.4), so there is no visitor-facing form to validate against —
+ *    silently falling through to correct, automatic resolution is strictly safer
+ *    than a fatal 400 over a field nobody sees. This replaces the old region/
+ *    platform rejection this route used to perform (removed Requirement 5.5),
+ *    which existed for a visitor-facing selector that no longer exists.
  *
- * 3. A BLANK STRING IS TREATED AS ABSENT. `region: ''` and `platform: '   '` are
- *    what an untouched form control sends, so treating them as "not selected"
- *    (Requirement 1.6's default, and no platform preference) is what the visitor
- *    meant. Treating them as invalid would reject requests the frontend legitimately
- *    produces.
+ * 3. A BLANK STRING IS TREATED AS ABSENT. `platformOverride: '   '` is what an
+ *    untouched or programmatically-cleared field sends, so treating it as "no
+ *    override" is what the caller meant. Treating it as invalid would reject
+ *    requests a legitimate diagnostic caller might send.
  *
  * 4. THE SUCCESS BODY IS THE `ProfileReport` ITSELF, unwrapped, per design.md's
  *    declared route contract. Errors are wrapped in an `{ error: ... }` envelope,
@@ -62,20 +62,31 @@
  *    exceed Riot's windows — but it cannot stop the budget being consumed by
  *    whoever asks first. Per-IP throttling is the mitigation and is not in scope
  *    for this task; see the implementation log's open items.
+ *
+ * 6. `region`/`platform` ARE REJECTED, NOT SILENTLY DROPPED (lookup-pipeline-fixes
+ *    Requirement 2.1). A body-shape-tolerant parser would default to ignoring a
+ *    field it doesn't recognize, which is exactly wrong here: a caller still
+ *    sending `region` (an old frontend build, a stale integration, someone's
+ *    saved API script) would otherwise get silently different routing behavior
+ *    with no signal that anything changed. An explicit 400 makes the contract
+ *    change loud instead of quiet. `platformOverride` is deliberately NOT
+ *    subject to this — see decision 2 above — because it is a still-supported,
+ *    if diagnostic-only, field, not a removed one.
  */
 
 import type { RequestHandler } from 'express';
 import type { LookupOrchestrator, ProfileReport } from '../orchestrator';
-import { DEFAULT_REGION, isValidPlatform, isValidRegion, resolvePlatform } from '../region';
+import { isSupportedPlatform, type PlatformRoutingValue } from '../region';
 import { validateRiotId } from '../validator';
 import {
   RATE_LIMIT_COOLDOWN_SECONDS,
   apiErrorFor,
   malformedRequestError,
   missingFieldError,
+  noLolAccountError,
   playerNotFoundError,
-  playerNotOnPlatformError,
-  unsupportedRegionError,
+  unknownFieldError,
+  unsupportedPlatformError,
   validationError,
   type ApiErrorResponse,
 } from './errors';
@@ -113,7 +124,7 @@ export function isJsonObject(body: unknown): boolean {
 export function parseLookupRequest(
   body: unknown,
 ):
-  | { ok: true; riotId: { gameName: string; tagLine: string }; region: ReturnType<typeof pickRegion>; platform?: string }
+  | { ok: true; riotId: { gameName: string; tagLine: string }; platformOverride?: PlatformRoutingValue }
   | { ok: false; response: ApiErrorResponse } {
   if (!isJsonObject(body)) {
     return { ok: false, response: malformedRequestError() };
@@ -134,25 +145,28 @@ export function parseLookupRequest(
     return { ok: false, response: validationError(validation.errorCode ?? 'MISSING_HASH') };
   }
 
-  // Requirement 1.6: default when not selected; Requirement 5.5: reject otherwise.
-  const rawRegion = readOptionalString(body, 'region');
-  if (rawRegion !== undefined && !isValidRegion(rawRegion)) {
-    return { ok: false, response: unsupportedRegionError('region') };
+  // lookup-pipeline-fixes Requirement 2.1: `region` and `platform` are no longer
+  // part of the contract at all — rejected outright (decision 4 below) rather
+  // than silently ignored, so a caller still sending either gets a clear signal
+  // instead of an unexplained behavior change.
+  if ((body as Record<string, unknown>).region !== undefined) {
+    return { ok: false, response: unknownFieldError('region') };
   }
-  const region = pickRegion(rawRegion);
-
-  // Decision 2: reject only platforms that are absent from the whole mapping.
-  const rawPlatform = readOptionalString(body, 'platform');
-  if (rawPlatform !== undefined && !isValidPlatform(rawPlatform)) {
-    return { ok: false, response: unsupportedRegionError('platform') };
+  if ((body as Record<string, unknown>).platform !== undefined) {
+    return { ok: false, response: unknownFieldError('platform') };
   }
 
-  return { ok: true, riotId: validation.riotId, region, platform: rawPlatform };
-}
+  // lookup-pipeline-fixes Requirement 2.4: a diagnostic escape hatch, absent from
+  // the default UI. An unrecognized value is treated as no override at all
+  // (falls through to the Region Resolver) rather than a rejected request —
+  // it's a field visitors never see, so silently resolving correctly is safer
+  // than a fatal error over a debug affordance (mirrors the orchestrator's own
+  // choice; see its `LookupInput` doc).
+  const rawPlatformOverride = readOptionalString(body, 'platformOverride');
+  const platformOverride =
+    rawPlatformOverride !== undefined && isSupportedPlatform(rawPlatformOverride) ? rawPlatformOverride : undefined;
 
-/** Requirement 1.6. */
-function pickRegion(rawRegion: string | undefined) {
-  return rawRegion !== undefined && isValidRegion(rawRegion) ? rawRegion : DEFAULT_REGION;
+  return { ok: true, riotId: validation.riotId, platformOverride };
 }
 
 /**
@@ -172,8 +186,7 @@ export function createLookupHandler(deps: LookupRouteDependencies): RequestHandl
 
       const result = await deps.orchestrator.runLookup({
         riotId: parsed.riotId,
-        region: parsed.region,
-        platform: parsed.platform,
+        platformOverride: parsed.platformOverride,
       });
 
       if (result.kind === 'success') {
@@ -190,22 +203,18 @@ export function createLookupHandler(deps: LookupRouteDependencies): RequestHandl
         return;
       }
 
-      if (result.code === 'PLAYER_NOT_ON_PLATFORM') {
-        /**
-         * Requirement 9.10 (Finding A). The orchestrator reports the code but not
-         * the platform, so it is recomputed here with the SAME pure function the
-         * orchestrator used — `resolvePlatform` is deterministic over
-         * (region, requestedPlatform), so both arrive at the same answer without
-         * widening `LookupResult` to carry it.
-         */
-        const searchedPlatform = resolvePlatform(parsed.region, parsed.platform);
-        const notOnPlatform = playerNotOnPlatformError(
-          parsed.riotId.gameName,
-          parsed.riotId.tagLine,
-          parsed.region,
-          searchedPlatform,
-        );
-        res.status(notOnPlatform.status).json(notOnPlatform.body);
+      if (result.code === 'NO_LOL_ACCOUNT') {
+        // lookup-pipeline-fixes Requirement 5.2.
+        const response = noLolAccountError(parsed.riotId.gameName, parsed.riotId.tagLine);
+        res.status(response.status).json(response.body);
+        return;
+      }
+
+      if (result.code === 'UNSUPPORTED_PLATFORM') {
+        // Requirement 5.3. `result.platform` is the platform RIOT reported, not
+        // something this route could recompute — see `LookupResult`'s doc.
+        const response = unsupportedPlatformError(result.platform ?? '');
+        res.status(response.status).json(response.body);
         return;
       }
 

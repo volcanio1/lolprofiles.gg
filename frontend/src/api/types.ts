@@ -69,6 +69,57 @@ export interface OpponentSummary {
   build: ItemBuild;
 }
 
+/** `match-detail-tabs` Requirement 6.2. A Participant's complete rune selection. */
+export interface RunePage {
+  primaryStyle: number;
+  secondaryStyle: number;
+  /** Four perk ids in Riot's reported slot order (Requirement 4.5). */
+  primarySelections: readonly number[];
+  /** Two perk ids in Riot's reported slot order. */
+  secondarySelections: readonly number[];
+  /** offense, flex, defense — in that order, matching Riot's statPerks keys. */
+  statShards: readonly [number, number, number];
+}
+
+/**
+ * `match-detail-tabs` Requirement 6. One of a match's ten Participants, trimmed
+ * to what the General and Runes tabs render.
+ */
+export interface MatchParticipant {
+  /** Requirement 6.6/6.7. No participant record carries a PUUID, including the analyzed player's own. */
+  isAnalyzedPlayer: boolean;
+  /** Requirement 6.7/6.8. Set from the same row the opponent selection chose, never a champion-name match. */
+  isEnemyLaner: boolean;
+  /** 100 or 200. */
+  teamId: number;
+  /** From riotIdGameName/riotIdTagline; summonerName is deprecated and empty. */
+  riotIdGameName: string;
+  riotIdTagline: string;
+  championName: string;
+  champLevel: number;
+  /** '' when Riot could not assign one. */
+  teamPosition: string;
+  summonerSpells: readonly [number, number];
+  runes: RunePage;
+  build: ItemBuild;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  visionScore: number;
+  damageToChampions: number;
+  goldEarned: number;
+  win: boolean;
+  /** Requirement 3.4/3.6. 'N/A' exactly when the team's total kills is 0. */
+  killParticipationPercent: number | 'N/A';
+  /**
+   * `match-detail-tabs` Requirement 12.1/12.2. Zero to six non-zero
+   * `playerAugmentN` values, Riot's field order. Always `[]` outside ARAM
+   * Mayhem (queue 2400).
+   */
+  augments: readonly number[];
+}
+
 export interface RecentMatchSummary {
   matchId: string;
   championName: string;
@@ -87,6 +138,10 @@ export interface RecentMatchSummary {
   opponent: OpponentSummary | null;
   /** Final inventory at game end, not a purchase order. */
   build: ItemBuild;
+  /** `match-detail-tabs` Requirement 6.5. All ten Participants. Empty only if the match carried none. */
+  participants: MatchParticipant[];
+  /** `match-detail-tabs` Requirement 1.6/6.4. */
+  queueType: string;
 }
 
 /** Requirement 7.4's four categories. */
@@ -106,13 +161,21 @@ export interface Recommendation {
 export interface ProfileReport {
   riotId: RiotIdParts;
   puuid: string;
-  summonerLevel: number;
+  /**
+   * lookup-pipeline-fixes Requirement 4.2/4.3: null exactly when the
+   * Summoner-V4 enrichment call failed. Was unconditionally `number` before.
+   */
+  summonerLevel: number | null;
   /**
    * Null when no usable icon id was retrieved. `0` is a REAL icon (Data Dragon
    * serves it), so null — never zero — is the absence encoding; render a
    * placeholder for null and a real image for 0.
    */
   profileIconId: number | null;
+  /** lookup-pipeline-fixes Requirement 2.3: the platform the data came from. */
+  resolvedPlatform: string;
+  /** lookup-pipeline-fixes Requirement 2.4: true when a diagnostic override was used. */
+  usedPlatformOverride: boolean;
   stats: ProfileStats;
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5. */
@@ -128,13 +191,20 @@ export interface ProfileReport {
   partialDataWarning: boolean;
 }
 
-/** The backend's `ErrorCode` union. */
+/**
+ * The backend's `ErrorCode` union, revised by lookup-pipeline-fixes:
+ * `UNSUPPORTED_REGION` and `PLAYER_NOT_ON_PLATFORM` are gone (there is no
+ * region input to be unsupported, and no wrong-region symptom to detect
+ * anymore — see backend/src/orchestrator/index.ts); `NO_LOL_ACCOUNT` and
+ * `UNSUPPORTED_PLATFORM` are the Region Resolver's two failure outcomes.
+ */
 export type ErrorCode =
   | 'VALIDATION_FAILED'
-  | 'UNSUPPORTED_REGION'
   | 'PLAYER_NOT_FOUND'
-  /** Requirement 9.10: the account exists, but not on the selected region. */
-  | 'PLAYER_NOT_ON_PLATFORM'
+  /** Requirement 5.2: the Riot account exists but has no League play history. */
+  | 'NO_LOL_ACCOUNT'
+  /** Requirement 5.3: the Region Resolver named a platform this build doesn't support. */
+  | 'UNSUPPORTED_PLATFORM'
   | 'RIOT_UNAVAILABLE'
   | 'TIMEOUT'
   | 'RATE_LIMITED'
@@ -150,11 +220,10 @@ export interface ApiErrorPayload {
   retryAfterSeconds?: number;
   /** Requirement 9.3. */
   maxRetries?: number;
-  /** Requirements 9.2 / 9.10. */
+  /** Requirements 9.2 / 5.2. */
   gameName?: string;
   tagLine?: string;
-  /** Requirement 9.10: the region and platform that were actually searched. */
-  region?: string;
+  /** Requirement 5.3: the platform Riot itself reported, on `UNSUPPORTED_PLATFORM`. */
   platform?: string;
   /** Requirement 9.1. */
   validationRule?: string;

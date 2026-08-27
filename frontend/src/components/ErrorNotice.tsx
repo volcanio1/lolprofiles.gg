@@ -50,11 +50,13 @@ export interface ErrorNoticeProps {
 /** Decision 1: headings are presentation and belong to the frontend. */
 const HEADINGS: Readonly<Record<ErrorCode, string>> = {
   VALIDATION_FAILED: 'Check the Riot ID',
-  UNSUPPORTED_REGION: 'Region not supported',
   PLAYER_NOT_FOUND: 'Player not found',
-  // Requirement 9.10: distinct from PLAYER_NOT_FOUND, because the player DOES
-  // exist and the fix is a different region rather than a different Riot ID.
-  PLAYER_NOT_ON_PLATFORM: 'Not on this region',
+  // lookup-pipeline-fixes Requirement 5.2: distinct from PLAYER_NOT_FOUND — the
+  // Riot account DOES exist, it has simply never played League.
+  NO_LOL_ACCOUNT: 'No League of Legends history',
+  // Requirement 5.3: the Region Resolver named a platform this build doesn't
+  // recognize yet — not a Riot outage and not the visitor's mistake.
+  UNSUPPORTED_PLATFORM: 'Region not supported yet',
   RIOT_UNAVAILABLE: 'Service temporarily unavailable',
   TIMEOUT: 'The lookup timed out',
   RATE_LIMITED: 'Too many lookups right now',
@@ -85,18 +87,6 @@ export function ErrorNotice({
       <p data-testid="error-message" className="error-body">
         {error.message}
       </p>
-
-      {/*
-        Requirement 9.10. The visitor's next action is to change the region in the
-        form above, so say so explicitly rather than relying on them inferring it
-        from the message. This is the state that used to be reported as a service
-        outage, which gave them nothing to act on.
-      */}
-      {error.code === 'PLAYER_NOT_ON_PLATFORM' ? (
-        <p data-testid="wrong-region-hint" className="error-hint">
-          Use the Region selector above to pick where this player plays, then search again.
-        </p>
-      ) : null}
 
       {showRetry ? (
         <div className="error-actions">
