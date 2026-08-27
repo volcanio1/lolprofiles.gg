@@ -11,6 +11,7 @@
 
 import { useStaticData } from '../staticData';
 import { CdnImage } from './CdnImage';
+import { Tooltip } from './Tooltip';
 
 export interface StatShardIconProps {
   shardId: number;
@@ -23,5 +24,9 @@ export function StatShardIcon({ shardId, size, className }: StatShardIconProps) 
   const url = provider.statShardIconUrl(shardId);
   const name = provider.statShardDisplayName(shardId);
 
-  return <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />;
+  return (
+    <Tooltip title={name} description={provider.statShardDescription(shardId)}>
+      <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />
+    </Tooltip>
+  );
 }

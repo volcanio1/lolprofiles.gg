@@ -12,6 +12,7 @@
 
 import { useStaticData } from '../staticData';
 import { CdnImage } from './CdnImage';
+import { Tooltip } from './Tooltip';
 
 export interface SummonerSpellIconProps {
   spellId: number;
@@ -24,5 +25,9 @@ export function SummonerSpellIcon({ spellId, size, className }: SummonerSpellIco
   const url = provider.summonerSpellIconUrl(spellId);
   const name = provider.summonerSpellDisplayName(spellId);
 
-  return <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />;
+  return (
+    <Tooltip title={name} description={provider.summonerSpellDescription(spellId)}>
+      <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />
+    </Tooltip>
+  );
 }

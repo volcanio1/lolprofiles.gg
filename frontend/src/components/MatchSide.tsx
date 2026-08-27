@@ -112,7 +112,12 @@ export function MatchSide({
           <SummonerSpellIcon spellId={summonerSpells[0]} size={16} className="match-side-spell-icon" />
           <SummonerSpellIcon spellId={summonerSpells[1]} size={16} className="match-side-spell-icon" />
           <RuneIcon runeId={keystoneId} size={16} className="match-side-rune-icon" />
-          <RuneTreeIcon styleId={runes.secondaryStyle} size={16} className="match-side-rune-tree-icon" />
+          <RuneTreeIcon
+            styleId={runes.secondaryStyle}
+            size={16}
+            className="match-side-rune-tree-icon"
+            selectionIds={runes.secondarySelections}
+          />
         </div>
       </div>
       <dl className="match-side-stats">

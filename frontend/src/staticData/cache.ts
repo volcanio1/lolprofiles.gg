@@ -42,8 +42,16 @@ import type { StaticDataIndex } from './provider';
  * asset class resolves to a placeholder for a full 24-hour retention period,
  * indistinguishable from a genuine CDN failure. The version bump forces every
  * older entry to miss and refetch.
+ *
+ * v3 -> v4 when hover tooltips added a `description` field to every item, spell
+ * and rune entry, then v4 -> v5 when that field changed from a plain string to a
+ * structured `{ stats, paragraphs }`: an older entry validates by shape but its
+ * entries fail `isItemEntry`/`isNamedIconEntry` (now requiring an
+ * `AssetDescription`), so every asset would resolve to a placeholder until the
+ * entry expired. v5 -> v6 when summoner spell entries gained a `cooldown` field:
+ * an older entry validates but shows no cooldown in the tooltip until it expires.
  */
-const STORAGE_KEY = 'lolprofiles.staticData.v3';
+const STORAGE_KEY = 'lolprofiles.staticData.v6';
 
 /** Requirement 4.4 — "no less than 24 hours". */
 export const STATIC_DATA_TTL_MS = 24 * 60 * 60 * 1000;

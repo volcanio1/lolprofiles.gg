@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import { ProfileReportPage } from './pages/ProfileReportPage';
 import { SearchPage } from './pages/SearchPage';
+import { TestIconsPage } from './pages/TestIconsPage';
 import { StaticDataContextProvider } from './staticData';
 
 /**
@@ -18,6 +19,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<SearchPage />} />
         <Route path="/profile" element={<ProfileReportPage />} />
+        <Route path="/test" element={<TestIconsPage />} />
       </Routes>
     </StaticDataContextProvider>
   );

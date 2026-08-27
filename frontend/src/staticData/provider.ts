@@ -80,12 +80,35 @@ export interface ChampionEntry {
   image: string;
 }
 
+/** One line of an item's `<stats>` block, e.g. `{ amount: '75', stat: 'Attack Damage' }`. */
+export interface AssetStatLine {
+  /** The numeric part with any unit, e.g. `75`, `25%`. `''` when the line had no leading number. */
+  amount: string;
+  /** The stat name, e.g. `Attack Damage`. Rendered with an icon by `StatIcon`. */
+  stat: string;
+}
+
+/**
+ * A parsed asset tooltip: the flat stat lines (items only) and the body
+ * paragraphs (passive/active effects, spell text). Rendered as
+ * name -> stats -> description by `Tooltip`.
+ */
+export interface AssetDescription {
+  stats: AssetStatLine[];
+  /** Effect text, split on blank lines. A single `\n` inside a paragraph is a soft break. */
+  paragraphs: string[];
+}
+
+export const EMPTY_ASSET_DESCRIPTION: AssetDescription = { stats: [], paragraphs: [] };
+
 /** One item, trimmed to what rendering needs. */
 export interface ItemEntry {
   name: string;
   image: string;
   /** Precomputed at index time; see `classifyCompletedItem`. */
   completed: boolean;
+  /** Parsed effect summary for the hover tooltip; empty stats + paragraphs when none. */
+  description: AssetDescription;
 }
 
 /** One summoner spell, or one rune, or one rune tree. Same shape, same lookup. */
@@ -93,6 +116,115 @@ export interface NamedIconEntry {
   name: string;
   /** Data Dragon's `image.full` (spells) or `icon` (runes, trees) field, verbatim. */
   icon: string;
+  /** Parsed effect summary for the hover tooltip; empty stats + paragraphs when none. */
+  description: AssetDescription;
+  /** Summoner spells only: `cooldownBurn` from `summoner.json`, e.g. `"300"`. Absent otherwise. */
+  cooldown?: string;
+}
+
+const DESCRIPTION_MAX = 700;
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
+}
+
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  nbsp: ' ',
+  lt: '<',
+  gt: '>',
+  amp: '&',
+  quot: '"',
+  apos: "'",
+  rsquo: '’',
+  lsquo: '‘',
+  ldquo: '“',
+  rdquo: '”',
+  hellip: '…',
+  ndash: '–',
+  mdash: '—',
+};
+
+function codePoint(value: number): string | null {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) {
+    return null;
+  }
+  try {
+    return String.fromCodePoint(value);
+  } catch {
+    return null;
+  }
+}
+
+function decodeEntities(text: string): string {
+  return (
+    text
+      .replace(/&#(\d+);/g, (whole, code) => codePoint(Number(code)) ?? whole)
+      .replace(/&#x([0-9a-f]+);/gi, (whole, code) => codePoint(Number.parseInt(code, 16)) ?? whole)
+      .replace(/&([a-z]+);/gi, (whole, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? whole)
+      // Data Dragon leaves unresolved calculation tokens like `@f3@` / `@Effect1Amount@`
+      // in some rune descriptions — there is no value to substitute, so drop them.
+      .replace(/@[^@\s]+@/g, '?')
+  );
+}
+
+/** Wraps a bare string (stat shard blurbs) as an `AssetDescription`. */
+export function textAssetDescription(text: string): AssetDescription {
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? { stats: [], paragraphs: [trimmed] } : EMPTY_ASSET_DESCRIPTION;
+}
+
+/**
+ * Parses Data Dragon's HTML description fragment into structured tooltip content.
+ *
+ * Items carry a leading `<stats>75 Attack Damage<br>25% Critical Strike Chance</stats>`
+ * block followed by `<passive>`/`<active>` effect text; spells and runes are effect
+ * text only. The `<stats>` block becomes `stats[]` (each line split into amount +
+ * name so `StatIcon` can render a glyph); everything else is tag-stripped, with
+ * `<br><br>` becoming paragraph breaks and a lone `<br>` a soft line break.
+ *
+ * `fallback` (an item's `plaintext`) is used both when there is no raw string and
+ * when the raw string has stats but no effect text — Infinity Edge, for example,
+ * is `<stats>...</stats><br><br>` with an empty body, and the one-line plaintext
+ * ("Massively enhances critical strikes") is better than showing nothing.
+ */
+export function parseAssetDescription(raw: unknown, fallback = ''): AssetDescription {
+  const fallbackText = typeof fallback === 'string' ? fallback.trim() : '';
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return textAssetDescription(fallbackText);
+  }
+
+  let body = raw;
+  let stats: AssetStatLine[] = [];
+  const statsMatch = raw.match(/<stats>([\s\S]*?)<\/stats>/i);
+  if (statsMatch) {
+    stats = statsMatch[1]
+      .split(/<br\s*\/?>/i)
+      .map((segment) => decodeEntities(stripTags(segment)).replace(/\s+/g, ' ').trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const match = line.match(/^([+-]?[\d.,]+\s*%?)\s+(.*)$/);
+        return match
+          ? { amount: match[1].replace(/\s+/g, ''), stat: match[2].trim() }
+          : { amount: '', stat: line };
+      });
+    body = raw.slice(0, statsMatch.index) + raw.slice((statsMatch.index ?? 0) + statsMatch[0].length);
+  }
+
+  const text = decodeEntities(stripTags(body.replace(/<br\s*\/?>/gi, '\n')))
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const capped = text.length > DESCRIPTION_MAX ? `${text.slice(0, DESCRIPTION_MAX).trimEnd()}…` : text;
+  const paragraphs = capped
+    .split('\n\n')
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+
+  if (paragraphs.length === 0 && fallbackText.length > 0) {
+    return { stats, paragraphs: [fallbackText] };
+  }
+  return { stats, paragraphs };
 }
 
 /**
@@ -108,15 +240,15 @@ export interface NamedIconEntry {
  * they carry no stronger guarantee than "the icon file exists".
  */
 const STAT_SHARD_TABLE: Readonly<Record<number, NamedIconEntry>> = {
-  5001: { name: 'Health Scaling', icon: 'perk-images/StatMods/StatModsHealthScalingIcon.png' },
-  5002: { name: 'Armor', icon: 'perk-images/StatMods/StatModsArmorIcon.png' },
-  5003: { name: 'Magic Resist', icon: 'perk-images/StatMods/StatModsMagicResIcon.png' },
-  5005: { name: 'Attack Speed', icon: 'perk-images/StatMods/StatModsAttackSpeedIcon.png' },
-  5007: { name: 'Ability Haste', icon: 'perk-images/StatMods/StatModsCDRScalingIcon.png' },
-  5008: { name: 'Adaptive Force', icon: 'perk-images/StatMods/StatModsAdaptiveForceIcon.png' },
-  5010: { name: 'Movement Speed', icon: 'perk-images/StatMods/StatModsMovementSpeedIcon.png' },
-  5011: { name: 'Health', icon: 'perk-images/StatMods/StatModsHealthPlusIcon.png' },
-  5013: { name: 'Tenacity', icon: 'perk-images/StatMods/StatModsTenacityIcon.png' },
+  5001: { name: 'Health Scaling', icon: 'perk-images/StatMods/StatModsHealthScalingIcon.png', description: textAssetDescription('+10-180 Health (based on level)') },
+  5002: { name: 'Armor', icon: 'perk-images/StatMods/StatModsArmorIcon.png', description: textAssetDescription('+6 Armor') },
+  5003: { name: 'Magic Resist', icon: 'perk-images/StatMods/StatModsMagicResIcon.png', description: textAssetDescription('+8 Magic Resist') },
+  5005: { name: 'Attack Speed', icon: 'perk-images/StatMods/StatModsAttackSpeedIcon.png', description: textAssetDescription('+10% Attack Speed') },
+  5007: { name: 'Ability Haste', icon: 'perk-images/StatMods/StatModsCDRScalingIcon.png', description: textAssetDescription('+8 Ability Haste') },
+  5008: { name: 'Adaptive Force', icon: 'perk-images/StatMods/StatModsAdaptiveForceIcon.png', description: textAssetDescription('+5.4 Attack Damage or +9 Ability Power (adaptive)') },
+  5010: { name: 'Movement Speed', icon: 'perk-images/StatMods/StatModsMovementSpeedIcon.png', description: textAssetDescription('+2% Movement Speed') },
+  5011: { name: 'Health', icon: 'perk-images/StatMods/StatModsHealthPlusIcon.png', description: textAssetDescription('+65 Health') },
+  5013: { name: 'Tenacity', icon: 'perk-images/StatMods/StatModsTenacityIcon.png', description: textAssetDescription('+10% Tenacity and Slow Resist') },
 };
 
 /**
@@ -168,14 +300,20 @@ export interface StaticDataProvider {
   itemIconUrl(id: number): string | null;
   /** Item name; the identifier as a string when unresolvable. */
   itemDisplayName(id: number): string;
+  /** Parsed effect summary for the hover tooltip; empty when unresolvable or absent. */
+  itemDescription(id: number): AssetDescription;
   /** Serves `item-timeline`'s Requirement 3.2. False when unresolvable. */
   isCompletedItem(id: number): boolean;
   /** Requirement 8.2. The identifier as a string when unresolvable. */
   summonerSpellDisplayName(id: number): string;
+  /** Parsed effect summary for the hover tooltip; leads with a Cooldown stat line when known. */
+  summonerSpellDescription(id: number): AssetDescription;
   /** Requirement 7.2. Versioned path — spells are not part of the 7.4 exception. */
   summonerSpellIconUrl(id: number): string | null;
   /** Requirement 8.3. */
   runeDisplayName(id: number): string;
+  /** Parsed effect summary for the hover tooltip; empty when unresolvable or absent. */
+  runeDescription(id: number): AssetDescription;
   /** Requirement 7.3/7.4. Unversioned path — see `DDRAGON_UNVERSIONED_IMG_BASE`. */
   runeIconUrl(id: number): string | null;
   /** Requirement 8.3. */
@@ -184,6 +322,8 @@ export interface StaticDataProvider {
   runeTreeIconUrl(styleId: number): string | null;
   /** Requirement 8.3. */
   statShardDisplayName(id: number): string;
+  /** Parsed stat summary for the hover tooltip; empty when unresolvable. */
+  statShardDescription(id: number): AssetDescription;
   /** Requirement 7.4/7.7. Unversioned path, identifier-to-file mapping hardcoded. */
   statShardIconUrl(id: number): string | null;
   /** Requirement 12.7. The identifier as a string when unresolvable. Name only — no description (Requirement 12.8). */
@@ -248,13 +388,24 @@ function isChampionEntry(candidate: unknown): candidate is ChampionEntry {
   );
 }
 
+function isAssetDescription(candidate: unknown): candidate is AssetDescription {
+  const value = candidate as AssetDescription | null;
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    Array.isArray(value.stats) &&
+    Array.isArray(value.paragraphs)
+  );
+}
+
 function isNamedIconEntry(candidate: unknown): candidate is NamedIconEntry {
   const entry = candidate as NamedIconEntry | null;
   return (
     entry !== null &&
     typeof entry === 'object' &&
     typeof entry.name === 'string' &&
-    typeof entry.icon === 'string'
+    typeof entry.icon === 'string' &&
+    isAssetDescription(entry.description)
   );
 }
 
@@ -264,7 +415,8 @@ function isItemEntry(candidate: unknown): candidate is ItemEntry {
     entry !== null &&
     typeof entry === 'object' &&
     typeof entry.name === 'string' &&
-    typeof entry.image === 'string'
+    typeof entry.image === 'string' &&
+    isAssetDescription(entry.description)
   );
 }
 
@@ -341,10 +493,16 @@ export function buildStaticDataIndex(
         gold?: { total?: number };
         depth?: number;
         into?: readonly string[];
+        description?: unknown;
+        plaintext?: unknown;
       };
       const name = typeof entry?.name === 'string' ? entry.name : id;
       const image = typeof entry?.image?.full === 'string' ? entry.image.full : `${id}.png`;
-      items[id] = { name, image, completed: classifyCompletedItem(entry ?? {}) };
+      const description = parseAssetDescription(
+        entry?.description,
+        typeof entry?.plaintext === 'string' ? entry.plaintext : '',
+      );
+      items[id] = { name, image, completed: classifyCompletedItem(entry ?? {}), description };
     }
   }
 
@@ -354,13 +512,21 @@ export function buildStaticDataIndex(
   const summonerData = (summonerJson as { data?: Record<string, unknown> } | null)?.data;
   if (summonerData && typeof summonerData === 'object') {
     for (const value of Object.values(summonerData)) {
-      const entry = value as { key?: unknown; name?: unknown; image?: { full?: unknown } };
+      const entry = value as {
+        key?: unknown;
+        name?: unknown;
+        description?: unknown;
+        cooldownBurn?: unknown;
+        image?: { full?: unknown };
+      };
       if (typeof entry?.key !== 'string' || entry.key.length === 0) {
         continue; // No numeric id to key this entry under — nothing to invert.
       }
       const name = typeof entry.name === 'string' ? entry.name : entry.key;
       const icon = typeof entry.image?.full === 'string' ? entry.image.full : `${entry.key}.png`;
-      spells[entry.key] = { name, icon };
+      const cooldown =
+        typeof entry.cooldownBurn === 'string' && entry.cooldownBurn.length > 0 ? entry.cooldownBurn : undefined;
+      spells[entry.key] = { name, icon, description: parseAssetDescription(entry.description), cooldown };
     }
   }
 
@@ -377,7 +543,7 @@ export function buildStaticDataIndex(
       if (typeof treeEntry?.id === 'number' && Number.isInteger(treeEntry.id)) {
         const treeName = typeof treeEntry.name === 'string' ? treeEntry.name : String(treeEntry.id);
         const treeIcon = typeof treeEntry.icon === 'string' ? treeEntry.icon : '';
-        runeTrees[String(treeEntry.id)] = { name: treeName, icon: treeIcon };
+        runeTrees[String(treeEntry.id)] = { name: treeName, icon: treeIcon, description: EMPTY_ASSET_DESCRIPTION };
       }
       if (!Array.isArray(treeEntry?.slots)) {
         continue;
@@ -388,13 +554,17 @@ export function buildStaticDataIndex(
           continue;
         }
         for (const rune of slotRunes) {
-          const runeEntry = rune as { id?: unknown; name?: unknown; icon?: unknown };
+          const runeEntry = rune as { id?: unknown; name?: unknown; icon?: unknown; shortDesc?: unknown; longDesc?: unknown };
           if (typeof runeEntry?.id !== 'number' || !Number.isInteger(runeEntry.id)) {
             continue;
           }
           const name = typeof runeEntry.name === 'string' ? runeEntry.name : String(runeEntry.id);
           const icon = typeof runeEntry.icon === 'string' ? runeEntry.icon : '';
-          runes[String(runeEntry.id)] = { name, icon };
+          const rawDesc =
+            typeof runeEntry.longDesc === 'string' && runeEntry.longDesc.length > 0
+              ? runeEntry.longDesc
+              : runeEntry.shortDesc;
+          runes[String(runeEntry.id)] = { name, icon, description: parseAssetDescription(rawDesc) };
         }
       }
     }
@@ -419,7 +589,7 @@ export function buildStaticDataIndex(
       const icon = rawPath.toLowerCase().startsWith(assetsPrefix.toLowerCase())
         ? rawPath.slice(assetsPrefix.length)
         : rawPath;
-      augments[String(augment.id)] = { name, icon: icon.toLowerCase() };
+      augments[String(augment.id)] = { name, icon: icon.toLowerCase(), description: EMPTY_ASSET_DESCRIPTION };
     }
   }
 
@@ -528,6 +698,13 @@ export function createStaticDataProvider(
       return lookupEntry(usable?.items, String(id), isItemEntry)?.name ?? String(id);
     },
 
+    itemDescription(id: number): AssetDescription {
+      if (!isUsableId(id) || id === 0) {
+        return EMPTY_ASSET_DESCRIPTION;
+      }
+      return lookupEntry(usable?.items, String(id), isItemEntry)?.description ?? EMPTY_ASSET_DESCRIPTION;
+    },
+
     isCompletedItem(id: number): boolean {
       if (usable === null || !isUsableId(id)) {
         return false;
@@ -545,6 +722,26 @@ export function createStaticDataProvider(
         }
       }
       return lookupEntry(usable?.spells, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    summonerSpellDescription(id: number): AssetDescription {
+      const key = usableIdKey(id);
+      if (key === null) {
+        return EMPTY_ASSET_DESCRIPTION;
+      }
+      const entry = lookupEntry(usable?.spells, key, isNamedIconEntry);
+      if (entry === undefined) {
+        return EMPTY_ASSET_DESCRIPTION;
+      }
+      if (entry.cooldown === undefined || entry.cooldown.length === 0) {
+        return entry.description;
+      }
+      // The cooldown is not in the description string — splice it in as the first
+      // stat line so the tooltip reads name -> cooldown -> effect.
+      return {
+        stats: [{ amount: `${entry.cooldown}s`, stat: 'Cooldown' }, ...entry.description.stats],
+        paragraphs: entry.description.paragraphs,
+      };
     },
 
     summonerSpellIconUrl(id: number): string | null {
@@ -571,6 +768,14 @@ export function createStaticDataProvider(
         }
       }
       return lookupEntry(usable?.runes, key, isNamedIconEntry)?.name ?? key;
+    },
+
+    runeDescription(id: number): AssetDescription {
+      const key = usableIdKey(id);
+      if (key === null) {
+        return EMPTY_ASSET_DESCRIPTION;
+      }
+      return lookupEntry(usable?.runes, key, isNamedIconEntry)?.description ?? EMPTY_ASSET_DESCRIPTION;
     },
 
     runeIconUrl(id: number): string | null {
@@ -625,6 +830,17 @@ export function createStaticDataProvider(
       return Object.prototype.hasOwnProperty.call(STAT_SHARD_TABLE, numeric)
         ? STAT_SHARD_TABLE[numeric].name
         : key;
+    },
+
+    statShardDescription(id: number): AssetDescription {
+      const key = usableIdKey(id);
+      if (key === null) {
+        return EMPTY_ASSET_DESCRIPTION;
+      }
+      const numeric = Number(key);
+      return Object.prototype.hasOwnProperty.call(STAT_SHARD_TABLE, numeric)
+        ? STAT_SHARD_TABLE[numeric].description
+        : EMPTY_ASSET_DESCRIPTION;
     },
 
     statShardIconUrl(id: number): string | null {

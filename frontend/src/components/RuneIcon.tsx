@@ -13,6 +13,7 @@
 
 import { useStaticData } from '../staticData';
 import { CdnImage } from './CdnImage';
+import { Tooltip } from './Tooltip';
 
 export interface RuneIconProps {
   runeId: number;
@@ -25,5 +26,9 @@ export function RuneIcon({ runeId, size, className }: RuneIconProps) {
   const url = provider.runeIconUrl(runeId);
   const name = provider.runeDisplayName(runeId);
 
-  return <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />;
+  return (
+    <Tooltip title={name} description={provider.runeDescription(runeId)}>
+      <CdnImage url={url} alt={name} fallbackLabel={`${name} unavailable`} size={size} className={className} />
+    </Tooltip>
+  );
 }

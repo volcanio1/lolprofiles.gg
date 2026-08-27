@@ -29,6 +29,7 @@ import { useState } from 'react';
 import { useStaticData } from '../staticData';
 import type { ItemBuild } from '../api/types';
 import { AssetPlaceholder } from './AssetPlaceholder';
+import { Tooltip } from './Tooltip';
 
 function ItemSlot({ id, size, className }: { id: number; size: number; className?: string }) {
   const provider = useStaticData();
@@ -42,18 +43,24 @@ function ItemSlot({ id, size, className }: { id: number; size: number; className
   const name = provider.itemDisplayName(id);
 
   if (url === null) {
-    return <AssetPlaceholder size={size} label={`${name} unavailable`} className={className} />;
+    return (
+      <Tooltip title={name}>
+        <AssetPlaceholder size={size} label={`${name} unavailable`} className={className} />
+      </Tooltip>
+    );
   }
 
   return (
-    <img
-      src={url}
-      alt={name}
-      width={size}
-      height={size}
-      className={className}
-      onError={() => setFailed(true)}
-    />
+    <Tooltip title={name} description={provider.itemDescription(id)}>
+      <img
+        src={url}
+        alt={name}
+        width={size}
+        height={size}
+        className={className}
+        onError={() => setFailed(true)}
+      />
+    </Tooltip>
   );
 }
 

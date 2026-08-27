@@ -4,6 +4,7 @@ import {
   classifyCompletedItem,
   communityDragonVersionOf,
   createStaticDataProvider,
+  parseAssetDescription,
   type StaticDataIndex,
 } from './provider';
 
@@ -20,7 +21,16 @@ const CHAMPION_JSON = {
 const ITEM_JSON = {
   data: {
     // Completed: built from components.
-    '3031': { name: 'Infinity Edge', image: { full: '3031.png' }, depth: 2, gold: { total: 3500 }, tags: ['Damage'] },
+    '3031': {
+      name: 'Infinity Edge',
+      image: { full: '3031.png' },
+      depth: 2,
+      gold: { total: 3500 },
+      tags: ['Damage'],
+      description:
+        '<mainText><stats><attention>65</attention> Attack Damage<br><attention>25%</attention> Critical Strike Chance</stats><br><br>Critical strikes deal <passive>bonus damage</passive>.</mainText>',
+      plaintext: 'Massively increases critical strike damage',
+    },
     // Completed: standalone, no depth, nothing builds out of it.
     '1055': { name: "Doran's Blade", image: { full: '1055.png' }, gold: { total: 450 }, tags: ['Damage'] },
     // Completed: builds into tier-3 boots but is finished in its own right.
@@ -36,7 +46,13 @@ const ITEM_JSON = {
 
 const SUMMONER_JSON = {
   data: {
-    SummonerFlash: { key: '4', name: 'Flash', image: { full: 'SummonerFlash.png' } },
+    SummonerFlash: {
+      key: '4',
+      name: 'Flash',
+      image: { full: 'SummonerFlash.png' },
+      description: 'Teleports your champion a short distance toward your cursor.',
+      cooldownBurn: '300',
+    },
     SummonerBarrier: { key: '21', name: 'Barrier', image: { full: 'SummonerBarrier.png' } },
   },
 };
@@ -49,7 +65,13 @@ const RUNES_JSON = [
     slots: [
       {
         runes: [
-          { id: 8112, name: 'Electrocute', icon: 'perk-images/Styles/Domination/Electrocute/Electrocute.png' },
+          {
+            id: 8112,
+            name: 'Electrocute',
+            icon: 'perk-images/Styles/Domination/Electrocute/Electrocute.png',
+            shortDesc: 'Hitting a champion with 3 attacks or abilities deals bonus damage.',
+            longDesc: 'Hitting a champion with <b>3</b> separate attacks or abilities within 3s deals bonus adaptive damage.',
+          },
         ],
       },
       { runes: [{ id: 8143, name: 'Sudden Impact', icon: 'perk-images/Styles/Domination/SuddenImpact/SuddenImpact.png' }] },
@@ -244,6 +266,109 @@ describe('StaticDataProvider — items', () => {
     expect(ready.isCompletedItem(1036)).toBe(false);
     expect(ready.isCompletedItem(99_999)).toBe(false);
     expect(versionOnly.isCompletedItem(3031)).toBe(false);
+  });
+});
+
+describe('parseAssetDescription', () => {
+  it('splits the <stats> block into amount + name lines and strips the rest to paragraphs', () => {
+    const parsed = parseAssetDescription(
+      '<mainText><stats><attention>75</attention> Attack Damage<br><attention>25%</attention> Critical Strike Chance</stats><br><br><passive>Perfection</passive><br>Bonus damage.<br><br>Second effect.</mainText>',
+    );
+    expect(parsed.stats).toEqual([
+      { amount: '75', stat: 'Attack Damage' },
+      { amount: '25%', stat: 'Critical Strike Chance' },
+    ]);
+    expect(parsed.paragraphs).toEqual(['Perfection\nBonus damage.', 'Second effect.']);
+  });
+
+  it('handles effect-only text (spells, runes) with no stats block', () => {
+    expect(parseAssetDescription('Teleports you a <b>short</b> distance.')).toEqual({
+      stats: [],
+      paragraphs: ['Teleports you a short distance.'],
+    });
+  });
+
+  it('decodes numeric and named HTML entities', () => {
+    expect(parseAssetDescription("Yuumi&#39;s bond &amp; the champion&rsquo;s aura.").paragraphs).toEqual([
+      'Yuumi\'s bond & the champion’s aura.',
+    ]);
+  });
+
+  it('uses the fallback string when the raw description is missing', () => {
+    expect(parseAssetDescription(undefined, 'Enhances Move Speed')).toEqual({
+      stats: [],
+      paragraphs: ['Enhances Move Speed'],
+    });
+    expect(parseAssetDescription(undefined)).toEqual({ stats: [], paragraphs: [] });
+  });
+
+  it('uses the fallback when the raw string has stats but an empty body (Infinity Edge)', () => {
+    const parsed = parseAssetDescription(
+      '<mainText><stats><attention>75</attention> Attack Damage<br><attention>25%</attention> Critical Strike Chance</stats><br><br></mainText>',
+      'Massively enhances critical strikes',
+    );
+    expect(parsed.stats).toEqual([
+      { amount: '75', stat: 'Attack Damage' },
+      { amount: '25%', stat: 'Critical Strike Chance' },
+    ]);
+    expect(parsed.paragraphs).toEqual(['Massively enhances critical strikes']);
+  });
+
+  it('caps very long body text with an ellipsis', () => {
+    const parsed = parseAssetDescription('x'.repeat(900));
+    expect(parsed.paragraphs[0].endsWith('…')).toBe(true);
+    expect(parsed.paragraphs[0].length).toBeLessThan(720);
+  });
+});
+
+describe('StaticDataProvider — hover descriptions', () => {
+  it('exposes structured item stats and effect paragraphs', () => {
+    expect(ready.itemDescription(3031)).toEqual({
+      stats: [
+        { amount: '65', stat: 'Attack Damage' },
+        { amount: '25%', stat: 'Critical Strike Chance' },
+      ],
+      paragraphs: ['Critical strikes deal bonus damage.'],
+    });
+  });
+
+  it('falls back to plaintext when an item has no rich description', () => {
+    const built = buildStaticDataIndex(
+      VERSION,
+      CHAMPION_JSON,
+      { data: { '1001': { name: 'Boots', image: { full: '1001.png' }, gold: { total: 300 }, plaintext: 'Enhances Movement Speed' } } },
+      SUMMONER_JSON,
+      RUNES_JSON,
+    );
+    expect(createStaticDataProvider(VERSION, built).itemDescription(1001)).toEqual({
+      stats: [],
+      paragraphs: ['Enhances Movement Speed'],
+    });
+  });
+
+  it('leads a summoner spell description with its cooldown, then the effect text', () => {
+    expect(ready.summonerSpellDescription(4)).toEqual({
+      stats: [{ amount: '300s', stat: 'Cooldown' }],
+      paragraphs: ['Teleports your champion a short distance toward your cursor.'],
+    });
+  });
+
+  it('exposes a rune description, preferring longDesc', () => {
+    expect(ready.runeDescription(8112).paragraphs[0]).toBe(
+      'Hitting a champion with 3 separate attacks or abilities within 3s deals bonus adaptive damage.',
+    );
+  });
+
+  it('exposes a stat shard description from the hardcoded table', () => {
+    expect(ready.statShardDescription(5005)).toEqual({ stats: [], paragraphs: ['+10% Attack Speed'] });
+  });
+
+  it('returns an empty description when the identifier is unresolvable', () => {
+    const empty = { stats: [], paragraphs: [] };
+    expect(ready.itemDescription(99_999)).toEqual(empty);
+    expect(ready.summonerSpellDescription(99_999)).toEqual(empty);
+    expect(ready.runeDescription(99_999)).toEqual(empty);
+    expect(versionOnly.itemDescription(3031)).toEqual(empty);
   });
 });
 

@@ -47,7 +47,11 @@ function ScoreboardRow({ participant }: { participant: MatchParticipant }) {
         <SummonerSpellIcon spellId={participant.summonerSpells[0]} size={16} />
         <SummonerSpellIcon spellId={participant.summonerSpells[1]} size={16} />
         <RuneIcon runeId={keystoneId} size={16} />
-        <RuneTreeIcon styleId={participant.runes.secondaryStyle} size={16} />
+        <RuneTreeIcon
+          styleId={participant.runes.secondaryStyle}
+          size={16}
+          selectionIds={participant.runes.secondarySelections}
+        />
       </td>
       <td>
         <ItemBuildRow build={participant.build} size={20} />
