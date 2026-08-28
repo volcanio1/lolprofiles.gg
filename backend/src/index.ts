@@ -45,6 +45,7 @@ import {
   MongoProfileSnapshotStore,
   type ProfileSnapshotStore,
 } from './db/profileSnapshotStore';
+import { createNoopMatchStore, MongoMatchStore, type MatchStore } from './db/matchStore';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createRateLimitManager } from './rateLimit';
@@ -73,6 +74,9 @@ async function main(): Promise<void> {
   const profileSnapshotStore: ProfileSnapshotStore = databaseClient.enabled
     ? new MongoProfileSnapshotStore(databaseClient.db())
     : createNoopProfileSnapshotStore();
+  const matchStore: MatchStore = databaseClient.enabled
+    ? new MongoMatchStore(databaseClient.db())
+    : createNoopMatchStore();
 
   if (databaseClient.enabled) {
     // eslint-disable-next-line no-console
@@ -97,6 +101,7 @@ async function main(): Promise<void> {
     rankHistoryStore,
     lookedUpPlayerStore,
     profileSnapshotStore,
+    matchStore,
   });
 
   const buildPathOrchestrator = createBuildPathOrchestrator({ cache, riotApiClient, now });
@@ -119,6 +124,7 @@ async function main(): Promise<void> {
     rankHistoryStore,
     lookedUpPlayerStore,
     profileSnapshotStore,
+    matchStore,
   });
 
   const server = app.listen(config.port, () => {

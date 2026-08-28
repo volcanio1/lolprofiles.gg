@@ -20,3 +20,17 @@ export const PROFILE_REPORTS_COLLECTION = 'profile_reports';
  * `SNAPSHOT_MAX_AGE_MS` (the endpoint's own age check) is derived from this.
  */
 export const PROFILE_REPORT_TTL_SECONDS = 15 * 24 * 60 * 60;
+
+/**
+ * specs/match-cache/ Requirement 1/7: a persistent, restart-surviving tier for
+ * match details, keyed by `matchId`. One document serves every player in the
+ * game.
+ */
+export const MATCH_DETAILS_COLLECTION = 'match_details';
+
+/**
+ * specs/match-cache/ Requirement 7.1. A STORAGE BOUND ONLY — a completed match is
+ * immutable, so an expired-and-re-fetched document is byte-identical and the
+ * read path applies no age check of its own (Requirement 7.2). 150 days.
+ */
+export const MATCH_DETAIL_TTL_SECONDS = 150 * 24 * 60 * 60;

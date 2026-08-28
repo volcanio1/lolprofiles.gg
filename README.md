@@ -327,24 +327,27 @@ A resolved platform is cached for 24 hours (the `accountRegion` cache endpoint) 
 | Summoner-V4 | **Not cached** | Non-blocking enrichment call (1,600/min granted), fetched fresh every lookup |
 | League-V4 | 10 minutes | Rank changes per game |
 | Match-V5 match IDs | 10 minutes | New matches appear |
-| Match-V5 match detail | Indefinite | A completed match is immutable |
+| Match-V5 match detail | Indefinite (in memory) + `match_details` collection when a database is configured, so it **survives restarts** — see [Database](#database) | A completed match is immutable. The raw 50–120 KB response is trimmed to the ~40 fields the code reads (~5 KB) before it's cached or stored |
 | Match-V5 timeline slice | Indefinite | One player's reconstructed build path (~2 KB); the match is immutable. Safe only because it's kilobytes — the raw 0.3–1 MB timeline it's derived from has **no** cache entry type and is discarded after parsing |
 
 Cache keys are length-prefixed per segment so concatenation is injective — `{"a:b": "c"}` and `{"a": "b:c"}` can't collide.
 
 ## Database
 
-The cache above is in-memory and disposable. Two features need data that *survives a restart and grows*, so there is one optional persistent store: **MongoDB** (Atlas M0 free tier in production), enabled by setting `MONGODB_URI`. **With it unset, none of this runs and the site is unchanged** — every store method is a no-op.
+The cache above is in-memory and disposable. Several features need data that *survives a restart and grows*, so there is one optional persistent store: **MongoDB** (Atlas M0 free tier in production), enabled by setting `MONGODB_URI`. **With it unset, none of this runs and the site is unchanged** — every store method is a no-op.
 
 | Collection | Written | Holds | Read by |
 |---|---|---|---|
 | `rank_snapshots` | On each successful lookup of a ranked player, **at most once per player per queue per UTC day** (a unique index enforces it) | `{ puuid, queueType, tier, division, leaguePoints, observedAt }` for Ranked Solo/Duo | `specs/profile-sidebar/`'s rank-over-time graph |
 | `looked_up_players` | On each successful lookup (upsert, keyed by PUUID) | `{ puuid, gameName, tagLine, tagLineLower, gameNameLower, region, profileIconId, lastLookedUpAt }` | [`GET /api/players/suggest`](#get-apiplayerssuggest) — the Riot-ID autocomplete; and `GET /api/players/report` to resolve a name → PUUID |
 | `profile_reports` | On each successful lookup (upsert, keyed by PUUID) | `{ _id: puuid, report: <full ProfileReport>, fetchedAt }` | [`GET /api/players/report`](#get-apiplayersreport) — instant render when a dropdown suggestion is picked |
+| `match_details` | On each lookup that fetched one or more matches from Riot (one bulk upsert, keyed by `matchId`) | `{ _id: matchId, match: <trimmed MatchDto>, region, storedAt }` — the ~40 fields the code reads, ~5 KB (not Riot's 50–120 KB raw response) | The lookup pipeline (before the Match-V5 detail fan-out) and the stale-cache fallback — **one stored match serves every player who was in it** |
 
-All three writes are **fire-and-forget** — issued as unawaited side effects of a lookup, never on its critical path. A slow, unreachable, or erroring database degrades to "the graph is a little younger, one name is missing from autocomplete, and a dropdown pick does a normal live lookup", never to a slow or failed lookup. `POST /api/privacy/delete` clears all three collections for a PUUID alongside the cache.
+All these writes are **fire-and-forget** — issued as unawaited side effects of a lookup, never on its critical path. A slow, unreachable, or erroring database degrades to "the graph is a little younger, one name is missing from autocomplete, a dropdown pick does a normal live lookup, and a match is re-fetched", never to a slow or failed lookup. `POST /api/privacy/delete` clears all four collections for a PUUID alongside the cache (a `match_details` document the PUUID appears in is evicted whole, not redacted).
 
 `profile_reports` carries a **15-day TTL index** on `fetchedAt`, so abandoned snapshots are reclaimed automatically; the report endpoint also rejects anything ≥ 15 days old regardless of TTL-sweep timing. A stored `ProfileReport` is a few tens of KB, well inside Mongo's 16 MB document cap.
+
+`match_details` carries a **150-day TTL index** on `storedAt` — a *storage bound only*: a completed match is immutable, so an expired-and-re-fetched document is byte-identical and the read path applies no age check. This is the one collection whose growth is worth watching: at ~6 KB effective per document, ~350 MB of the 512 MB M0 budget holds roughly 58,000 matches. The `match_details` read is on the request's critical path (it's consulted before deciding to call Riot) but is internally bounded — a slow, unreachable, or hung store resolves to "nothing stored" and the lookup falls through to Riot exactly as it would without a database. The payoff: **a deploy or restart no longer re-costs every match on the next lookup of every player**, and a Refresh of a returning player only fetches the matches that are actually new.
 
 **Redis is deliberately absent.** The roadmap once paired "a DB and Redis"; nothing actually needs a shared cache or shared rate-limit state while the backend runs as a single instance. The in-memory cache serves all caching. Revisit only when going multi-instance.
 
@@ -410,9 +413,9 @@ The `specs/` directory holds, per feature, a requirements document, a design doc
 Stated plainly rather than left to be discovered:
 
 - **The write routes are unauthenticated.** `/api/privacy/delete` accepts any PUUID; a scrubbed match detail is not recoverable from cache while it stays cached. This needs an explicit decision before any public deployment. `/api/players/suggest` (autocomplete) shares the unauthenticated posture but is far cheaper — one indexed query, no Riot call, no shared budget — and it can only echo back names that were already looked up on this site.
-- **`/api/lookup` spends a shared budget.** The rate limit manager guarantees the API key stays in good standing, but it can't stop an anonymous caller consuming the budget by requesting many distinct Riot IDs. Per-IP throttling is the mitigation and isn't implemented.
+- **`/api/lookup` spends a shared budget.** The rate limit manager guarantees the API key stays in good standing, but it can't stop an anonymous caller consuming the budget by requesting many distinct Riot IDs. Per-IP throttling is the mitigation and isn't implemented. With a database configured, the volume is much lower — match details persist in `match_details` across restarts, so a deploy no longer cold-caches every match, and a Refresh only fetches new games — but the endpoint is still unmetered per caller.
 - **`npm run dev` is broken.** It invokes `ts-node`, which isn't installed. Use `npm run build && npm start`. (`.env` *is* loaded now — `dotenv` is a dependency and `index.ts` imports it.)
-- **The database has no backups and its deletion isn't durable.** `rank_snapshots` / `looked_up_players` on Atlas M0 have no automated backups (acceptable — both are derived data whose loss degrades gracefully). Privacy deletion clears them for a PUUID, but a later lookup of the same player lawfully re-creates the record. The Atlas network allow-list is `0.0.0.0/0` because the app host has no static egress IP.
+- **The database has no backups and its deletion isn't durable.** The Atlas M0 collections (`rank_snapshots`, `looked_up_players`, `profile_reports`, `match_details`) have no automated backups (acceptable — all of it is derived data, re-fetchable from Riot, whose loss degrades gracefully). Privacy deletion clears a PUUID's data across all of them, but a later lookup of the same player lawfully re-creates it. The Atlas network allow-list is `0.0.0.0/0` because the app host has no static egress IP.
 - **Performance targets are unverified.** The spec sets p95 ≤2s cached / ≤15s fresh. Unit tests can't prove that; it needs staging load testing, and no claim is made here.
 - **Account cache keys are case-sensitive.** `Faker#KR1` and `faker#kr1` occupy separate entries, so a hot endpoint loses hit rate. Normalising the key would change the declared cache key params.
 

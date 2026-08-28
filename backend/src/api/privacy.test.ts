@@ -46,6 +46,7 @@ interface HarnessStores {
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
   profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
+  matchStore?: import('../db/matchStore').MatchStore;
 }
 
 function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
@@ -71,6 +72,7 @@ function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
       rankHistoryStore: stores.rankHistoryStore,
       lookedUpPlayerStore: stores.lookedUpPlayerStore,
       profileSnapshotStore: stores.profileSnapshotStore,
+      matchStore: stores.matchStore,
     }),
   );
 
@@ -385,6 +387,49 @@ describe('POST /api/privacy/delete — Persistent_Store (specs/database/ Require
       deleteByPuuid: () => Promise.reject(new Error('snapshot store down')),
     };
     const harness = makeHarness(undefined, { profileSnapshotStore });
+    await seed(harness.cache);
+
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(harness.logged).toHaveLength(0);
+  });
+
+  it('evicts every stored match the PUUID participated in (specs/match-cache/ Requirement 6.1)', async () => {
+    const { createInMemoryMatchStore } = await import('../db/matchStore');
+    const matchStore = createInMemoryMatchStore();
+    await matchStore.putMany([
+      {
+        matchId: 'NA1_1',
+        match: { metadata: { matchId: 'NA1_1', participants: [PUUID, OTHER_PUUID] }, info: { queueId: 420, gameStartTimestamp: NOW, gameDuration: 1800, participants: [] } },
+        region: 'americas',
+        storedAt: NOW,
+      },
+      {
+        matchId: 'NA1_2',
+        match: { metadata: { matchId: 'NA1_2', participants: [OTHER_PUUID] }, info: { queueId: 420, gameStartTimestamp: NOW, gameDuration: 1800, participants: [] } },
+        region: 'americas',
+        storedAt: NOW,
+      },
+    ]);
+
+    const harness = makeHarness(undefined, { matchStore });
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect((await matchStore.getMany(['NA1_1', 'NA1_2'])).has('NA1_1')).toBe(false); // evicted
+    expect((await matchStore.getMany(['NA1_2'])).has('NA1_2')).toBe(true); // bystander-only match kept
+  });
+
+  it('still succeeds when only the match-store deletion throws', async () => {
+    const matchStore = {
+      getMany: () => Promise.resolve(new Map()),
+      putMany: () => Promise.resolve(),
+      deleteByPuuid: () => Promise.reject(new Error('match store down')),
+    };
+    const harness = makeHarness(undefined, { matchStore });
     await seed(harness.cache);
 
     const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });

@@ -205,6 +205,7 @@ import {
 import { createNoopRankHistoryStore, type RankHistoryStore, type RankSnapshot } from '../db/rankHistoryStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
+import { createNoopMatchStore, type MatchStore, type StoredMatch } from '../db/matchStore';
 import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
   AccountDto,
@@ -504,6 +505,12 @@ export interface LookupOrchestratorOptions {
    * two stores. Omitted ⇒ the no-op store.
    */
   profileSnapshotStore?: ProfileSnapshotStore;
+  /**
+   * match-cache Requirement 3/4: consulted before the Match-V5 detail fan-out
+   * (bounded, fail-safe) and written to afterwards (fire-and-forget). Omitted ⇒
+   * the no-op store, so the fan-out always fetches from Riot as today.
+   */
+  matchStore?: MatchStore;
 }
 
 const defaultTimeoutScheduler: TimeoutScheduler = (ms, onElapsed) => {
@@ -572,6 +579,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly rankHistoryStore: RankHistoryStore;
   private readonly lookedUpPlayerStore: LookedUpPlayerStore;
   private readonly profileSnapshotStore: ProfileSnapshotStore;
+  private readonly matchStore: MatchStore;
 
   constructor(options: LookupOrchestratorOptions) {
     this.cache = options.cache;
@@ -585,6 +593,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.rankHistoryStore = options.rankHistoryStore ?? createNoopRankHistoryStore();
     this.lookedUpPlayerStore = options.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
     this.profileSnapshotStore = options.profileSnapshotStore ?? createNoopProfileSnapshotStore();
+    this.matchStore = options.matchStore ?? createNoopMatchStore();
     this.discoveryRegion = options.discoveryRegion ?? DEFAULT_REGION;
     this.regionResolver =
       options.regionResolver ??
@@ -833,12 +842,20 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   }
 
   /**
-   * Requirements 3.2/3.3/3.5. Fetches each match detail through `cacheOrFetch`,
-   * excluding — without halting — any match that fails to fetch for ANY reason
-   * (including timeout and rate limiting) or whose queue type is not allowed.
+   * Requirements 3.2/3.3/3.5. Fetches each match detail, excluding — without
+   * halting — any match that fails to fetch for ANY reason (including timeout and
+   * rate limiting) or whose queue type is not allowed.
    *
    * Bounded in width and length per decision 11, and stops issuing new requests
    * once the budget has elapsed (decision 5).
+   *
+   * specs/match-cache/ Requirements 3 & 4: before the Riot fan-out, the persistent
+   * `MatchStore` is consulted (one batched `getMany`) for every id the in-memory
+   * cache does not already hold. A stored match is used directly and seeded into
+   * the in-memory cache — no Riot call. Genuinely new matches are fetched as
+   * today and then written back to the store (one unawaited bulk `putMany`), so a
+   * lookup after a restart, or a Refresh of a returning player, only pays for the
+   * matches that are actually new.
    */
   private async fetchMatchDetails(
     region: RegionalRoutingValue,
@@ -850,8 +867,31 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       .filter((matchId): matchId is string => typeof matchId === 'string' && matchId.length > 0)
       .slice(0, this.matchHistoryCount);
 
+    const keyFor = (matchId: string): CacheKey => ({
+      endpoint: 'matchDetail',
+      routingValue: region,
+      params: { matchId },
+    });
+
+    // specs/match-cache/ Requirement 3.1 (design open question 2): only ask the
+    // store for ids the in-memory cache misses — `matchDetail` entries never go
+    // stale, so a present entry is always a usable hit.
+    const cacheMissIds: string[] = [];
+    for (const matchId of matchIds) {
+      if ((await this.readCached<MatchDto>(keyFor(matchId))) === undefined) {
+        cacheMissIds.push(matchId);
+      }
+    }
+    // Requirement 3.4: bounded and fail-safe — a failure is indistinguishable
+    // from an empty store, and the fan-out falls through to Riot.
+    const stored: Map<string, StoredMatch> =
+      cacheMissIds.length > 0
+        ? await this.matchStore.getMany(cacheMissIds).catch(() => new Map<string, StoredMatch>())
+        : new Map();
+
     const matches: IncludedMatch[] = [];
     const lanelessMatches: LanelessMatch[] = [];
+    const fetchedFromRiot: MatchDto[] = [];
     let attemptedCount = 0;
 
     for (let start = 0; start < matchIds.length; start += this.matchDetailConcurrency) {
@@ -862,19 +902,32 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       attemptedCount += batch.length;
 
       const outcomes = await Promise.all(
-        batch.map((matchId) =>
-          cacheOrFetch<MatchDto>(
+        batch.map(async (matchId): Promise<{ value: MatchDto } | { failure: RiotApiFailure }> => {
+          const hit = stored.get(matchId);
+          if (hit !== undefined) {
+            // Requirement 3.2: seed the in-memory cache so a same-process repeat is instant.
+            await this.cache.set(keyFor(matchId), hit.match, TTL_BY_ENDPOINT.matchDetail).catch(() => {});
+            return { value: hit.match };
+          }
+          const outcome = await cacheOrFetch<MatchDto>(
             this.cache,
-            { endpoint: 'matchDetail', routingValue: region, params: { matchId } },
+            keyFor(matchId),
             TTL_BY_ENDPOINT.matchDetail,
             () => this.client.getMatchById(region, matchId), // Requirement 3.2
             this.now,
-          ),
-        ),
+          );
+          if (isCacheOrFetchFailure(outcome)) {
+            return { failure: outcome.failure };
+          }
+          if (!outcome.fromCache) {
+            fetchedFromRiot.push(outcome.value); // Requirement 4.1
+          }
+          return { value: outcome.value };
+        }),
       );
 
       for (const outcome of outcomes) {
-        if (isCacheOrFetchFailure(outcome)) {
+        if ('failure' in outcome) {
           // Requirement 3.3: exclude this match, keep going.
           this.logAuthFailure('matchDetail', region, outcome.failure);
           continue;
@@ -893,6 +946,24 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
           lanelessMatches.push(laneless);
         }
       }
+    }
+
+    // specs/match-cache/ Requirement 4: fire-and-forget the matches we just pulled
+    // from Riot into the store. Fired from HERE, before any later pipeline stage
+    // can fail, so a subsequent failure or budget overrun cannot cancel it
+    // (Requirement 4.3). A rejection is logged and swallowed (Requirement 4.4).
+    if (fetchedFromRiot.length > 0) {
+      const observedAt = this.now();
+      void (async () => {
+        await this.matchStore.putMany(
+          fetchedFromRiot.map((match) => ({
+            matchId: match.metadata.matchId,
+            match,
+            region,
+            storedAt: observedAt,
+          })),
+        );
+      })().catch((reason: unknown) => this.logger.storeWriteFailed({ reason }));
     }
 
     return { puuid, matches, lanelessMatches, attemptedCount };
@@ -947,8 +1018,12 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       .filter((matchId): matchId is string => typeof matchId === 'string' && matchId.length > 0)
       .slice(0, this.matchHistoryCount);
 
-    const matches: IncludedMatch[] = [];
-    const lanelessMatches: LanelessMatch[] = [];
+    // specs/match-cache/ Requirement 3.6: a match absent from the in-memory cache
+    // but present in the persistent store still counts, so a fallback assembled
+    // after a restart is as complete as one assembled before it. Still no Riot
+    // call — a match neither source has is excluded, exactly as today.
+    const cacheEntries = new Map<string, MatchDto>();
+    const storeMissIds: string[] = [];
     for (const matchId of ids) {
       const entry = await this.readCached<MatchDto>({
         endpoint: 'matchDetail',
@@ -956,14 +1031,29 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
         params: { matchId },
       });
       if (entry === undefined) {
+        storeMissIds.push(matchId);
+      } else {
+        cacheEntries.set(matchId, entry.value);
+      }
+    }
+    const stored: Map<string, StoredMatch> =
+      storeMissIds.length > 0
+        ? await this.matchStore.getMany(storeMissIds).catch(() => new Map<string, StoredMatch>())
+        : new Map();
+
+    const matches: IncludedMatch[] = [];
+    const lanelessMatches: LanelessMatch[] = [];
+    for (const matchId of ids) {
+      const match = cacheEntries.get(matchId) ?? stored.get(matchId)?.match;
+      if (match === undefined) {
         continue;
       }
-      const included = toIncludedMatch(entry.value, puuid);
+      const included = toIncludedMatch(match, puuid);
       if (included !== undefined) {
         matches.push(included);
         continue;
       }
-      const laneless = toLanelessMatch(entry.value, puuid);
+      const laneless = toLanelessMatch(match, puuid);
       if (laneless !== undefined) {
         lanelessMatches.push(laneless);
       }

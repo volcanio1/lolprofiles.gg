@@ -73,6 +73,9 @@ import {
 } from '../rateLimit';
 import type { TimelineEventDto } from '../insight/buildPath';
 import type { PlatformRoutingValue, RegionalRoutingValue } from '../region';
+import { projectMatchDto } from './matchProjection';
+
+export { projectMatchDto } from './matchProjection';
 
 /** Requirement 2.6 / 9.4: per-call timeout. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -481,10 +484,18 @@ class HttpRiotApiClient implements RiotApiClient {
     return this.send<string[]>(url, region, RIOT_METHODS.matchIds);
   }
 
-  /** Requirement 3.2. Regional routing. */
+  /**
+   * Requirement 3.2. Regional routing.
+   *
+   * specs/match-cache/ Requirement 2.2: the raw response (50-120 KB, mostly
+   * fields nothing reads) is projected down to the `MatchDto` shape here, so
+   * every layer above — the in-memory cache and the persistent MatchStore —
+   * holds the ~5 KB trimmed match.
+   */
   async getMatchById(region: RegionalRoutingValue, matchId: string): Promise<RiotApiResult<MatchDto>> {
     const url = `${baseUrl(region)}/lol/match/v5/matches/${encodeURIComponent(matchId)}`;
-    return this.send<MatchDto>(url, region, RIOT_METHODS.matchDetail);
+    const result = await this.send<unknown>(url, region, RIOT_METHODS.matchDetail);
+    return result.kind === 'ok' ? { kind: 'ok', data: projectMatchDto(result.data) } : result;
   }
 
   /** item-timeline Requirement 1.2/1.3. Regional routing; same `send()` policy as every other call. */

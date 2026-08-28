@@ -13,11 +13,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MongoClient, type Db } from 'mongodb';
 import type { ProfileReport } from '../orchestrator';
-import { PROFILE_REPORT_TTL_SECONDS, PROFILE_REPORTS_COLLECTION } from './collections';
+import type { MatchDto } from '../riotApiClient';
+import {
+  MATCH_DETAIL_TTL_SECONDS,
+  MATCH_DETAILS_COLLECTION,
+  PROFILE_REPORT_TTL_SECONDS,
+  PROFILE_REPORTS_COLLECTION,
+} from './collections';
 import { ensureIndexes } from './client';
 import { MongoRankHistoryStore, type RankSnapshot } from './rankHistoryStore';
 import { MongoLookedUpPlayerStore, type LookedUpPlayer } from './lookedUpPlayerStore';
 import { MongoProfileSnapshotStore } from './profileSnapshotStore';
+import { MongoMatchStore, type StoredMatch } from './matchStore';
 
 const TEST_URI = process.env.MONGODB_TEST_URI;
 const DAY_MS = 86_400_000;
@@ -169,5 +176,68 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
 
     expect(await store.deleteByPuuid(puuid)).toBe(1);
     expect(await store.get(puuid)).toBeNull();
+  });
+
+  it('match_details carries a 150-day TTL index and a participants index (specs/match-cache/)', async () => {
+    const indexes = await db.collection(MATCH_DETAILS_COLLECTION).indexes();
+    const ttl = indexes.find((i) => i.name === 'ttl_storedAt');
+    expect(ttl?.expireAfterSeconds).toBe(MATCH_DETAIL_TTL_SECONDS);
+    expect(indexes.find((i) => i.name === 'participants')).toBeDefined();
+  });
+
+  it('the match store upserts by matchId, round-trips getMany, and evicts by participant', async () => {
+    const store = new MongoMatchStore(db);
+    const run = Date.now();
+    const dto = (matchId: string, participants: string[]): MatchDto => ({
+      metadata: { matchId, participants },
+      info: { queueId: 420, gameStartTimestamp: BASE, gameDuration: 1800, participants: [] },
+    });
+    const rec = (matchId: string, participants: string[], storedAt: number): StoredMatch => ({
+      matchId,
+      match: dto(matchId, participants),
+      region: 'americas',
+      storedAt,
+    });
+
+    await store.putMany([
+      rec(`${run}_1`, [`${run}-victim`, `${run}-bystander`], 1_000),
+      rec(`${run}_2`, [`${run}-bystander`], 2_000),
+    ]);
+    // upsert, not fork
+    await store.putMany([rec(`${run}_1`, [`${run}-victim`, `${run}-bystander`], 9_000)]);
+
+    const got = await store.getMany([`${run}_1`, `${run}_2`, `${run}_absent`]);
+    expect([...got.keys()].sort()).toEqual([`${run}_1`, `${run}_2`].sort());
+    expect(got.get(`${run}_1`)?.storedAt).toBe(9_000);
+    expect(got.get(`${run}_1`)?.match.metadata.participants).toContain(`${run}-victim`);
+
+    expect(await store.deleteByPuuid(`${run}-victim`)).toBe(1);
+    expect((await store.getMany([`${run}_1`])).size).toBe(0);
+    expect((await store.getMany([`${run}_2`])).size).toBe(1); // bystander-only match kept
+  });
+
+  it('the match store getMany resolves empty rather than rejecting when its read deadline elapses', async () => {
+    const matchId = `to-${Date.now()}`;
+    await new MongoMatchStore(db).putMany([
+      {
+        matchId,
+        match: { metadata: { matchId, participants: [] }, info: { queueId: 420, gameStartTimestamp: BASE, gameDuration: 1, participants: [] } },
+        region: 'americas',
+        storedAt: 1,
+      },
+    ]);
+
+    // A scheduler that fires the deadline immediately — it always wins the race
+    // against a real round trip, so getMany degrades to "nothing stored".
+    const store = new MongoMatchStore(db, {
+      scheduleTimeout: (_ms, onElapsed) => {
+        onElapsed();
+        return () => {};
+      },
+    });
+
+    const result = await store.getMany([matchId]);
+    expect(result).toBeInstanceOf(Map);
+    expect(result.size).toBe(0);
   });
 });

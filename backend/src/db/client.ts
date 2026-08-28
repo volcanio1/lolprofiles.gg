@@ -26,12 +26,20 @@ import { MongoClient, type Db } from 'mongodb';
 import {
   DATABASE_NAME,
   LOOKED_UP_PLAYERS_COLLECTION,
+  MATCH_DETAIL_TTL_SECONDS,
+  MATCH_DETAILS_COLLECTION,
   PROFILE_REPORT_TTL_SECONDS,
   PROFILE_REPORTS_COLLECTION,
   RANK_SNAPSHOTS_COLLECTION,
 } from './collections';
 
-export { DATABASE_NAME, RANK_SNAPSHOTS_COLLECTION, LOOKED_UP_PLAYERS_COLLECTION, PROFILE_REPORTS_COLLECTION };
+export {
+  DATABASE_NAME,
+  RANK_SNAPSHOTS_COLLECTION,
+  LOOKED_UP_PLAYERS_COLLECTION,
+  PROFILE_REPORTS_COLLECTION,
+  MATCH_DETAILS_COLLECTION,
+};
 
 /** Low tens — one instance needs a handful of sockets; the M0 ceiling is 500. */
 const MAX_POOL_SIZE = 20;
@@ -102,6 +110,14 @@ export async function ensureIndexes(db: Db): Promise<void> {
     // reject as stale is usually already gone; the endpoint still checks age
     // (9.4) because the TTL monitor only runs about once a minute.
     { key: { fetchedAt: 1 }, name: 'ttl_fetchedAt', expireAfterSeconds: PROFILE_REPORT_TTL_SECONDS },
+  ]);
+  await db.collection(MATCH_DETAILS_COLLECTION).createIndexes([
+    // specs/match-cache/ Requirement 7.1: a STORAGE bound only — matches are
+    // immutable, so an expired-and-re-fetched document is identical. Reads are by
+    // `_id` (`$in`), so no index serves `getMany`.
+    { key: { storedAt: 1 }, name: 'ttl_storedAt', expireAfterSeconds: MATCH_DETAIL_TTL_SECONDS },
+    // Requirement 6.1: serves privacy deletion; multikey over the participant array.
+    { key: { 'match.metadata.participants': 1 }, name: 'participants' },
   ]);
 }
 

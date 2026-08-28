@@ -199,6 +199,40 @@ describe('URL construction and routing values', () => {
 
     expect(harness.calls[0].url).toBe('https://americas.api.riotgames.com/lol/match/v5/matches/NA1_123');
   });
+
+  it('projects a 200 match body to the MatchDto shape, dropping undeclared fields (specs/match-cache/ Requirement 2.2)', async () => {
+    const rawBody = {
+      metadata: { dataVersion: '2', matchId: 'NA1_9', participants: ['p1'] },
+      info: {
+        queueId: 420,
+        gameStartTimestamp: 1_726_000_000_000,
+        gameDuration: 1800,
+        mapId: 11,
+        teams: [{ teamId: 100, win: true }],
+        participants: [
+          { puuid: 'p1', championName: 'Ahri', win: true, kills: 5, deaths: 2, assists: 7, visionScore: 20, challenges: { kda: 6 }, spell1Casts: 99 },
+        ],
+      },
+    };
+    const harness = makeHarness({ responses: [jsonResponse(200, rawBody)] });
+
+    const result = await harness.client.getMatchById('americas', 'NA1_9');
+
+    expect(result).toEqual({
+      kind: 'ok',
+      data: {
+        metadata: { matchId: 'NA1_9', participants: ['p1'] },
+        info: {
+          queueId: 420,
+          gameStartTimestamp: 1_726_000_000_000,
+          gameDuration: 1800,
+          participants: [
+            { puuid: 'p1', championName: 'Ahri', win: true, kills: 5, deaths: 2, assists: 7, visionScore: 20 },
+          ],
+        },
+      },
+    });
+  });
 });
 
 describe('request wiring', () => {

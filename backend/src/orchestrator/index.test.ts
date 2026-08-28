@@ -15,6 +15,7 @@ import {
   type LookedUpPlayerStore,
 } from '../db/lookedUpPlayerStore';
 import { createInMemoryProfileSnapshotStore } from '../db/profileSnapshotStore';
+import { createInMemoryMatchStore, type MatchStore, type StoredMatch } from '../db/matchStore';
 import type { PlatformRoutingValue } from '../region';
 import type {
   AccountDto,
@@ -230,6 +231,7 @@ interface HarnessOptions extends ClientScript {
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
   profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
+  matchStore?: import('../db/matchStore').MatchStore;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -249,6 +251,7 @@ function makeHarness(options: HarnessOptions = {}) {
     rankHistoryStore: options.rankHistoryStore,
     lookedUpPlayerStore: options.lookedUpPlayerStore,
     profileSnapshotStore: options.profileSnapshotStore,
+    matchStore: options.matchStore,
   });
   return { orchestrator, cache, fakes, scheduler, authFailures, storeWriteFailures, now };
 }
@@ -936,6 +939,45 @@ describe('runLookup — Requirement 11.3 fallback to last-known cache', () => {
     expect(result.report.lastUpdated).toBe(new Date(10_000).toISOString());
   });
 
+  it('includes a match from the MatchStore that the in-memory cache no longer has (specs/match-cache/ Requirement 3.6)', async () => {
+    let clock = 10_000;
+    const cache = createInMemoryCacheStore({ now: () => clock });
+    // A snapshot with account/region/league/matchIds but NO cached match details.
+    await seedSnapshot(cache, []);
+    await cache.set(
+      { endpoint: 'matchIds', routingValue: 'americas', params: { puuid: PUUID } },
+      ['m1', 'm2'],
+      TTL_BY_ENDPOINT.matchIds,
+    );
+
+    const matchStore = createInMemoryMatchStore();
+    await matchStore.putMany([
+      { matchId: 'm1', match: matchDto('m1', { championName: 'Sett' }), region: 'americas', storedAt: 1 },
+      { matchId: 'm2', match: matchDto('m2', { championName: 'Lux' }), region: 'americas', storedAt: 1 },
+    ]);
+
+    clock += (TTL_BY_ENDPOINT.summoner as number) + 1;
+    const harness = makeHarness({
+      now: () => clock,
+      cache,
+      matchStore,
+      league: { kind: 'server_error', status: 503 },
+      matchIds: { kind: 'ok', data: ['m1', 'm2'] },
+    });
+
+    const result = await run(harness.orchestrator);
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    expect(result.report.partialDataWarning).toBe(true);
+    // The fallback issued no match-detail Riot call — the store supplied them.
+    expect(harness.fakes.callsAt('matchDetail')).toEqual([]);
+    const champs = result.report.recentMatches.map((m) => m.championName).sort();
+    expect(champs).toEqual(['Lux', 'Sett']);
+  });
+
   it('reports an error instead when the cached snapshot is incomplete (Requirement 2.7)', async () => {
     const clock = 10_000;
     const cache = createInMemoryCacheStore({ now: () => clock });
@@ -1284,5 +1326,110 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
     expect(result.kind).toBe('success');
     expect(resolveWrite).toBeTypeOf('function');
     resolveWrite?.();
+  });
+});
+
+describe('runLookup — MatchStore (specs/match-cache/ Requirements 3, 4, 5)', () => {
+  const IDS = ['m1', 'm2', 'm3'];
+
+  function storedMatch(matchId: string): StoredMatch {
+    return {
+      matchId,
+      match: matchDto(matchId, { championName: `Stored_${matchId}` }),
+      region: 'americas',
+      storedAt: 1,
+    };
+  }
+
+  it('uses a stored match without any getMatchById call and seeds the in-memory cache', async () => {
+    const matchStore = createInMemoryMatchStore();
+    await matchStore.putMany([storedMatch('m1'), storedMatch('m2')]);
+    const harness = makeHarness({ matchIds: { kind: 'ok', data: IDS }, matchStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    // Only m3 was missing from cache AND store, so only m3 hit Riot.
+    expect(harness.fakes.callsAt('matchDetail').map((call) => call.detail).sort()).toEqual(['m3']);
+    // The two store hits are now in the in-memory cache.
+    for (const id of ['m1', 'm2']) {
+      expect(
+        await harness.cache.get({ endpoint: 'matchDetail', routingValue: 'americas', params: { matchId: id } }),
+      ).toBeDefined();
+    }
+    // The stored data was used (not re-fetched).
+    if (result.kind === 'success') {
+      const champs = result.report.recentMatches.map((m) => m.championName);
+      expect(champs).toEqual(expect.arrayContaining(['Stored_m1', 'Stored_m2']));
+    }
+  });
+
+  it('writes the Riot-fetched matches back to the store, and only those', async () => {
+    const matchStore = createInMemoryMatchStore();
+    await matchStore.putMany([storedMatch('m1')]);
+    const harness = makeHarness({ matchIds: { kind: 'ok', data: IDS }, matchStore });
+
+    await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    // m2, m3 were fetched from Riot and are now stored; m1 was already stored (untouched).
+    const got = await matchStore.getMany(IDS);
+    expect([...got.keys()].sort()).toEqual(['m1', 'm2', 'm3']);
+    expect(got.get('m2')?.storedAt).toBe(harness.now());
+    // m1's storedAt was not overwritten by this lookup.
+    expect(got.get('m1')?.storedAt).toBe(1);
+  });
+
+  it('falls through to Riot and still succeeds when getMany throws', async () => {
+    const throwingStore: MatchStore = {
+      getMany: () => Promise.reject(new Error('store read exploded')),
+      putMany: () => Promise.resolve(),
+      deleteByPuuid: () => Promise.resolve(0),
+    };
+    const harness = makeHarness({ matchIds: { kind: 'ok', data: IDS }, matchStore: throwingStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    expect(harness.fakes.callsAt('matchDetail').map((call) => call.detail).sort()).toEqual(['m1', 'm2', 'm3']);
+    expect(harness.storeWriteFailures).toEqual([]); // a read failure is not a write failure
+  });
+
+  it('logs and swallows a putMany rejection, never failing the lookup', async () => {
+    const throwingStore: MatchStore = {
+      getMany: () => Promise.resolve(new Map()),
+      putMany: () => Promise.reject(new Error('bulk write exploded')),
+      deleteByPuuid: () => Promise.resolve(0),
+    };
+    const harness = makeHarness({ matchIds: { kind: 'ok', data: IDS }, matchStore: throwingStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    expect(harness.storeWriteFailures.length).toBeGreaterThan(0);
+  });
+
+  it('only fetches the ids neither cache nor store already holds (Requirement 5.1)', async () => {
+    const now = () => 5_000;
+    const cache = createInMemoryCacheStore({ now });
+    // m1 is already in the in-memory cache.
+    await cache.set(
+      { endpoint: 'matchDetail', routingValue: 'americas', params: { matchId: 'm1' } },
+      matchDto('m1'),
+      'infinite',
+    );
+    const matchStore = createInMemoryMatchStore();
+    await matchStore.putMany([storedMatch('m2')]); // m2 is in the store
+
+    const harness = makeHarness({ now, cache, matchIds: { kind: 'ok', data: IDS }, matchStore });
+
+    await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    // Only m3 was genuinely new.
+    expect(harness.fakes.callsAt('matchDetail').map((call) => call.detail)).toEqual(['m3']);
   });
 });

@@ -50,6 +50,7 @@ import type { CacheStore } from '../cache';
 import type { RankHistoryStore } from '../db/rankHistoryStore';
 import type { LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import type { ProfileSnapshotStore } from '../db/profileSnapshotStore';
+import type { MatchStore } from '../db/matchStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createBuildPathHandler } from './buildPath';
@@ -148,6 +149,8 @@ export interface ApiDependencies {
   lookedUpPlayerStore?: LookedUpPlayerStore;
   /** autofill-search Requirements 8-10: serves `GET /api/players/report` and is cleared by `POST /api/privacy/delete`. */
   profileSnapshotStore?: ProfileSnapshotStore;
+  /** match-cache Requirement 6: cleared by `POST /api/privacy/delete`. The orchestrator gets its own copy directly. */
+  matchStore?: MatchStore;
   /** Injected clock, shared with the cache store and the orchestrator. */
   now?: () => number;
   /** Partial: any method not supplied falls back to `consoleApiLogger`. */
@@ -208,6 +211,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
       rankHistoryStore: deps.rankHistoryStore,
       lookedUpPlayerStore: deps.lookedUpPlayerStore,
       profileSnapshotStore: deps.profileSnapshotStore,
+      matchStore: deps.matchStore,
     }),
   );
   router.get(
