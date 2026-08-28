@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,16 +52,25 @@ function LocationProbe() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function renderApp(initialPath: string, lookupOptions?: UseLookupOptions) {
-  return render(
+function renderApp(
+  initialPath: string,
+  lookupOptions?: UseLookupOptions,
+  fetchCachedReport?: typeof import('../api/lookupClient').fetchCachedReport,
+  { strict = false }: { strict?: boolean } = {},
+) {
+  const tree = (
     <MemoryRouter initialEntries={[initialPath]}>
       <LocationProbe />
       <Routes>
         <Route path="/" element={<SearchPage />} />
-        <Route path="/profile" element={<ProfileReportPage lookupOptions={lookupOptions} />} />
+        <Route
+          path="/profile"
+          element={<ProfileReportPage lookupOptions={lookupOptions} fetchCachedReport={fetchCachedReport} />}
+        />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 describe('reportPathFor — the deferred #-in-URL decision', () => {
@@ -311,5 +321,194 @@ describe('ProfileReportPage — compliance (Requirements 12.1, 12.2)', () => {
       expect(screen.queryByTestId('advertising-slot')).not.toBeInTheDocument();
       unmount();
     }
+  });
+});
+
+describe('ProfileReportPage — autofill-search cached report + refresh (Requirements 9, 10)', () => {
+  const cacheHit = (fetchedAtIso: string) =>
+    vi.fn(() => Promise.resolve({ source: 'cache' as const, report: sampleReport(), fetchedAt: fetchedAtIso }));
+  const cacheMiss = () => vi.fn(() => Promise.resolve({ source: 'miss' as const }));
+
+  it('renders a snapshot on a suggestion selection without any live lookup, then strips src', async () => {
+    const lookup = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+    const fetchCachedReport = cacheHit('2026-08-20T00:00:00.000Z');
+
+    renderApp('/profile?riotId=Doffy%23Smile&src=suggest', { lookup }, fetchCachedReport);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-report')).toBeInTheDocument();
+    });
+    expect(fetchCachedReport).toHaveBeenCalledWith('Doffy', 'Smile');
+    expect(lookup).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).not.toHaveTextContent('src=suggest');
+    });
+    expect(screen.getByTestId('location')).toHaveTextContent('riotId=Doffy%23Smile');
+  });
+
+  it('still dispatches under React StrictMode (double-invoked effects must not blank the page)', async () => {
+    const lookupHit = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+    const cacheHitFn = cacheHit('2026-08-20T00:00:00.000Z');
+    renderApp('/profile?riotId=Doffy%23Smile&src=suggest', { lookup: lookupHit }, cacheHitFn, { strict: true });
+    await waitFor(() => {
+      expect(screen.getByTestId('profile-report')).toBeInTheDocument();
+    });
+    expect(lookupHit).not.toHaveBeenCalled();
+
+    const lookupMiss = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup: lookupMiss }, cacheMiss(), { strict: true });
+    await waitFor(() => {
+      expect(lookupMiss).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a loading animation while the cached-report probe is in flight', async () => {
+    let resolve: ((r: { source: 'miss' }) => void) | undefined;
+    const fetchCachedReport = vi.fn(
+      () => new Promise<{ source: 'miss' }>((r) => { resolve = r; }),
+    );
+    const lookup = () =>
+      new Promise<LookupOutcome>(() => undefined); // never settles
+
+    renderApp('/profile?riotId=Doffy%23Smile&src=suggest', { lookup }, fetchCachedReport);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('profile-report')).not.toBeInTheDocument();
+
+    resolve?.({ source: 'miss' });
+    await waitFor(() => {
+      // still loading — now the live lookup is in flight
+      expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
+    });
+  });
+
+  it('dims the report and shows a loader while a refresh is in flight', async () => {
+    let clock = 1_000_000;
+    const pending: { at: number; run: () => void }[] = [];
+    const schedule = (ms: number, run: () => void) => {
+      const entry = { at: clock + ms, run };
+      pending.push(entry);
+      return () => {
+        const i = pending.indexOf(entry);
+        if (i >= 0) pending.splice(i, 1);
+      };
+    };
+    const advance = async (ms: number) => {
+      clock += ms;
+      await act(async () => {
+        for (const e of pending.filter((p) => p.at <= clock)) e.run();
+        await Promise.resolve();
+      });
+    };
+
+    let resolveRefresh: ((o: LookupOutcome) => void) | undefined;
+    let call = 0;
+    const lookup = vi.fn(() => {
+      call += 1;
+      if (call === 1) return Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() });
+      return new Promise<LookupOutcome>((r) => { resolveRefresh = r; });
+    });
+
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup, now: () => clock, schedule }, cacheMiss());
+
+    await waitFor(() => expect(screen.getByTestId('profile-report')).toBeInTheDocument());
+    await advance(6 * 60 * 1000);
+    await waitFor(() => expect(screen.getByTestId('refresh-button')).toBeEnabled());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('refresh-button'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading-indicator')).toHaveTextContent('Refreshing');
+    });
+    expect(screen.getByTestId('profile-report').parentElement).toHaveClass('report-refreshing');
+    expect(lookup).toHaveBeenCalledTimes(2);
+
+    resolveRefresh?.({ kind: 'success', report: sampleReport({ summonerLevel: 999 }) });
+    await waitFor(() => {
+      expect(screen.queryByTestId('loading-indicator')).not.toBeInTheDocument();
+    });
+  });
+
+  it('falls through to a live lookup when the snapshot misses', async () => {
+    const lookup = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+    const fetchCachedReport = cacheMiss();
+
+    renderApp('/profile?riotId=Doffy%23Smile&src=suggest', { lookup }, fetchCachedReport);
+
+    await waitFor(() => {
+      expect(lookup).toHaveBeenCalledTimes(1);
+    });
+    expect(lookup).toHaveBeenCalledWith({ riotId: 'Doffy#Smile' });
+    expect(screen.getByTestId('profile-report')).toBeInTheDocument();
+  });
+
+  it('never consults the cached-report endpoint for a hand-typed Riot ID', async () => {
+    const lookup = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+    const fetchCachedReport = cacheMiss();
+
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup }, fetchCachedReport);
+
+    await waitFor(() => {
+      expect(lookup).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchCachedReport).not.toHaveBeenCalled();
+  });
+
+  it('shows the Refresh control on every report and re-runs the lookup once the cooldown has passed', async () => {
+    const reports = [sampleReport({ summonerLevel: 1 }), sampleReport({ summonerLevel: 2 })];
+    let call = 0;
+    const lookup = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: reports[call++] ?? reports[1] }));
+
+    let clock = 1_000_000;
+    const pending: { at: number; run: () => void }[] = [];
+    const schedule = (ms: number, run: () => void) => {
+      const entry = { at: clock + ms, run };
+      pending.push(entry);
+      return () => {
+        const i = pending.indexOf(entry);
+        if (i >= 0) pending.splice(i, 1);
+      };
+    };
+    const advance = async (ms: number) => {
+      clock += ms;
+      await act(async () => {
+        for (const e of pending.filter((p) => p.at <= clock)) e.run();
+        await Promise.resolve();
+      });
+    };
+
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup, now: () => clock, schedule }, cacheMiss());
+
+    await waitFor(() => {
+      expect(screen.getByTestId('refresh-button')).toBeDisabled(); // inside the cooldown
+    });
+
+    await advance(6 * 60 * 1000); // past REFRESH_COOLDOWN_MS
+    await waitFor(() => {
+      expect(screen.getByTestId('refresh-button')).toBeEnabled();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('refresh-button'));
+
+    await waitFor(() => {
+      expect(lookup).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('disables Refresh within the cooldown window of a freshly fetched report', async () => {
+    const clock = 1_000_000;
+    const lookup = vi.fn(() => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() }));
+
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup, now: () => clock }, cacheMiss());
+
+    await waitFor(() => {
+      expect(screen.getByTestId('refresh-button')).toBeInTheDocument();
+    });
+    // The report just landed at `clock`, so it is inside REFRESH_COOLDOWN_MS.
+    expect(screen.getByTestId('refresh-button')).toBeDisabled();
   });
 });

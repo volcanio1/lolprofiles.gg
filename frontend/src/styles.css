@@ -277,6 +277,64 @@ figure {
   font-size: 0.85rem;
 }
 
+/* ------------------------------------------- autofill-search: suggestions */
+
+.search-combobox {
+  position: relative;
+}
+
+.search-combobox .field-input {
+  width: 100%;
+}
+
+.suggestion-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+/* Gold-tick accent — the same selection cue used elsewhere, never a new colour. */
+.suggestion--active {
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--gold);
+}
+
+.suggestion-icon {
+  flex: none;
+  border-radius: var(--radius);
+}
+
+.suggestion-name {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-tag {
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
 .btn {
   font-family: var(--font-display);
   font-weight: 600;
@@ -480,6 +538,35 @@ figure {
   display: flex;
   flex-direction: column;
   gap: 2.25rem;
+}
+
+/* autofill-search Requirement 10: freshness label + Refresh, above the report. */
+.report-refresh {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.report-refresh-age {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.report-refresh .btn-ghost {
+  padding: 0.35rem 1rem;
+  font-size: 0.72rem;
+}
+
+/* While a refresh is in flight the old report stays, dimmed and inert. */
+.report-refreshing {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 140ms ease;
 }
 
 @media (prefers-reduced-motion: no-preference) {

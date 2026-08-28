@@ -14,6 +14,7 @@ import {
   createInMemoryLookedUpPlayerStore,
   type LookedUpPlayerStore,
 } from '../db/lookedUpPlayerStore';
+import { createInMemoryProfileSnapshotStore } from '../db/profileSnapshotStore';
 import type { PlatformRoutingValue } from '../region';
 import type {
   AccountDto,
@@ -228,6 +229,7 @@ interface HarnessOptions extends ClientScript {
   matchHistoryCount?: number;
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
+  profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -246,6 +248,7 @@ function makeHarness(options: HarnessOptions = {}) {
     matchHistoryCount: options.matchHistoryCount,
     rankHistoryStore: options.rankHistoryStore,
     lookedUpPlayerStore: options.lookedUpPlayerStore,
+    profileSnapshotStore: options.profileSnapshotStore,
   });
   return { orchestrator, cache, fakes, scheduler, authFailures, storeWriteFailures, now };
 }
@@ -1047,6 +1050,84 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
     expect(harness.storeWriteFailures).toEqual([]);
   });
 
+  it('saves the full report snapshot on a fresh success (autofill-search Requirement 8.1)', async () => {
+    const now = () => 1_726_000_000_000;
+    const profileSnapshotStore = createInMemoryProfileSnapshotStore();
+    const harness = makeHarness({ now, profileSnapshotStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    const stored = await profileSnapshotStore.get(PUUID);
+    expect(stored?.fetchedAt).toBe(now());
+    if (result.kind === 'success') {
+      expect(stored?.report).toEqual(result.report);
+    }
+    expect(harness.storeWriteFailures).toEqual([]);
+  });
+
+  it('does not save a report snapshot from the Requirement 11.3 stale-cache fallback', async () => {
+    let clock = 10_000;
+    const profileSnapshotStore = createInMemoryProfileSnapshotStore();
+    const cache = createInMemoryCacheStore({ now: () => clock });
+
+    await cache.set(
+      { endpoint: 'account', routingValue: 'americas', params: { gameName: GAME_NAME, tagLine: TAG_LINE } },
+      account(),
+      TTL_BY_ENDPOINT.account,
+    );
+    await cache.set(
+      { endpoint: 'accountRegion', routingValue: 'americas', params: { puuid: PUUID, game: 'lol' } },
+      { puuid: PUUID, game: 'lol', region: 'na1' },
+      TTL_BY_ENDPOINT.accountRegion,
+    );
+    await cache.set(
+      { endpoint: 'league', routingValue: 'na1', params: { puuid: PUUID } },
+      [leagueEntry()],
+      TTL_BY_ENDPOINT.league,
+    );
+    await cache.set(
+      { endpoint: 'matchIds', routingValue: 'americas', params: { puuid: PUUID } },
+      ['m1'],
+      TTL_BY_ENDPOINT.matchIds,
+    );
+    await cache.set(
+      { endpoint: 'matchDetail', routingValue: 'americas', params: { matchId: 'm1' } },
+      matchDto('m1'),
+      TTL_BY_ENDPOINT.matchDetail,
+    );
+
+    clock += (TTL_BY_ENDPOINT.league as number) + 1;
+    const harness = makeHarness({
+      now: () => clock,
+      cache,
+      league: { kind: 'server_error', status: 503 },
+      profileSnapshotStore,
+    });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    expect(profileSnapshotStore.size).toBe(0);
+  });
+
+  it('a throwing profile snapshot store is logged and never fails the lookup', async () => {
+    const profileSnapshotStore = {
+      save: () => Promise.reject(new Error('snapshot store down')),
+      get: () => Promise.resolve(null),
+      deleteByPuuid: () => Promise.resolve(0),
+    };
+    const harness = makeHarness({ profileSnapshotStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    expect(harness.storeWriteFailures.length).toBeGreaterThan(0);
+  });
+
   it('remembers the player but records no snapshot for an unranked lookup', async () => {
     const rankHistoryStore = createInMemoryRankHistoryStore();
     const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
@@ -1169,6 +1250,7 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
       const lookedUpPlayerStore: LookedUpPlayerStore = {
         remember: throwing,
         searchByNamePrefix: () => Promise.resolve([]),
+        findByRiotId: () => Promise.resolve(null),
         deleteByPuuid: () => Promise.resolve(0),
       };
       const harness = makeHarness({ rankHistoryStore, lookedUpPlayerStore });

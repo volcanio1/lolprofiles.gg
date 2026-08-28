@@ -123,6 +123,40 @@ describe('InMemoryLookedUpPlayerStore.searchByNamePrefix — Requirement 3.5 / 2
   });
 });
 
+describe('InMemoryLookedUpPlayerStore.findByRiotId — autofill-search Requirement 9.2', () => {
+  async function seeded() {
+    const store = createInMemoryLookedUpPlayerStore();
+    await store.remember(player({ puuid: 'a', gameName: 'Faker', tagLine: 'KR1' }));
+    await store.remember(player({ puuid: 'b', gameName: 'Faker', tagLine: 'EUW' }));
+    return store;
+  }
+
+  it('matches gameName and tagLine exactly, case-insensitively', async () => {
+    const store = await seeded();
+    expect(await store.findByRiotId('faker', 'kr1')).toMatchObject({ puuid: 'a' });
+    expect(await store.findByRiotId('  FAKER  ', ' Euw ')).toMatchObject({ puuid: 'b' });
+  });
+
+  it('returns null when the tagLine does not match a known gameName', async () => {
+    const store = await seeded();
+    expect(await store.findByRiotId('Faker', 'NA1')).toBeNull();
+  });
+
+  it('returns null for an unknown name, or a blank part', async () => {
+    const store = await seeded();
+    expect(await store.findByRiotId('Chovy', 'KR1')).toBeNull();
+    expect(await store.findByRiotId('', 'KR1')).toBeNull();
+    expect(await store.findByRiotId('Faker', '  ')).toBeNull();
+  });
+
+  it('returns a copy — mutating it does not change the store', async () => {
+    const store = await seeded();
+    const found = await store.findByRiotId('Faker', 'KR1');
+    found!.gameName = 'mutated';
+    expect((await store.findByRiotId('Faker', 'KR1'))?.gameName).toBe('Faker');
+  });
+});
+
 describe('InMemoryLookedUpPlayerStore.deleteByPuuid — Requirement 5.1', () => {
   it('removes the record and returns 1, then 0 on a repeat', async () => {
     const store = createInMemoryLookedUpPlayerStore();
@@ -145,6 +179,7 @@ describe('createNoopLookedUpPlayerStore — disabled Persistent_Store', () => {
 
     await expect(store.remember(player())).resolves.toBeUndefined();
     expect(await store.searchByNamePrefix('faker', 10)).toEqual([]);
+    expect(await store.findByRiotId('faker', 'kr1')).toBeNull();
     expect(await store.deleteByPuuid('puuid-1')).toBe(0);
   });
 });

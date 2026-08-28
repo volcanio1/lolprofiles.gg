@@ -40,7 +40,7 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
     },
   };
 
-  const logger: ApiLogger = {
+  const logger: Partial<ApiLogger> = {
     unexpectedError: (info) => {
       logged.push(info);
     },

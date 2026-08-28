@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { PlayerSuggestion } from '../api/types';
 import { RIOT_ID_ERROR_DISPLAY } from '../domain/riotId';
+import type { DebounceScheduler, SuggestionFetcher } from '../hooks/usePlayerSuggestions';
 import { SearchForm } from './SearchForm';
 
 /**
@@ -127,6 +129,217 @@ describe('Requirements 1.3-1.5 / 9.1 — inline validation before dispatch', () 
     await user.type(riotIdInput(), 'Doff');
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+/* ----------------------------------------- autofill-search: the dropdown */
+
+function manualScheduler() {
+  const entries: { run: () => void; cancelled: boolean }[] = [];
+  const schedule: DebounceScheduler = (_ms, run) => {
+    const entry = { run, cancelled: false };
+    entries.push(entry);
+    return () => {
+      entry.cancelled = true;
+    };
+  };
+  const fire = () => {
+    const due = entries.splice(0).filter((e) => !e.cancelled);
+    for (const entry of due) {
+      entry.run();
+    }
+  };
+  return { schedule, fire };
+}
+
+function controllableFetcher() {
+  const calls: { query: string; signal?: AbortSignal; resolve: (rows: PlayerSuggestion[]) => void }[] = [];
+  const fetchSuggestions: SuggestionFetcher = (query, options) =>
+    new Promise((resolve) => {
+      calls.push({ query, signal: options.signal, resolve });
+    });
+  return { calls, fetchSuggestions };
+}
+
+const suggestion = (gameName: string, tagLine: string): PlayerSuggestion => ({
+  gameName,
+  tagLine,
+  profileIconId: 1,
+  region: 'na1',
+});
+
+function renderCombobox(overrides: Partial<Parameters<typeof SearchForm>[0]> = {}) {
+  const onSubmit = vi.fn();
+  const timer = manualScheduler();
+  const fetcher = controllableFetcher();
+  render(
+    <SearchForm
+      onSubmit={onSubmit}
+      suggestionOptions={{ schedule: timer.schedule, fetchSuggestions: fetcher.fetchSuggestions }}
+      {...overrides}
+    />,
+  );
+  return { onSubmit, timer, fetcher };
+}
+
+/** Types a prefix, lets the debounce fire, and resolves the request with `rows`. */
+async function showSuggestions(
+  user: ReturnType<typeof userEvent.setup>,
+  timer: ReturnType<typeof manualScheduler>,
+  fetcher: ReturnType<typeof controllableFetcher>,
+  prefix: string,
+  rows: PlayerSuggestion[],
+) {
+  await user.type(riotIdInput(), prefix);
+  act(() => {
+    timer.fire();
+  });
+  const call = fetcher.calls[fetcher.calls.length - 1];
+  await act(async () => {
+    call.resolve(rows);
+    await Promise.resolve();
+  });
+}
+
+describe('autofill-search — the suggestion dropdown (Requirement 3/4/5)', () => {
+  it('appears only with focus, >= 2 chars, and >= 1 result', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderCombobox();
+
+    await user.type(riotIdInput(), 'f');
+    act(() => {
+      timer.fire();
+    });
+    expect(fetcher.calls).toHaveLength(0);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    await showSuggestions(user, timer, fetcher, 'aker', [suggestion('Faker', 'KR1')]);
+
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(riotIdInput()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('renders no dropdown when the response is empty', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderCombobox();
+
+    await showSuggestions(user, timer, fetcher, 'faker', []);
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(riotIdInput()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes on blur, on Escape, and on selection', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderCombobox();
+
+    await showSuggestions(user, timer, fetcher, 'faker', [suggestion('Faker', 'KR1')]);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    // Re-opens on the next keystroke.
+    await showSuggestions(user, timer, fetcher, 'x', [suggestion('Fakerx', 'KR1')]);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+
+    await user.tab();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('wraps the active row with the arrow keys and selects it with Enter', async () => {
+    const user = userEvent.setup();
+    const { onSubmit, timer, fetcher } = renderCombobox();
+
+    await showSuggestions(user, timer, fetcher, 'fa', [suggestion('Faker', 'KR1'), suggestion('Fakerino', 'EUW')]);
+
+    await user.keyboard('{ArrowDown}'); // -> row 0
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowDown}'); // -> row 1
+    await user.keyboard('{ArrowDown}'); // wraps -> row 0
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowUp}'); // wraps -> row 1
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{Enter}');
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Fakerino#EUW' });
+    expect(riotIdInput()).toHaveValue('Fakerino#EUW');
+  });
+
+  it('Enter with no active row submits the typed value', async () => {
+    const user = userEvent.setup();
+    const { onSubmit, timer, fetcher } = renderCombobox();
+
+    await showSuggestions(user, timer, fetcher, 'Doffy#Smile', [suggestion('Doffy', 'Smiles')]);
+    // '#' in the value means the prefix has no matches to request; dropdown is closed.
+    await user.keyboard('{Enter}');
+
+    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile' });
+  });
+
+  it('selecting a suggestion produces the same payload as typing that Riot ID (Requirement 5.4)', async () => {
+    const user = userEvent.setup();
+
+    const typed = renderCombobox();
+    await user.type(riotIdInput(), 'Faker#KR1');
+    await user.click(submitButton());
+    const typedPayload = typed.onSubmit.mock.calls[0][0];
+
+    cleanup();
+
+    const picked = renderCombobox();
+    await showSuggestions(user, picked.timer, picked.fetcher, 'Fak', [suggestion('Faker', 'KR1')]);
+    await user.click(screen.getByRole('option'));
+
+    expect(picked.onSubmit).toHaveBeenCalledTimes(1);
+    expect(picked.onSubmit.mock.calls[0][0]).toEqual(typedPayload);
+  });
+
+  it('never renders a stale response for a prefix the input has moved past (Requirement 3.4)', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderCombobox();
+
+    await user.type(riotIdInput(), 'fa');
+    act(() => {
+      timer.fire();
+    });
+    const staleCall = fetcher.calls[0];
+
+    await user.type(riotIdInput(), 'ke'); // now 'fake'
+    act(() => {
+      timer.fire();
+    });
+    const freshCall = fetcher.calls[1];
+
+    await act(async () => {
+      staleCall.resolve([suggestion('Fabulous', 'NA1')]);
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('Fabulous')).not.toBeInTheDocument();
+
+    await act(async () => {
+      freshCall.resolve([suggestion('Faker', 'KR1')]);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Faker')).toBeInTheDocument();
+  });
+
+  it('a suggestion request failing is invisible and does not block a typed submit', async () => {
+    const user = userEvent.setup();
+    const { onSubmit, timer, fetcher } = renderCombobox();
+
+    await showSuggestions(user, timer, fetcher, 'faker', []); // fetchSuggestions resolves [] on any failure
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    await user.clear(riotIdInput());
+    await user.type(riotIdInput(), 'Doffy#Smile');
+    await user.click(submitButton());
+
+    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile' });
   });
 });
 

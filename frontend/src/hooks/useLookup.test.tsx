@@ -393,6 +393,94 @@ describe('useLookup — concurrency', () => {
   });
 });
 
+describe('useLookup — snapshot seeding and refresh (autofill-search Requirements 9, 10)', () => {
+  it('seedFromSnapshot shows a report with no network call and marks the source', () => {
+    const deferred = deferredLookup();
+    const { result } = renderHook(() => useLookup({ lookup: deferred.lookup, now: () => 5_000 }));
+
+    act(() => {
+      result.current.seedFromSnapshot(REQUEST, sampleReport(), 1_000);
+    });
+
+    expect(deferred.calls).toHaveLength(0);
+    expect(result.current.status).toBe('success');
+    expect(result.current.source).toBe('snapshot');
+    expect(result.current.fetchedAt).toBe(1_000);
+  });
+
+  it('refresh re-runs the lookup once the cooldown has elapsed and overwrites the report', async () => {
+    const time = fakeTime(1_000_000);
+    const deferred = deferredLookup();
+    const { result } = renderHook(() =>
+      useLookup({ lookup: deferred.lookup, now: time.now, schedule: time.schedule }),
+    );
+
+    act(() => {
+      result.current.seedFromSnapshot(REQUEST, { ...sampleReport(), summonerLevel: 1 }, time.now());
+    });
+    // Inside REFRESH_COOLDOWN_MS of the snapshot time.
+    expect(result.current.refreshDisabled).toBe(true);
+    act(() => {
+      result.current.refresh();
+    });
+    expect(deferred.calls).toHaveLength(0); // no-op while disabled
+
+    await time.advance(6 * 60 * 1000);
+    expect(result.current.refreshDisabled).toBe(false);
+
+    act(() => {
+      result.current.refresh();
+    });
+    expect(deferred.calls).toHaveLength(1);
+    expect(result.current.refreshing).toBe(true);
+
+    await deferred.settle({ kind: 'success', report: { ...sampleReport(), summonerLevel: 2 } });
+    await waitFor(() => {
+      expect(result.current.report?.summonerLevel).toBe(2);
+    });
+    expect(result.current.source).toBe('live');
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('a failed refresh keeps the report on screen and surfaces refreshError', async () => {
+    const time = fakeTime(1_000_000);
+    const deferred = deferredLookup();
+    const { result } = renderHook(() =>
+      useLookup({ lookup: deferred.lookup, now: time.now, schedule: time.schedule }),
+    );
+
+    act(() => {
+      result.current.seedFromSnapshot(REQUEST, { ...sampleReport(), summonerLevel: 7 }, time.now());
+    });
+    await time.advance(6 * 60 * 1000);
+
+    act(() => {
+      result.current.refresh();
+    });
+    await deferred.settle({ kind: 'error', error: error({ code: 'TIMEOUT', retriable: false }) });
+
+    await waitFor(() => {
+      expect(result.current.refreshError?.code).toBe('TIMEOUT');
+    });
+    expect(result.current.status).toBe('success');
+    expect(result.current.report?.summonerLevel).toBe(7);
+  });
+
+  it('refresh is a no-op while another lookup is loading', async () => {
+    const deferred = deferredLookup();
+    const { result } = renderHook(() => useLookup({ lookup: deferred.lookup }));
+
+    act(() => {
+      result.current.start(REQUEST);
+    });
+    expect(result.current.loading).toBe(true);
+    act(() => {
+      result.current.refresh();
+    });
+    expect(deferred.calls).toHaveLength(1);
+  });
+});
+
 describe('useLookup — referential stability of the defaults', () => {
   /**
    * REGRESSION GUARD. An earlier version built the default lookup inline, so

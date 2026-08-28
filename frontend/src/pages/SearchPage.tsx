@@ -36,8 +36,14 @@ import { RiotDataPage } from '../compliance/RiotDataPage';
  * lookup-pipeline-fixes: no `region`/`platform` query params anymore — the
  * platform is discovered server-side from the Riot ID alone.
  */
-export function reportPathFor(submission: SearchSubmission): string {
+export function reportPathFor(submission: SearchSubmission, fromSuggestion = false): string {
   const params = new URLSearchParams({ riotId: submission.riotId });
+  // autofill-search Requirement 9.8: mark suggestion-picked lookups so the report
+  // page tries the cached snapshot first. `ProfileReportPage` strips it after the
+  // first render, so a shared or reloaded link always runs a live lookup.
+  if (fromSuggestion) {
+    params.set('src', 'suggest');
+  }
   return `/profile?${params.toString()}`;
 }
 
@@ -52,6 +58,9 @@ export function SearchPage() {
       <SearchForm
         onSubmit={(submission) => {
           navigate(reportPathFor(submission));
+        }}
+        onSelectSuggestion={(submission) => {
+          navigate(reportPathFor(submission, true));
         }}
       />
     </RiotDataPage>

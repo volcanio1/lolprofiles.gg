@@ -38,9 +38,11 @@
 
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { fetchCachedReport as realFetchCachedReport } from '../api/lookupClient';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ProfileReportView } from '../components/ProfileReportView';
+import { RefreshControl } from '../components/RefreshControl';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 import { useLookup, type UseLookupOptions } from '../hooks/useLookup';
@@ -48,28 +50,97 @@ import { useLookup, type UseLookupOptions } from '../hooks/useLookup';
 export interface ProfileReportPageProps {
   /** Injected in tests; production uses the real client, clock and scheduler. */
   lookupOptions?: UseLookupOptions;
+  /** Injected in tests; production uses the real cached-report fetch. */
+  fetchCachedReport?: typeof realFetchCachedReport;
 }
 
-export function ProfileReportPage({ lookupOptions }: ProfileReportPageProps = {}) {
+export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetchCachedReport }: ProfileReportPageProps = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const riotId = (searchParams.get('riotId') ?? '').trim();
+  // autofill-search Requirement 9.8: only a dropdown selection carries this.
+  const fromSuggestion = searchParams.get('src') === 'suggest';
 
-  const { status, report, error, loading, canRetry, retriesRemaining, cooldownSecondsRemaining, start, retry } =
-    useLookup(lookupOptions);
+  const {
+    status,
+    report,
+    error,
+    loading,
+    canRetry,
+    retriesRemaining,
+    cooldownSecondsRemaining,
+    start,
+    retry,
+    seedFromSnapshot,
+    refresh,
+    refreshDisabled,
+    refreshing,
+    refreshError,
+    fetchedAt,
+  } = useLookup(lookupOptions);
 
-  // Decision 1.
+  /**
+   * Decision 1: the URL is the session's input, so a changed `riotId` starts a
+   * new session. `src=suggest` (set only by a dropdown pick) is read fresh rather
+   * than being a dependency, so stripping it after the first render does NOT
+   * re-run this effect — only a genuinely different `riotId` does. The `cancelled`
+   * flag is the StrictMode-safe pattern: a discarded first invocation applies
+   * nothing, the retained one applies its result.
+   */
   useEffect(() => {
     if (riotId.length === 0) {
       return;
     }
-    start({ riotId });
-    // `start` is stable; the query parameter is the real input.
-  }, [riotId, start]);
+    let cancelled = false;
+
+    const stripSrc = () => {
+      if (!fromSuggestion) {
+        return;
+      }
+      const next = new URLSearchParams(searchParams);
+      next.delete('src');
+      setSearchParams(next, { replace: true });
+    };
+
+    if (!fromSuggestion) {
+      start({ riotId });
+      return;
+    }
+
+    // autofill-search Requirement 9.9/9.10: try the stored snapshot, else live.
+    const [gameName, tagLine] = riotId.split('#');
+    void (async () => {
+      const result = await fetchCachedReport(gameName ?? '', tagLine ?? '');
+      if (cancelled) {
+        return;
+      }
+      if (result.source === 'cache') {
+        seedFromSnapshot({ riotId }, result.report, Date.parse(result.fetchedAt));
+      } else {
+        start({ riotId });
+      }
+      stripSrc();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `start` / `seedFromSnapshot` / `fetchCachedReport` are stable; `riotId` is the real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riotId, start, seedFromSnapshot]);
 
   function handleResubmit(submission: SearchSubmission) {
     setSearchParams(new URLSearchParams({ riotId: submission.riotId }));
   }
+
+  function handleSelectSuggestion(submission: SearchSubmission) {
+    setSearchParams(new URLSearchParams({ riotId: submission.riotId, src: 'suggest' }));
+  }
+
+  // A Riot ID is present but the session hasn't dispatched yet: the mount tick,
+  // or the `fetchCachedReport` round trip on a suggestion pick. Show the loader
+  // so the page is never blank while it decides between a snapshot and a lookup.
+  const preparing = riotId.length > 0 && status === 'idle';
 
   return (
     <RiotDataPage title="Profile report">
@@ -80,7 +151,13 @@ export function ProfileReportPage({ lookupOptions }: ProfileReportPageProps = {}
         key, pressing Back would leave the form showing the previous Riot ID while
         the report showed a different one.
       */}
-      <SearchForm key={riotId} onSubmit={handleResubmit} initialRiotId={riotId} busy={loading} />
+      <SearchForm
+        key={riotId}
+        onSubmit={handleResubmit}
+        onSelectSuggestion={handleSelectSuggestion}
+        initialRiotId={riotId}
+        busy={loading}
+      />
 
       {/* Decision 2 */}
       {riotId.length === 0 ? (
@@ -89,8 +166,10 @@ export function ProfileReportPage({ lookupOptions }: ProfileReportPageProps = {}
         </p>
       ) : null}
 
-      {/* Requirement 9.6 */}
-      {loading ? <LoadingIndicator /> : null}
+      {/* Requirement 9.6, plus the pre-dispatch window (mount / cached-report probe). */}
+      {loading || preparing ? (
+        <LoadingIndicator label={preparing ? 'Loading profile…' : undefined} />
+      ) : null}
 
       {/* Requirements 9.1-9.5, 9.8, 9.9 */}
       {status === 'error' && error !== undefined ? (
@@ -103,7 +182,27 @@ export function ProfileReportPage({ lookupOptions }: ProfileReportPageProps = {}
         />
       ) : null}
 
-      {status === 'success' && report !== undefined ? <ProfileReportView report={report} /> : null}
+      {status === 'success' && report !== undefined ? (
+        <>
+          {/* autofill-search Requirement 10 */}
+          <RefreshControl
+            fetchedAt={fetchedAt}
+            disabled={refreshDisabled}
+            refreshing={refreshing}
+            onRefresh={refresh}
+          />
+          {refreshing ? <LoadingIndicator label="Refreshing…" /> : null}
+          {/* Requirement 10.5: a failed refresh leaves the report in place. */}
+          {refreshError !== undefined ? (
+            <p role="status" data-testid="refresh-error" className="notice-warning">
+              {refreshError.message}
+            </p>
+          ) : null}
+          <div className={refreshing ? 'report-refreshing' : undefined} aria-busy={refreshing || undefined}>
+            <ProfileReportView report={report} />
+          </div>
+        </>
+      ) : null}
     </RiotDataPage>
   );
 }

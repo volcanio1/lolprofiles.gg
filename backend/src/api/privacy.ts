@@ -79,6 +79,7 @@ import type { RequestHandler } from 'express';
 import type { CacheStore } from '../cache';
 import { createNoopRankHistoryStore, type RankHistoryStore } from '../db/rankHistoryStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
+import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import { missingFieldError } from './errors';
 
 export interface PrivacyRouteDependencies {
@@ -92,6 +93,8 @@ export interface PrivacyRouteDependencies {
    */
   rankHistoryStore?: RankHistoryStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
+  /** autofill-search Requirement 8.7. Cleared alongside the other two collections. */
+  profileSnapshotStore?: ProfileSnapshotStore;
 }
 
 /** design.md's declared confirmation body (decision 1). */
@@ -107,6 +110,7 @@ export interface DeletionConfirmation {
 export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): RequestHandler {
   const rankHistoryStore = deps.rankHistoryStore ?? createNoopRankHistoryStore();
   const lookedUpPlayerStore = deps.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
+  const profileSnapshotStore = deps.profileSnapshotStore ?? createNoopProfileSnapshotStore();
 
   return async (req, res, next) => {
     try {
@@ -126,16 +130,17 @@ export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): Requ
       // specs/database/ Requirement 5.1: the Persistent_Store is cleared too, and
       // 5.3: best-effort — a store failure must not fail a request whose cache
       // eviction succeeded (decision 4).
-      const [cacheResult, snapshotsRemoved, playerRemoved] = await Promise.all([
+      const [cacheResult, snapshotsRemoved, playerRemoved, reportSnapshotRemoved] = await Promise.all([
         deps.cache.deleteByPuuid(puuid),
         rankHistoryStore.deleteByPuuid(puuid).catch(() => 0),
         lookedUpPlayerStore.deleteByPuuid(puuid).catch(() => 0),
+        profileSnapshotStore.deleteByPuuid(puuid).catch(() => 0),
       ]);
 
       // Requirements 12.5/12.6 + specs/database/ 5.4: confirmation either way,
       // never an error; `found` reflects removal from ANY store (decision 1).
       const confirmation: DeletionConfirmation = {
-        found: cacheResult.found || snapshotsRemoved > 0 || playerRemoved > 0,
+        found: cacheResult.found || snapshotsRemoved > 0 || playerRemoved > 0 || reportSnapshotRemoved > 0,
         deletedAt: new Date(deps.now()).toISOString(), // decision 2
       };
       res.status(200).json(confirmation);

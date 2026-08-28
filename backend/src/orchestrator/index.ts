@@ -204,6 +204,7 @@ import {
 } from '../region';
 import { createNoopRankHistoryStore, type RankHistoryStore, type RankSnapshot } from '../db/rankHistoryStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
+import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
   AccountDto,
@@ -497,6 +498,12 @@ export interface LookupOrchestratorOptions {
    */
   rankHistoryStore?: RankHistoryStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
+  /**
+   * autofill-search Requirement 8: the full `ProfileReport` is saved here on
+   * every fresh successful lookup, same fire-and-forget discipline as the other
+   * two stores. Omitted ⇒ the no-op store.
+   */
+  profileSnapshotStore?: ProfileSnapshotStore;
 }
 
 const defaultTimeoutScheduler: TimeoutScheduler = (ms, onElapsed) => {
@@ -564,6 +571,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly regionResolver: RegionResolver;
   private readonly rankHistoryStore: RankHistoryStore;
   private readonly lookedUpPlayerStore: LookedUpPlayerStore;
+  private readonly profileSnapshotStore: ProfileSnapshotStore;
 
   constructor(options: LookupOrchestratorOptions) {
     this.cache = options.cache;
@@ -576,6 +584,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.matchDetailConcurrency = Math.max(1, options.matchDetailConcurrency ?? MATCH_DETAIL_CONCURRENCY);
     this.rankHistoryStore = options.rankHistoryStore ?? createNoopRankHistoryStore();
     this.lookedUpPlayerStore = options.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
+    this.profileSnapshotStore = options.profileSnapshotStore ?? createNoopProfileSnapshotStore();
     this.discoveryRegion = options.discoveryRegion ?? DEFAULT_REGION;
     this.regionResolver =
       options.regionResolver ??
@@ -812,6 +821,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
           lastLookedUpAt: observedAt,
         }),
       ),
+      // autofill-search Requirement 8.1/8.3: the whole report, keyed by PUUID.
+      guard(() => this.profileSnapshotStore.save(report.puuid, report, observedAt)),
     ]).then((results) => {
       for (const result of results) {
         if (result.status === 'rejected') {

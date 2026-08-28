@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { REGION_TO_PLATFORMS, SUPPORTED_REGIONS } from './regions';
 import { MAX_GAME_NAME_LENGTH, MAX_TAG_LINE_LENGTH } from './riotId';
+import { MAX_SUGGESTIONS, MIN_QUERY_LENGTH } from './suggestions';
 
 /**
  * Drift guard for the rules this workspace MIRRORS from the backend.
@@ -38,6 +39,7 @@ const backendSrc = resolve(here, '../../../backend/src');
 const regionPath = resolve(backendSrc, 'region/index.ts');
 const validatorPath = resolve(backendSrc, 'validator/index.ts');
 const orchestratorPath = resolve(backendSrc, 'orchestrator/index.ts');
+const suggestPath = resolve(backendSrc, 'api/suggest.ts');
 
 const backendAvailable = existsSync(regionPath) && existsSync(validatorPath) && existsSync(orchestratorPath);
 
@@ -97,6 +99,12 @@ describe.skipIf(!backendAvailable)('parity with the authoritative backend rules'
     // 400 response would fall back to a generic message that names the wrong rule.
     const frontendCodes = ['EMPTY_PART', 'GAME_NAME_TOO_LONG', 'MISSING_HASH', 'MULTIPLE_HASH', 'TAG_LINE_TOO_LONG'];
     expect(backendCodes).toEqual(frontendCodes);
+  });
+
+  it.skipIf(!existsSync(suggestPath))('mirrors the autocomplete query constants (autofill-search Requirement 1.5/1.6)', () => {
+    const source = readFileSync(suggestPath, 'utf8');
+    expect(parseBackendNumber(source, 'MIN_QUERY_LENGTH')).toBe(MIN_QUERY_LENGTH);
+    expect(parseBackendNumber(source, 'MAX_SUGGESTIONS')).toBe(MAX_SUGGESTIONS);
   });
 
   it('mirrors the ErrorCode set exactly (lookup-pipeline-fixes) — catches PLAYER_NOT_ON_PLATFORM/UNSUPPORTED_REGION reappearing on only one side', () => {

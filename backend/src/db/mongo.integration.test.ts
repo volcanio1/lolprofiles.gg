@@ -12,9 +12,12 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MongoClient, type Db } from 'mongodb';
+import type { ProfileReport } from '../orchestrator';
+import { PROFILE_REPORT_TTL_SECONDS, PROFILE_REPORTS_COLLECTION } from './collections';
 import { ensureIndexes } from './client';
 import { MongoRankHistoryStore, type RankSnapshot } from './rankHistoryStore';
 import { MongoLookedUpPlayerStore, type LookedUpPlayer } from './lookedUpPlayerStore';
+import { MongoProfileSnapshotStore } from './profileSnapshotStore';
 
 const TEST_URI = process.env.MONGODB_TEST_URI;
 const DAY_MS = 86_400_000;
@@ -131,5 +134,40 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
 
     expect(await store.deleteByPuuid('to-delete')).toBe(1);
     expect(await store.deleteByPuuid('to-delete')).toBe(0);
+  });
+
+  it('findByRiotId matches gameName + tagLine exactly and case-insensitively', async () => {
+    const store = new MongoLookedUpPlayerStore(db);
+    const tag = `fbr${Date.now()}`;
+    await store.remember(player({ puuid: `${tag}-a`, gameName: tag, tagLine: 'KR1', lastLookedUpAt: 1 }));
+    await store.remember(player({ puuid: `${tag}-b`, gameName: tag, tagLine: 'EUW', lastLookedUpAt: 2 }));
+
+    expect((await store.findByRiotId(tag.toUpperCase(), 'kr1'))?.puuid).toBe(`${tag}-a`);
+    expect((await store.findByRiotId(tag, 'EUW'))?.puuid).toBe(`${tag}-b`);
+    expect(await store.findByRiotId(tag, 'NA1')).toBeNull();
+  });
+
+  it('profile_reports carries a 15-day TTL index on fetchedAt', async () => {
+    const indexes = await db.collection(PROFILE_REPORTS_COLLECTION).indexes();
+    const ttl = indexes.find((i) => i.name === 'ttl_fetchedAt');
+    expect(ttl).toBeDefined();
+    expect(ttl?.expireAfterSeconds).toBe(PROFILE_REPORT_TTL_SECONDS);
+  });
+
+  it('the profile snapshot store upserts by puuid and round-trips fetchedAt', async () => {
+    const store = new MongoProfileSnapshotStore(db);
+    const puuid = `snap-${Date.now()}`;
+    const report = (level: number) =>
+      ({ puuid, riotId: { gameName: 'Faker', tagLine: 'KR1' }, summonerLevel: level }) as ProfileReport;
+
+    await store.save(puuid, report(1), 1_000);
+    await store.save(puuid, report(2), 2_000);
+
+    const stored = await store.get(puuid);
+    expect(stored?.fetchedAt).toBe(2_000);
+    expect(stored?.report).toMatchObject({ summonerLevel: 2 });
+
+    expect(await store.deleteByPuuid(puuid)).toBe(1);
+    expect(await store.get(puuid)).toBeNull();
   });
 });

@@ -45,13 +45,14 @@ interface Harness {
 interface HarnessStores {
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
+  profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
 }
 
 function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
   const now = () => NOW;
   const store = (cache ?? createInMemoryCacheStore({ now })) as InMemoryCacheStore;
   const logged: unknown[] = [];
-  const logger: ApiLogger = {
+  const logger: Partial<ApiLogger> = {
     unexpectedError: (info) => {
       logged.push(info);
     },
@@ -69,6 +70,7 @@ function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
       dataDragonVersion: '16.17.1',
       rankHistoryStore: stores.rankHistoryStore,
       lookedUpPlayerStore: stores.lookedUpPlayerStore,
+      profileSnapshotStore: stores.profileSnapshotStore,
     }),
   );
 
@@ -361,6 +363,35 @@ describe('POST /api/privacy/delete — Persistent_Store (specs/database/ Require
     expect(JSON.stringify(response.body)).not.toContain('sensitive detail');
     expect(harness.logged).toHaveLength(0); // a swallowed store error is not a defect
     expect(await lookedUpPlayerStore.searchByNamePrefix('subject', 10)).toEqual([]);
+  });
+
+  it('clears the profile_reports snapshot too (autofill-search Requirement 8.7)', async () => {
+    const { createInMemoryProfileSnapshotStore } = await import('../db/profileSnapshotStore');
+    const profileSnapshotStore = createInMemoryProfileSnapshotStore();
+    await profileSnapshotStore.save(PUUID, { puuid: PUUID } as never, NOW);
+
+    const harness = makeHarness(undefined, { profileSnapshotStore });
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(await profileSnapshotStore.get(PUUID)).toBeNull();
+  });
+
+  it('still succeeds when only the profile snapshot deletion throws', async () => {
+    const profileSnapshotStore = {
+      save: () => Promise.resolve(),
+      get: () => Promise.resolve(null),
+      deleteByPuuid: () => Promise.reject(new Error('snapshot store down')),
+    };
+    const harness = makeHarness(undefined, { profileSnapshotStore });
+    await seed(harness.cache);
+
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(harness.logged).toHaveLength(0);
   });
 
   it('reports found: false when nothing exists in any store', async () => {

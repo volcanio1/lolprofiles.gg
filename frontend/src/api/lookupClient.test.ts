@@ -3,10 +3,14 @@ import {
   DEFAULT_COOLDOWN_SECONDS,
   errorCodeForStatus,
   fetchBuildPath,
+  fetchCachedReport,
+  fetchSuggestions,
   isProfileReport,
   lookupProfile,
   readBuildPathResponse,
+  readCachedReport,
   readErrorPayload,
+  readSuggestions,
   synthesizedError,
   type FetchLike,
 } from './lookupClient';
@@ -340,5 +344,158 @@ describe('fetchBuildPath', () => {
   it('treats an unreadable 200 body as an error, not an empty build path', async () => {
     const outcome = await fetchBuildPath('EUW1_1', { gameName: 'A', tagLine: 'B' }, { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE });
     expect(outcome.kind).toBe('error');
+  });
+});
+
+describe('fetchSuggestions — autofill-search', () => {
+  const rows = [
+    { gameName: 'Faker', tagLine: 'KR1', profileIconId: 6, region: 'kr' },
+    { gameName: 'fakerino', tagLine: 'EUW', profileIconId: null, region: 'euw1' },
+  ];
+
+  it('requests the suggest endpoint with the trimmed, encoded prefix', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchLike: FetchLike = (url, init) => {
+      calls.push({ url, init });
+      return Promise.resolve(jsonResponse(200, rows));
+    };
+
+    const result = await fetchSuggestions('  Fa ke ', { fetch: fetchLike, baseUrl: BASE });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(`${BASE}/api/players/suggest?q=Fa%20ke`);
+    expect(calls[0].init.method).toBe('GET');
+    expect(result).toEqual(rows);
+  });
+
+  it('never issues a request for a below-threshold or #-containing query', async () => {
+    const fetchLike: FetchLike = () => {
+      throw new Error('should not be called');
+    };
+    for (const query of ['', ' f ', 'faker#kr']) {
+      expect(await fetchSuggestions(query, { fetch: fetchLike, baseUrl: BASE })).toEqual([]);
+    }
+  });
+
+  it('returns [] on a non-200 response', async () => {
+    const outcome = await fetchSuggestions('faker', {
+      fetch: () => Promise.resolve(jsonResponse(500, { error: 'boom' })),
+      baseUrl: BASE,
+    });
+    expect(outcome).toEqual([]);
+  });
+
+  it('returns [] on a malformed body', async () => {
+    expect(
+      await fetchSuggestions('faker', { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE }),
+    ).toEqual([]);
+    expect(
+      await fetchSuggestions('faker', { fetch: () => Promise.resolve(jsonResponse(200, { not: 'an array' })), baseUrl: BASE }),
+    ).toEqual([]);
+  });
+
+  it('returns [] when the request is aborted / the transport rejects', async () => {
+    const outcome = await fetchSuggestions('faker', {
+      fetch: () => Promise.reject(new DOMException('aborted', 'AbortError')),
+      baseUrl: BASE,
+    });
+    expect(outcome).toEqual([]);
+  });
+
+  it('passes the caller AbortSignal through to fetch', async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    await fetchSuggestions('faker', {
+      fetch: (_url, init) => {
+        seen = init.signal ?? undefined;
+        return Promise.resolve(jsonResponse(200, rows));
+      },
+      baseUrl: BASE,
+      signal: controller.signal,
+    });
+    expect(seen).toBe(controller.signal);
+  });
+});
+
+describe('fetchCachedReport — autofill-search Requirement 9', () => {
+  const iso = '2026-08-20T00:00:00.000Z';
+
+  it('requests the report endpoint and parses a cache hit', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchLike: FetchLike = (url, init) => {
+      calls.push({ url, init });
+      return Promise.resolve(jsonResponse(200, { source: 'cache', report: sampleReport(), fetchedAt: iso }));
+    };
+
+    const result = await fetchCachedReport('  Faker ', ' KR1 ', { fetch: fetchLike, baseUrl: BASE });
+
+    expect(calls[0].url).toBe(`${BASE}/api/players/report?gameName=Faker&tagLine=KR1`);
+    expect(calls[0].init.method).toBe('GET');
+    expect(result).toEqual({ source: 'cache', report: sampleReport(), fetchedAt: iso });
+  });
+
+  it('returns miss without a request when a part is blank', async () => {
+    const fetchLike: FetchLike = () => {
+      throw new Error('should not be called');
+    };
+    expect(await fetchCachedReport('', 'KR1', { fetch: fetchLike, baseUrl: BASE })).toEqual({ source: 'miss' });
+    expect(await fetchCachedReport('Faker', '  ', { fetch: fetchLike, baseUrl: BASE })).toEqual({ source: 'miss' });
+  });
+
+  it('returns miss on a non-200, a malformed body, or an abort', async () => {
+    expect(
+      await fetchCachedReport('Faker', 'KR1', { fetch: () => Promise.resolve(jsonResponse(500, {})), baseUrl: BASE }),
+    ).toEqual({ source: 'miss' });
+    expect(
+      await fetchCachedReport('Faker', 'KR1', { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE }),
+    ).toEqual({ source: 'miss' });
+    expect(
+      await fetchCachedReport('Faker', 'KR1', {
+        fetch: () => Promise.reject(new DOMException('aborted', 'AbortError')),
+        baseUrl: BASE,
+      }),
+    ).toEqual({ source: 'miss' });
+  });
+
+  it('treats a body from the server that says "miss" as a miss', async () => {
+    const result = await fetchCachedReport('Faker', 'KR1', {
+      fetch: () => Promise.resolve(jsonResponse(200, { source: 'miss' })),
+      baseUrl: BASE,
+    });
+    expect(result).toEqual({ source: 'miss' });
+  });
+});
+
+describe('readCachedReport', () => {
+  it('downgrades a cache body with a report-shaped hole to a miss', () => {
+    expect(readCachedReport({ source: 'cache', fetchedAt: 'x', report: { nope: true } })).toEqual({ source: 'miss' });
+    expect(readCachedReport({ source: 'cache', report: sampleReport() })).toEqual({ source: 'miss' }); // no fetchedAt
+    expect(readCachedReport(null)).toEqual({ source: 'miss' });
+    expect(readCachedReport('weird')).toEqual({ source: 'miss' });
+  });
+});
+
+describe('readSuggestions', () => {
+  it('drops malformed rows and coerces a non-finite profileIconId to null', () => {
+    expect(
+      readSuggestions([
+        { gameName: 'A', tagLine: 'B', profileIconId: 3, region: 'na1' },
+        { gameName: 'C', tagLine: 'D', profileIconId: 'x', region: 'euw1' },
+        { gameName: 'E', tagLine: 'F', region: 'kr' },
+        { gameName: 42, tagLine: 'G', region: 'kr' },
+        null,
+        'nope',
+      ]),
+    ).toEqual([
+      { gameName: 'A', tagLine: 'B', profileIconId: 3, region: 'na1' },
+      { gameName: 'C', tagLine: 'D', profileIconId: null, region: 'euw1' },
+      { gameName: 'E', tagLine: 'F', profileIconId: null, region: 'kr' },
+    ]);
+  });
+
+  it('caps at MAX_SUGGESTIONS and returns [] for a non-array', () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ gameName: `P${String(i)}`, tagLine: 'T', profileIconId: null, region: 'na1' }));
+    expect(readSuggestions(many)).toHaveLength(8);
+    expect(readSuggestions({})).toEqual([]);
   });
 });

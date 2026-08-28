@@ -49,6 +49,7 @@ import express, { Router, type ErrorRequestHandler } from 'express';
 import type { CacheStore } from '../cache';
 import type { RankHistoryStore } from '../db/rankHistoryStore';
 import type { LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
+import type { ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createBuildPathHandler } from './buildPath';
@@ -57,6 +58,8 @@ import { internalError, malformedRequestError } from './errors';
 import { createLookupHandler } from './lookup';
 import { createPrivacyDeleteHandler } from './privacy';
 import { createStaticDataHandler } from './staticData';
+import { createSuggestHandler } from './suggest';
+import { createCachedReportHandler } from './cachedReport';
 
 export * from './errors';
 export { createCorsMiddleware, parseAllowedOrigins, type CorsOptions } from './cors';
@@ -68,6 +71,22 @@ export {
   type BuildPathResponseBody,
 } from './buildPath';
 export { createPrivacyDeleteHandler, type DeletionConfirmation } from './privacy';
+export {
+  createSuggestHandler,
+  clampLimit,
+  isAnswerableQuery,
+  MIN_QUERY_LENGTH,
+  MAX_SUGGESTIONS,
+  type PlayerSuggestion,
+  type SuggestRouteDependencies,
+} from './suggest';
+export {
+  createCachedReportHandler,
+  SNAPSHOT_MAX_AGE_MS,
+  REFRESH_COOLDOWN_MS,
+  type CachedReportResponse,
+  type CachedReportRouteDependencies,
+} from './cachedReport';
 export {
   createStaticDataHandler,
   type StaticDataResponse,
@@ -83,6 +102,19 @@ export const REQUEST_BODY_LIMIT = '16kb';
  */
 export interface ApiLogger {
   unexpectedError(info: { method: string; path: string; error: unknown }): void;
+  /**
+   * specs/autofill-search/ Requirement 1.8. `searchByNamePrefix` rejected while
+   * serving `GET /api/players/suggest`; the autocomplete degraded to "no
+   * suggestions". An operational note, not a defect — the request still answered
+   * 200.
+   */
+  suggestFailed(info: { error: unknown }): void;
+  /**
+   * specs/autofill-search/ Requirement 9.5. A store read failed while serving
+   * `GET /api/players/report`; the endpoint degraded to `{ source: "miss" }` and
+   * the client will fall through to a live lookup. Operational note, not a defect.
+   */
+  cachedReportFailed(info: { error: unknown }): void;
 }
 
 /** Default sink, so an unhandled defect is never silently discarded. */
@@ -90,6 +122,14 @@ export const consoleApiLogger: ApiLogger = {
   unexpectedError({ method, path, error }) {
     // eslint-disable-next-line no-console
     console.error(`[lolprofiles] Unhandled error in ${method} ${path}:`, error);
+  },
+  suggestFailed({ error }) {
+    // eslint-disable-next-line no-console
+    console.warn('[lolprofiles] Player suggestion lookup failed (autocomplete degraded to no suggestions):', error);
+  },
+  cachedReportFailed({ error }) {
+    // eslint-disable-next-line no-console
+    console.warn('[lolprofiles] Cached-report lookup failed (falling through to a live lookup):', error);
   },
 };
 
@@ -106,9 +146,12 @@ export interface ApiDependencies {
    */
   rankHistoryStore?: RankHistoryStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
+  /** autofill-search Requirements 8-10: serves `GET /api/players/report` and is cleared by `POST /api/privacy/delete`. */
+  profileSnapshotStore?: ProfileSnapshotStore;
   /** Injected clock, shared with the cache store and the orchestrator. */
   now?: () => number;
-  logger?: ApiLogger;
+  /** Partial: any method not supplied falls back to `consoleApiLogger`. */
+  logger?: Partial<ApiLogger>;
   /**
    * Exact origins permitted to call the API cross-origin. Empty (the default)
    * sends no CORS headers, which is correct for a same-origin deployment and for
@@ -144,7 +187,7 @@ function isBodyParseError(error: unknown): boolean {
 export function createApiRouter(deps: ApiDependencies): Router {
   const router = Router();
   const now = deps.now ?? Date.now;
-  const logger = deps.logger ?? consoleApiLogger;
+  const logger: ApiLogger = { ...consoleApiLogger, ...deps.logger };
 
   // Before body parsing, so a preflight is answered without reading a body it
   // does not have.
@@ -164,11 +207,28 @@ export function createApiRouter(deps: ApiDependencies): Router {
       now,
       rankHistoryStore: deps.rankHistoryStore,
       lookedUpPlayerStore: deps.lookedUpPlayerStore,
+      profileSnapshotStore: deps.profileSnapshotStore,
     }),
   );
   router.get(
     '/static-data',
     createStaticDataHandler({ dataDragonVersion: deps.dataDragonVersion }),
+  );
+  router.get(
+    '/players/suggest',
+    createSuggestHandler({
+      lookedUpPlayerStore: deps.lookedUpPlayerStore,
+      onError: (error) => logger.suggestFailed({ error }),
+    }),
+  );
+  router.get(
+    '/players/report',
+    createCachedReportHandler({
+      lookedUpPlayerStore: deps.lookedUpPlayerStore,
+      profileSnapshotStore: deps.profileSnapshotStore,
+      now,
+      onError: (error) => logger.cachedReportFailed({ error }),
+    }),
   );
 
   // Decision 4: registered last, so it sees both parse and route failures.

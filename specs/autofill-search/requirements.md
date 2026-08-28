@@ -12,6 +12,16 @@ The scope is deliberately small:
 - **One new read-only endpoint, one query.** A single indexed prefix scan, no Riot API call, no new data fetched. The endpoint is cheap enough that it does not need the budget/rate-limit machinery `/api/lookup` carries.
 - **The dropdown suggests; it does not replace validation.** Selecting a suggestion fills a known-good Riot ID and submits it through the existing lookup path. Typing a full Riot ID by hand and ignoring the dropdown works exactly as it does today.
 
+## Addendum (2026-08-28): cached full-report snapshots + manual refresh
+
+A second capability was folded into this spec after the initial draft, because it builds on the same `looked_up_players` record the dropdown does: **a player picked from the dropdown should render from storage instantly, with an explicit Refresh to pull live data.** This requires persisting the whole `ProfileReport` — not just the identity row `looked_up_players` already holds — so it is a larger change than the rest of this spec. It is scoped by three decisions the user made on 2026-08-28:
+
+- **Full snapshot.** Every successful lookup stores its complete `ProfileReport`, one document per player, newest replacing any prior one (Requirement 8).
+- **Suggestion selections only.** Typing a Riot ID by hand still runs a live lookup, unchanged. Only choosing a dropdown suggestion reads a snapshot, and only when it is younger than 15 days; otherwise it falls through to a live lookup (Requirement 9).
+- **Always-visible Refresh.** Every profile view carries a Refresh button and an "updated N ago" label; Refresh re-runs the live lookup and overwrites the snapshot, and is disabled while a refresh is in flight and for 5 minutes after the data was last fetched (Requirement 10).
+
+Like the rest of the feature, all of this degrades to "no snapshot, always live" whenever the persistent store is disabled or empty — which is also its cold-start state.
+
 ## Glossary
 
 - **System**: The lolprofiles.gg web application (frontend and backend combined).
@@ -27,6 +37,14 @@ The scope is deliberately small:
 - **Max_Suggestions**: The most Suggestions returned or rendered — 8.
 - **Debounce_Interval**: The idle time after the last keystroke before a request is issued — 200 ms.
 - **Persistent_Store_Disabled**: The state (`specs/database/` Requirement 1.3/1.4) in which `MONGODB_URI` is unset or unreachable and every store method is a no-op returning empty results.
+- **Profile_Report**: The `ProfileReport` object `POST /api/lookup` returns on success (`backend/src/orchestrator/index.ts`).
+- **Report_Snapshot**: A stored copy of a player's most recent Profile_Report — `{ puuid, report, fetchedAt }`, one per player.
+- **ProfileSnapshotStore**: The storage-agnostic interface owning Report_Snapshots, mirroring the `CacheStore` / `LookedUpPlayerStore` pattern (`save` / `get` / `deleteByPuuid`).
+- **Snapshot_Max_Age**: 15 days. A Report_Snapshot at least this old is treated as absent.
+- **Refresh_Cooldown**: 5 minutes. The Refresh_Control is disabled while the displayed data was fetched less than this ago.
+- **Cached_Report_Endpoint**: The new `GET /api/players/report` route.
+- **Suggestion_Selection**: Choosing a Suggestion from the Suggestion_Dropdown (Requirement 5), as opposed to typing a full Riot_ID by hand.
+- **Refresh_Control**: The button on the profile report view that re-runs the live Lookup_Session for the displayed Riot_ID.
 
 ## Requirements
 
@@ -105,7 +123,7 @@ The scope is deliberately small:
 #### Acceptance Criteria
 
 1. THE Suggestion_Endpoint SHALL make zero Riot API calls and SHALL NOT touch the Rate_Limit_Manager.
-2. THE feature SHALL store no new data — it only reads `looked_up_players`, which `specs/database/` already writes and already covers under `POST /api/privacy/delete`.
+2. THE Suggestion_Endpoint and dropdown SHALL store no new data — they only read `looked_up_players`, which `specs/database/` already writes and already covers under `POST /api/privacy/delete`. (The cached-report capability in Requirements 8–10 DOES introduce one new collection, `profile_reports`; it is covered under `POST /api/privacy/delete` by Requirement 8.7 and adds zero Riot API load by Requirement 9.7.)
 3. Profile icons in the dropdown SHALL be hot-linked from Data Dragon through the existing `ProfileIcon` / `CdnImage` components, never proxied or rehosted, keyed to the pinned `DDRAGON_VERSION`.
 4. A player removed via `POST /api/privacy/delete` SHALL stop appearing in Suggestions immediately, because the deletion removes their `looked_up_players` row (no additional work in this spec).
 5. THE Suggestion_Endpoint SHALL carry the same "unauthenticated, no per-IP throttle" caveat already documented for `/api/lookup` in the README's "Known gaps"; the README SHALL note that the suggest endpoint shares that gap but is far cheaper to serve (one indexed query, no Riot call, no shared budget).
@@ -120,3 +138,55 @@ The scope is deliberately small:
 2. THE dropdown SHALL have component tests covering: debounce (one request per interval), Min_Query_Length gating, stale-response rejection, keyboard navigation and selection, Escape/blur close, the no-results no-render rule, and combobox ARIA attributes.
 3. Selecting a Suggestion SHALL be tested to produce the same submission payload as typing the equivalent Riot_ID.
 4. THE existing backend and frontend suites SHALL remain green with no database configured.
+5. THE ProfileSnapshotStore SHALL be tested against an in-memory fake: upsert-by-PUUID, age filtering at Snapshot_Max_Age, `deleteByPuuid`, and the disabled/throwing no-op behaviour.
+6. THE Cached_Report_Endpoint SHALL be tested: the cache-hit response shape, `source: "miss"` on unknown name / no snapshot / stale snapshot / blank params, the disabled-store miss, and the throwing-store miss — all HTTP 200.
+7. THE Requirement 8 side-effect write SHALL be tested to fire on a fresh successful lookup and NOT on the Requirement 11.3 stale-cache fallback nor on a Suggestion_Selection served from a snapshot.
+8. THE frontend SHALL test: a Suggestion_Selection with a cache hit renders the report without calling `POST /api/lookup`; a miss falls through to the live lookup; a typed Riot_ID never calls the Cached_Report_Endpoint; and the Refresh_Control disables in flight and under Refresh_Cooldown and re-runs the lookup when activated.
+9. `POST /api/privacy/delete` SHALL be tested to clear the ProfileSnapshotStore alongside the other two collections.
+
+### Requirement 8: Persisting the full report snapshot
+
+**User Story:** As the operator, I want every successful lookup's full report saved, so a later visit to that player can render instantly from storage.
+
+#### Acceptance Criteria
+
+1. WHEN a Lookup_Session completes through the fresh pipeline with `kind: 'success'`, THE System SHALL write a Report_Snapshot for that player's PUUID to the ProfileSnapshotStore as an unawaited side effect, alongside the existing rank-snapshot and looked-up-player writes (`recordLookupSideEffects`).
+2. THE write SHALL be an upsert keyed by PUUID — one Report_Snapshot per player, the newest replacing any prior one.
+3. THE Report_Snapshot SHALL store the Profile_Report exactly as returned to the client, plus `fetchedAt` (epoch ms from the injected clock).
+4. THE write SHALL NOT occur on the Requirement 11.3 stale-cache fallback path, nor when a Lookup_Session was served from a Report_Snapshot (Requirement 9) — only a genuine fresh success writes.
+5. A ProfileSnapshotStore failure (synchronous throw or rejected promise) SHALL be logged via the existing `logger.storeWriteFailed` seam and swallowed; it SHALL never delay or fail a Lookup_Session, and SHALL issue no Riot API call.
+6. WHEN the Persistent_Store is in the Persistent_Store_Disabled state, the write SHALL be a silent no-op.
+7. `POST /api/privacy/delete` SHALL clear a PUUID's Report_Snapshot, best-effort, alongside `rank_snapshots` and `looked_up_players`, with the same "a store failure cannot fail the request" guarantee (`specs/database/` Requirement 5.3) and the same `found`-folding (no per-collection count in the body).
+8. THE stored Report_Snapshot SHALL carry a database-level TTL of Snapshot_Max_Age so abandoned snapshots are reclaimed without application code; the endpoint SHALL still verify age itself (Requirement 9.4) rather than depend on TTL-sweep timing.
+
+### Requirement 9: Serving a cached report to a suggestion selection
+
+**User Story:** As a visitor who picked a player from the dropdown, I want their profile to appear immediately from what the site already knows, without waiting on Riot.
+
+#### Acceptance Criteria
+
+1. THE System SHALL expose `GET /api/players/report` accepting `gameName` and `tagLine` query-string parameters.
+2. THE Cached_Report_Endpoint SHALL resolve the PUUID by an exact, case-insensitive match of `gameName` + `tagLine` against `looked_up_players` (a new `LookedUpPlayerStore.findByRiotId`) — no Riot API call, no lookup orchestration, no Cache_Store access.
+3. WHEN a PUUID resolves AND a Report_Snapshot exists for it AND `now - fetchedAt` is less than Snapshot_Max_Age, THE endpoint SHALL return `200` with `{ source: "cache", report, fetchedAt }`, where `report` is the stored Profile_Report and `fetchedAt` is an ISO timestamp.
+4. WHEN no PUUID resolves, OR no Report_Snapshot exists, OR the snapshot is at least Snapshot_Max_Age old, THE endpoint SHALL return `200` with `{ source: "miss" }` — never a 404, never an error envelope.
+5. WHEN the Persistent_Store is disabled, OR `findByRiotId` or the snapshot read rejects, THE endpoint SHALL log the failure and return `200 { source: "miss" }`.
+6. WHEN `gameName` or `tagLine` is absent or blank after trimming, THE endpoint SHALL return `200 { source: "miss" }`.
+7. THE Cached_Report_Endpoint SHALL make zero Riot API calls, SHALL NOT touch the Rate_Limit_Manager, SHALL apply the same CORS allowlist as every other `/api` route, and SHALL be exempt from the SPA history fallback exactly as `/api/players/suggest` is.
+8. Only a Suggestion_Selection SHALL consult the Cached_Report_Endpoint. A Riot_ID typed and submitted by hand SHALL run the live Lookup_Session as it does today, never reading a Report_Snapshot.
+9. WHEN a Suggestion_Selection yields `source: "cache"`, THE System SHALL render that Profile_Report without issuing `POST /api/lookup`.
+10. WHEN a Suggestion_Selection yields `source: "miss"`, THE System SHALL fall through to the normal live Lookup_Session for that Riot_ID, with no visible difference from a typed lookup (same loading indicator, same error affordances).
+11. A report shown from a snapshot SHALL be visually indistinguishable from a live one except for the freshness label and Refresh affordance (Requirement 10); every existing report section SHALL render from the stored data.
+12. THE lazily-loaded per-match tabs (build path, and any future match-detail tab) SHALL continue to fetch on demand through their own endpoints; the Report_Snapshot covers only the Profile_Report body.
+
+### Requirement 10: The Refresh control
+
+**User Story:** As a visitor looking at a profile, I want to pull the latest data on demand and see how old what I'm looking at is.
+
+#### Acceptance Criteria
+
+1. THE profile report view SHALL always render a Refresh_Control and a freshness label, whether the report was served from a snapshot or from a live lookup.
+2. THE freshness label SHALL show the age of the displayed data as a relative time (e.g. "Updated 3d ago"), derived from `fetchedAt` when the report came from a snapshot, or from the moment the live report was received in the current session otherwise.
+3. WHEN the Refresh_Control is activated, THE System SHALL run a live Lookup_Session for the currently displayed Riot_ID through `POST /api/lookup` and replace the displayed report with the result; the overwrite of the Report_Snapshot happens as the normal Requirement 8 side effect of that lookup.
+4. THE Refresh_Control SHALL be disabled while a refresh is in flight AND while the displayed data is less than Refresh_Cooldown old, and enabled otherwise.
+5. A refresh that fails SHALL surface the same error affordance as any Lookup_Session failure and SHALL leave the previously displayed report in place until the visitor retries or navigates.
+6. Activating the Refresh_Control SHALL NOT change the page URL.

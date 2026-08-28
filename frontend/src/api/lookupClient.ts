@@ -44,7 +44,17 @@
  */
 
 import { apiBaseUrl } from '../config';
-import type { ApiErrorPayload, BuildPathEntry, BuildPathResponse, ErrorCode, ProfileReport, RiotIdParts } from './types';
+import { isAnswerableSuggestionQuery, MAX_SUGGESTIONS } from '../domain/suggestions';
+import type {
+  ApiErrorPayload,
+  BuildPathEntry,
+  BuildPathResponse,
+  CachedReportResponse,
+  ErrorCode,
+  PlayerSuggestion,
+  ProfileReport,
+  RiotIdParts,
+} from './types';
 
 /** Decision 2. */
 export const REQUEST_TIMEOUT_MS = 20_000;
@@ -292,6 +302,139 @@ export async function fetchBuildPath(
     };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// autofill-search: GET /api/players/suggest
+// ---------------------------------------------------------------------------
+
+/** Narrows an untrusted 200 body to `PlayerSuggestion[]`, dropping any malformed row. */
+export function readSuggestions(body: unknown): PlayerSuggestion[] {
+  if (!Array.isArray(body)) {
+    return [];
+  }
+  const suggestions: PlayerSuggestion[] = [];
+  for (const raw of body) {
+    if (raw === null || typeof raw !== 'object') {
+      continue;
+    }
+    const row = raw as Record<string, unknown>;
+    if (typeof row.gameName !== 'string' || typeof row.tagLine !== 'string' || typeof row.region !== 'string') {
+      continue;
+    }
+    suggestions.push({
+      gameName: row.gameName,
+      tagLine: row.tagLine,
+      profileIconId:
+        typeof row.profileIconId === 'number' && Number.isFinite(row.profileIconId) ? row.profileIconId : null,
+      region: row.region,
+    });
+  }
+  return suggestions.slice(0, MAX_SUGGESTIONS);
+}
+
+/**
+ * `GET /api/players/suggest`. Autocomplete rows for a name prefix, drawn only
+ * from players this site has already looked up.
+ *
+ * Its failure value is simply `[]` — a failed autocomplete must be invisible
+ * (Requirement 3.7), so there is no error channel at all. It also mirrors the
+ * endpoint's own guards (trim, `MIN_QUERY_LENGTH`, no `#`) and returns `[]`
+ * WITHOUT a request when they fail, so a below-threshold keystroke costs nothing
+ * (Requirement 1.5). The caller passes an `AbortSignal` and aborts it when the
+ * query changes; an aborted request resolves to `[]` like any other failure.
+ */
+export async function fetchSuggestions(
+  query: string,
+  options: { baseUrl?: string; fetch?: FetchLike; signal?: AbortSignal } = {},
+): Promise<PlayerSuggestion[]> {
+  const trimmed = query.trim();
+  if (!isAnswerableSuggestionQuery(trimmed)) {
+    return [];
+  }
+
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const url = `${baseUrl}/api/players/suggest?q=${encodeURIComponent(trimmed)}`;
+
+  let response: Response;
+  try {
+    response = await doFetch(url, { method: 'GET', signal: options.signal });
+  } catch {
+    return [];
+  }
+
+  if (!response.ok) {
+    return [];
+  }
+
+  try {
+    return readSuggestions(await response.json());
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// autofill-search: GET /api/players/report (cached full-report snapshot)
+// ---------------------------------------------------------------------------
+
+/** Narrows an untrusted 200 body to a `CachedReportResponse`; anything unexpected is a miss. */
+export function readCachedReport(body: unknown): CachedReportResponse {
+  if (body !== null && typeof body === 'object') {
+    const candidate = body as Record<string, unknown>;
+    if (
+      candidate.source === 'cache' &&
+      typeof candidate.fetchedAt === 'string' &&
+      isProfileReport(candidate.report)
+    ) {
+      return { source: 'cache', report: candidate.report, fetchedAt: candidate.fetchedAt };
+    }
+  }
+  return { source: 'miss' };
+}
+
+/**
+ * `GET /api/players/report`. The stored `ProfileReport` for a player, when this
+ * site has a fresh one — used only when a suggestion is picked from the dropdown
+ * (autofill-search Requirement 9). Never rejects: `{ source: 'miss' }` on any
+ * non-200, malformed body, abort, or blank input, and the caller then runs a
+ * normal live lookup.
+ */
+export async function fetchCachedReport(
+  gameName: string,
+  tagLine: string,
+  options: { baseUrl?: string; fetch?: FetchLike; signal?: AbortSignal } = {},
+): Promise<CachedReportResponse> {
+  const trimmedGameName = gameName.trim();
+  const trimmedTagLine = tagLine.trim();
+  if (trimmedGameName === '' || trimmedTagLine === '') {
+    return { source: 'miss' };
+  }
+
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const query = new URLSearchParams({ gameName: trimmedGameName, tagLine: trimmedTagLine });
+
+  let response: Response;
+  try {
+    response = await doFetch(`${baseUrl}/api/players/report?${query.toString()}`, {
+      method: 'GET',
+      signal: options.signal,
+    });
+  } catch {
+    return { source: 'miss' };
+  }
+
+  if (!response.ok) {
+    return { source: 'miss' };
+  }
+
+  try {
+    return readCachedReport(await response.json());
+  } catch {
+    return { source: 'miss' };
   }
 }
 

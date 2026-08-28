@@ -26,10 +26,12 @@ import { MongoClient, type Db } from 'mongodb';
 import {
   DATABASE_NAME,
   LOOKED_UP_PLAYERS_COLLECTION,
+  PROFILE_REPORT_TTL_SECONDS,
+  PROFILE_REPORTS_COLLECTION,
   RANK_SNAPSHOTS_COLLECTION,
 } from './collections';
 
-export { DATABASE_NAME, RANK_SNAPSHOTS_COLLECTION, LOOKED_UP_PLAYERS_COLLECTION };
+export { DATABASE_NAME, RANK_SNAPSHOTS_COLLECTION, LOOKED_UP_PLAYERS_COLLECTION, PROFILE_REPORTS_COLLECTION };
 
 /** Low tens — one instance needs a handful of sockets; the M0 ceiling is 500. */
 const MAX_POOL_SIZE = 20;
@@ -92,7 +94,15 @@ export async function ensureIndexes(db: Db): Promise<void> {
   await db
     .collection(LOOKED_UP_PLAYERS_COLLECTION)
     // Serves the anchored `gameNameLower` prefix scan, already ordered by recency.
+    // The `gameNameLower` equality also narrows `findByRiotId`'s `tagLineLower` match.
     .createIndexes([{ key: { gameNameLower: 1, lastLookedUpAt: -1 }, name: 'gameNameLower_recency' }]);
+  await db.collection(PROFILE_REPORTS_COLLECTION).createIndexes([
+    // specs/autofill-search/ Requirement 8.8: the database reclaims abandoned
+    // snapshots. 15 days === Snapshot_Max_Age, so a snapshot the endpoint would
+    // reject as stale is usually already gone; the endpoint still checks age
+    // (9.4) because the TTL monitor only runs about once a minute.
+    { key: { fetchedAt: 1 }, name: 'ttl_fetchedAt', expireAfterSeconds: PROFILE_REPORT_TTL_SECONDS },
+  ]);
 }
 
 export interface CreateDatabaseClientOptions {

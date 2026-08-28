@@ -63,6 +63,18 @@ export interface RolePerformanceEntry {
   winRatePercent: number;
 }
 
+/**
+ * autofill-search Requirement 1.3: one dropdown row from `GET /api/players/suggest`.
+ * A previously-looked-up player projected to what the combobox shows. The PUUID
+ * is deliberately absent from this shape.
+ */
+export interface PlayerSuggestion {
+  gameName: string;
+  tagLine: string;
+  profileIconId: number | null;
+  region: string;
+}
+
 /** A teammate the player has queued with 2+ times, and how those games went. */
 export interface PremadeEntry {
   gameName: string;
@@ -320,3 +332,13 @@ export interface ApiErrorPayload {
 export interface ApiErrorBody {
   error: ApiErrorPayload;
 }
+
+/**
+ * autofill-search Requirement 9: the body of `GET /api/players/report`. `cache`
+ * carries a stored `ProfileReport` (< 15 days old) plus the ISO timestamp of the
+ * lookup that produced it; `miss` means "nothing usable is stored, do a live
+ * lookup". Always HTTP 200.
+ */
+export type CachedReportResponse =
+  | { source: 'cache'; report: ProfileReport; fetchedAt: string }
+  | { source: 'miss' };

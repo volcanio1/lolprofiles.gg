@@ -1,5 +1,7 @@
 /**
- * Lookup session state: loading lifecycle, bounded retry, rate-limit cooldown.
+ * Lookup session state: loading lifecycle, bounded retry, rate-limit cooldown,
+ * and (autofill-search Requirements 9-10) seeding from a stored snapshot plus an
+ * explicit Refresh.
  *
  * Implements:
  *  - 9.6: `loading` is true from the moment a lookup is dispatched.
@@ -11,44 +13,48 @@
  *    its own.
  *  - 9.8: after a rate-limited response the retry action stays disabled for at
  *    least the stated cooldown (never less than 5 seconds).
+ *  - autofill-search 9.9: `seedFromSnapshot` shows a stored report with no network
+ *    call.
+ *  - autofill-search 10.3/10.4/10.5: `refresh` re-runs a live lookup for the
+ *    current Riot ID, is disabled while in flight and for `REFRESH_COOLDOWN_MS`
+ *    after the displayed data was fetched, and a failed refresh leaves the report
+ *    on screen (the failure surfaces as `refreshError`, not the main error state).
  *
  * ---------------------------------------------------------------------------
  * DOCUMENTED DECISIONS
  * ---------------------------------------------------------------------------
  *
  * 1. THE RETRY BUDGET IS PER LOOKUP_SESSION, AND A NEW SEARCH STARTS A NEW ONE.
- *    Requirement 9.3 caps retries "per Lookup_Session", so `start` resets the
- *    counter while `retry` consumes it. Editing the Riot ID and searching again is
- *    a new session and therefore a fresh budget — which is correct, since it is a
- *    different question being asked.
+ *    `start` resets the counter while `retry` consumes it.
  *
- * 2. ONLY `retriable` FAILURES OFFER A RETRY. The backend already decides this
- *    from design.md's error table, so the flag is honored rather than
- *    second-guessed. A rejected credential or a genuinely missing player does not
- *    become available by asking again, and offering a button that cannot help is
- *    worse than not offering one.
+ * 2. ONLY `retriable` FAILURES OFFER A RETRY. The backend decides this; the flag
+ *    is honored rather than second-guessed.
  *
- * 3. THE COOLDOWN IS ENFORCED AGAINST AN INJECTED CLOCK, NOT A BARE `setTimeout`.
- *    `canRetry` is derived from a deadline compared against `now()`, and a timer
- *    only exists to trigger the re-render that re-enables the button. That means
- *    the gate holds even if the timer fires early, late, or not at all — a timer
- *    alone would be the only thing standing between the visitor and a request
- *    Requirement 9.8 says must wait. Both the clock and the scheduler are
- *    injected, matching every other module in this build, so tests never wait on
- *    real time.
+ * 3. THE COOLDOWNS ARE ENFORCED AGAINST AN INJECTED CLOCK, NOT A BARE
+ *    `setTimeout`. `canRetry` and `refreshDisabled` are derived from deadlines
+ *    compared against `now()`; a timer only exists to provoke the re-render that
+ *    re-enables the control. The gate holds even if the timer fires early, late,
+ *    or not at all.
  *
- * 4. A STALE RESPONSE NEVER OVERWRITES A NEWER ONE. Each dispatch takes a
- *    sequence number and applies its result only if it is still the newest. Without
- *    it, a slow first lookup could land after a fast second one and show the wrong
- *    player's report — the kind of bug that only appears under real latency.
+ * 4. A STALE RESPONSE NEVER OVERWRITES A NEWER ONE. Each dispatch (including
+ *    `refresh` and `seedFromSnapshot`) takes a sequence number and applies its
+ *    result only if it is still the newest.
  *
- * 5. AN UNMOUNTED COMPONENT IS NEVER UPDATED, so a visitor who navigates away
- *    mid-lookup does not trigger a React warning or a pointless render.
+ * 5. A FAILED REFRESH DOES NOT BLANK THE REPORT (Requirement 10.5). `refresh`
+ *    runs in `'refresh'` mode: on failure it sets `refreshError` and clears
+ *    `refreshing`, leaving `status`, `report`, `fetchedAt` and `source` alone. A
+ *    failed initial `start` still goes to the `'error'` status as before.
+ *
+ * 6. `fetchedAt` IS THE FRESHNESS ANCHOR FOR BOTH THE LABEL AND THE COOLDOWN. For
+ *    a snapshot it is the stored value; for a live report it is the moment the
+ *    report landed in this session (`POST /api/lookup` does not return a write
+ *    time). It is `null` until there is a report.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lookupProfile, type LookupOutcome, type LookupRequest } from '../api/lookupClient';
 import type { ApiErrorPayload, ProfileReport } from '../api/types';
+import { REFRESH_COOLDOWN_MS } from '../domain/cachedReport';
 
 /** Requirement 9.3. */
 export const MAX_RETRIES = 3;
@@ -58,6 +64,9 @@ export const MIN_COOLDOWN_SECONDS = 5;
 
 export type LookupStatus = 'idle' | 'loading' | 'success' | 'error';
 
+/** Where the currently displayed report came from. */
+export type ReportSource = 'live' | 'snapshot';
+
 export interface LookupState {
   status: LookupStatus;
   report?: ProfileReport;
@@ -66,6 +75,13 @@ export interface LookupState {
   retriesUsed: number;
   /** Epoch ms before which retrying is refused (Requirement 9.8). */
   cooldownUntil: number;
+  /** autofill-search Requirement 10.2: freshness anchor. `null` until there is a report. */
+  fetchedAt: number | null;
+  source: ReportSource | null;
+  /** A background refresh is in flight; the current report stays on screen. */
+  refreshing: boolean;
+  /** The last refresh failed (Requirement 10.5); the previous report is still shown. */
+  refreshError?: ApiErrorPayload;
 }
 
 /** Injected so no test waits on wall-clock time (decision 3). */
@@ -85,10 +101,16 @@ export interface UseLookupResult extends LookupState {
   retriesRemaining: number;
   /** Whole seconds left on the cooldown, for the visitor-facing countdown. */
   cooldownSecondsRemaining: number;
+  /** autofill-search Requirement 10.4: Refresh is unavailable while loading, refreshing, or within the cooldown. */
+  refreshDisabled: boolean;
   /** Starts a NEW Lookup_Session, resetting the retry budget (decision 1). */
   start: (request: LookupRequest) => void;
   /** Consumes one retry of the current session. No-op when not permitted. */
   retry: () => void;
+  /** autofill-search Requirement 9.9: show a stored report with no network call. */
+  seedFromSnapshot: (request: LookupRequest, report: ProfileReport, fetchedAt: number) => void;
+  /** autofill-search Requirement 10.3: re-run a live lookup for the current Riot ID and overwrite the report. */
+  refresh: () => void;
 }
 
 const defaultScheduler: Scheduler = (ms, onElapsed) => {
@@ -98,24 +120,29 @@ const defaultScheduler: Scheduler = (ms, onElapsed) => {
   };
 };
 
-const INITIAL_STATE: LookupState = { status: 'idle', retriesUsed: 0, cooldownUntil: 0 };
+const INITIAL_STATE: LookupState = {
+  status: 'idle',
+  retriesUsed: 0,
+  cooldownUntil: 0,
+  fetchedAt: null,
+  source: null,
+  refreshing: false,
+};
+
+const DEFECT_ERROR: ApiErrorPayload = {
+  code: 'RIOT_UNAVAILABLE',
+  message: 'Something went wrong running this lookup. Please try again.',
+  retriable: true,
+};
 
 export function useLookup(options: UseLookupOptions = {}): UseLookupResult {
   const { lookup: injectedLookup, now: injectedNow, schedule: injectedSchedule } = options;
 
   /**
-   * DECISION 6: THE DEFAULTS MUST BE REFERENTIALLY STABLE, NOT JUST CORRECT.
-   *
-   * `injectedLookup ?? ((request) => lookupProfile(request))` reads harmlessly but
-   * allocates a new function on every render, which makes `run` — and therefore
-   * `start` — a new reference each time. Any caller with `start` in a `useEffect`
-   * dependency array then re-runs that effect on every render, and because the
-   * effect sets state, the render loop never terminates: an unbounded stream of
-   * requests at the backend and a pinned CPU in the browser.
-   *
-   * `ProfileReportPage` is exactly such a caller, so this is load-bearing rather
-   * than hygienic. It was caught by a test that hung instead of failing — the loop
-   * is synchronous, so it starves the event loop and no timeout can fire.
+   * The defaults must be referentially stable — an inline `?? (() => …)` would
+   * allocate a new function every render, making `run`/`start` new references and
+   * re-firing any effect that depends on them (`ProfileReportPage` is such a
+   * caller). Each is resolved through `useMemo` keyed on the injected value.
    */
   const lookup = useMemo(
     () => injectedLookup ?? ((request: LookupRequest) => lookupProfile(request)),
@@ -135,64 +162,75 @@ export function useLookup(options: UseLookupOptions = {}): UseLookupResult {
   useEffect(() => {
     mounted.current = true;
     return () => {
-      // Decision 5.
       mounted.current = false;
     };
   }, []);
 
   const run = useCallback(
-    (request: LookupRequest, retriesUsed: number) => {
+    (request: LookupRequest, retriesUsed: number, mode: 'start' | 'refresh') => {
       lastRequest.current = request;
       sequence.current += 1;
       const dispatched = sequence.current;
 
-      // Requirement 9.6: the indicator appears as the request is dispatched.
-      setState((previous) => ({
-        status: 'loading',
-        retriesUsed,
-        cooldownUntil: previous.cooldownUntil,
-      }));
+      setState((previous) =>
+        mode === 'refresh'
+          ? { ...previous, refreshing: true, refreshError: undefined }
+          : {
+              status: 'loading',
+              retriesUsed,
+              cooldownUntil: previous.cooldownUntil,
+              fetchedAt: null,
+              source: null,
+              refreshing: false,
+            },
+      );
 
       void (async () => {
+        let outcome: LookupOutcome | undefined;
         try {
-          const outcome = await lookup(request);
-          // Decision 4.
-          if (!mounted.current || dispatched !== sequence.current) {
-            return;
-          }
-          if (outcome.kind === 'success') {
-            setState({ status: 'success', report: outcome.report, retriesUsed, cooldownUntil: 0 });
-            return;
-          }
-          // Requirement 9.8: a rate limit starts a cooldown of at least 5s.
-          const cooldownSeconds =
-            outcome.error.code === 'RATE_LIMITED'
-              ? Math.max(MIN_COOLDOWN_SECONDS, outcome.error.retryAfterSeconds ?? 0)
-              : 0;
-          setState({
-            status: 'error',
-            error: outcome.error,
-            retriesUsed,
-            cooldownUntil: cooldownSeconds > 0 ? now() + cooldownSeconds * 1000 : 0,
-          });
+          outcome = await lookup(request);
         } catch {
-          // `lookupProfile` is contracted never to reject, so reaching here means a
-          // defect in an injected lookup. It still must not strand the indicator
-          // (Requirement 9.7).
-          if (!mounted.current || dispatched !== sequence.current) {
-            return;
-          }
+          // `lookupProfile` is contracted never to reject; reaching here means a
+          // defect in an injected lookup. It still must not strand the indicator.
+        }
+        if (!mounted.current || dispatched !== sequence.current) {
+          return;
+        }
+
+        if (outcome?.kind === 'success') {
           setState({
-            status: 'error',
-            error: {
-              code: 'RIOT_UNAVAILABLE',
-              message: 'Something went wrong running this lookup. Please try again.',
-              retriable: true,
-            },
+            status: 'success',
+            report: outcome.report,
             retriesUsed,
             cooldownUntil: 0,
+            fetchedAt: now(),
+            source: 'live',
+            refreshing: false,
           });
+          return;
         }
+
+        const failure = outcome?.kind === 'error' ? outcome.error : DEFECT_ERROR;
+
+        if (mode === 'refresh') {
+          // Decision 5: keep the report; surface the failure separately.
+          setState((previous) => ({ ...previous, refreshing: false, refreshError: failure }));
+          return;
+        }
+
+        const cooldownSeconds =
+          failure.code === 'RATE_LIMITED'
+            ? Math.max(MIN_COOLDOWN_SECONDS, failure.retryAfterSeconds ?? 0)
+            : 0;
+        setState({
+          status: 'error',
+          error: failure,
+          retriesUsed,
+          cooldownUntil: cooldownSeconds > 0 ? now() + cooldownSeconds * 1000 : 0,
+          fetchedAt: null,
+          source: null,
+          refreshing: false,
+        });
       })();
     },
     [lookup, now],
@@ -200,36 +238,52 @@ export function useLookup(options: UseLookupOptions = {}): UseLookupResult {
 
   const start = useCallback(
     (request: LookupRequest) => {
-      // Decision 1: a new session, so the retry budget resets.
-      run(request, 0);
+      run(request, 0, 'start');
     },
     [run],
   );
 
+  const seedFromSnapshot = useCallback(
+    (request: LookupRequest, report: ProfileReport, fetchedAt: number) => {
+      lastRequest.current = request;
+      sequence.current += 1; // decision 4: invalidate anything in flight
+      setState({
+        status: 'success',
+        report,
+        retriesUsed: 0,
+        cooldownUntil: 0,
+        fetchedAt,
+        source: 'snapshot',
+        refreshing: false,
+      });
+    },
+    [],
+  );
+
   const cooldownRemainingMs = Math.max(0, state.cooldownUntil - now());
+  const refreshCooldownRemainingMs =
+    state.fetchedAt === null ? 0 : Math.max(0, state.fetchedAt + REFRESH_COOLDOWN_MS - now());
 
   /**
-   * Decision 3: the timer only provokes a re-render; `canRetry` is computed from
-   * the deadline, so it cannot be bypassed by a misbehaving timer.
+   * Decision 3: one timer for whichever cooldown expires first; it only provokes
+   * a re-render. Both `canRetry` and `refreshDisabled` are computed from the
+   * deadlines, so a misbehaving timer cannot bypass either.
    */
   useEffect(() => {
-    if (cooldownRemainingMs <= 0) {
+    const pending = Math.max(cooldownRemainingMs, refreshCooldownRemainingMs);
+    if (pending <= 0) {
       return undefined;
     }
-    const cancel = schedule(cooldownRemainingMs, () => {
+    return schedule(pending, () => {
       setCooldownTick((tick) => tick + 1);
     });
-    return cancel;
-    // `cooldownTick` is a dependency so the effect re-arms if the deadline has not
-    // actually passed when the timer fires early.
-  }, [cooldownRemainingMs, schedule, cooldownTick]);
+  }, [cooldownRemainingMs, refreshCooldownRemainingMs, schedule, cooldownTick]);
 
   const retriesRemaining = Math.max(0, MAX_RETRIES - state.retriesUsed);
 
   const canRetry =
     state.status === 'error' &&
     state.error !== undefined &&
-    // Decision 2.
     state.error.retriable &&
     retriesRemaining > 0 &&
     cooldownRemainingMs <= 0 &&
@@ -239,19 +293,43 @@ export function useLookup(options: UseLookupOptions = {}): UseLookupResult {
     if (!canRetry || lastRequest.current === undefined) {
       return;
     }
-    run(lastRequest.current, state.retriesUsed + 1);
+    run(lastRequest.current, state.retriesUsed + 1, 'start');
   }, [canRetry, run, state.retriesUsed]);
+
+  const loading = state.status === 'loading';
+  const refreshDisabled = loading || state.refreshing || refreshCooldownRemainingMs > 0;
+
+  const refresh = useCallback(() => {
+    if (refreshDisabled || lastRequest.current === undefined) {
+      return;
+    }
+    run(lastRequest.current, 0, 'refresh');
+  }, [refreshDisabled, run]);
 
   return useMemo(
     () => ({
       ...state,
-      loading: state.status === 'loading',
+      loading,
       canRetry,
       retriesRemaining,
       cooldownSecondsRemaining: Math.ceil(cooldownRemainingMs / 1000),
+      refreshDisabled,
       start,
       retry,
+      seedFromSnapshot,
+      refresh,
     }),
-    [state, canRetry, retriesRemaining, cooldownRemainingMs, start, retry],
+    [
+      state,
+      loading,
+      canRetry,
+      retriesRemaining,
+      cooldownRemainingMs,
+      refreshDisabled,
+      start,
+      retry,
+      seedFromSnapshot,
+      refresh,
+    ],
   );
 }

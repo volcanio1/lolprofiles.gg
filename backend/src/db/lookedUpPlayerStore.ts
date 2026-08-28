@@ -53,6 +53,14 @@ export interface LookedUpPlayerStore {
    */
   searchByNamePrefix(namePrefix: string, limit: number): Promise<LookedUpPlayer[]>;
 
+  /**
+   * specs/autofill-search/ Requirement 9.2. The player whose `gameName` and
+   * `tagLine` both match (case-insensitive, exact), or `null` when none is known
+   * or the store is disabled. No Riot call — this is how the cached-report
+   * endpoint resolves a name to a PUUID without touching Account-V1.
+   */
+  findByRiotId(gameName: string, tagLine: string): Promise<LookedUpPlayer | null>;
+
   /** Requirement 5.1. Removes `puuid`'s record; resolves 1 if one existed, else 0. */
   deleteByPuuid(puuid: string): Promise<number>;
 }
@@ -91,6 +99,20 @@ export class InMemoryLookedUpPlayerStore implements LookedUpPlayerStore {
       .map((p) => ({ ...p }));
   }
 
+  async findByRiotId(gameName: string, tagLine: string): Promise<LookedUpPlayer | null> {
+    const g = gameName.trim().toLowerCase();
+    const t = tagLine.trim().toLowerCase();
+    if (g === '' || t === '') {
+      return null;
+    }
+    for (const player of this.byPuuid.values()) {
+      if (player.gameName.toLowerCase() === g && player.tagLine.toLowerCase() === t) {
+        return { ...player };
+      }
+    }
+    return null;
+  }
+
   async deleteByPuuid(puuid: string): Promise<number> {
     return this.byPuuid.delete(puuid) ? 1 : 0;
   }
@@ -118,6 +140,9 @@ export function createNoopLookedUpPlayerStore(): LookedUpPlayerStore {
     async remember() {},
     async searchByNamePrefix() {
       return [];
+    },
+    async findByRiotId() {
+      return null;
     },
     async deleteByPuuid() {
       return 0;
@@ -151,6 +176,8 @@ interface LookedUpPlayerDoc {
   /** `gameName.toLowerCase()`, the field the prefix search actually matches on. */
   gameNameLower: string;
   tagLine: string;
+  /** `tagLine.toLowerCase()`; only `findByRiotId` reads it (autofill-search Requirement 9.2). */
+  tagLineLower: string;
   profileIconId: number | null;
   region: string;
   lastLookedUpAt: Date;
@@ -171,6 +198,7 @@ export class MongoLookedUpPlayerStore implements LookedUpPlayerStore {
           gameName: player.gameName,
           gameNameLower: player.gameName.toLowerCase(),
           tagLine: player.tagLine,
+          tagLineLower: player.tagLine.toLowerCase(),
           profileIconId: player.profileIconId,
           region: player.region,
           lastLookedUpAt: new Date(player.lastLookedUpAt),
@@ -190,18 +218,32 @@ export class MongoLookedUpPlayerStore implements LookedUpPlayerStore {
       .sort({ lastLookedUpAt: -1 })
       .limit(Math.trunc(limit))
       .toArray();
-    return docs.map((d) => ({
-      puuid: d._id,
-      gameName: d.gameName,
-      tagLine: d.tagLine,
-      profileIconId: d.profileIconId,
-      region: d.region,
-      lastLookedUpAt: d.lastLookedUpAt.getTime(),
-    }));
+    return docs.map(toLookedUpPlayer);
+  }
+
+  async findByRiotId(gameName: string, tagLine: string): Promise<LookedUpPlayer | null> {
+    const gameNameLower = gameName.trim().toLowerCase();
+    const tagLineLower = tagLine.trim().toLowerCase();
+    if (gameNameLower === '' || tagLineLower === '') {
+      return null;
+    }
+    const doc = await this.col.findOne({ gameNameLower, tagLineLower });
+    return doc === null ? null : toLookedUpPlayer(doc);
   }
 
   async deleteByPuuid(puuid: string): Promise<number> {
     const result = await this.col.deleteOne({ _id: puuid });
     return result.deletedCount ?? 0;
   }
+}
+
+function toLookedUpPlayer(doc: LookedUpPlayerDoc): LookedUpPlayer {
+  return {
+    puuid: doc._id,
+    gameName: doc.gameName,
+    tagLine: doc.tagLine,
+    profileIconId: doc.profileIconId,
+    region: doc.region,
+    lastLookedUpAt: doc.lastLookedUpAt.getTime(),
+  };
 }
