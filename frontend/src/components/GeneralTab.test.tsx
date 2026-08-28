@@ -83,9 +83,9 @@ describe('GeneralTab', () => {
     const table = screen.getAllByRole('table')[0];
     const headerCells = within(table).getAllByRole('columnheader');
     const firstBodyRow = within(table).getAllByRole('row').find((r) => r.querySelector('th[scope="row"]'))!;
-    // champ + player + loadout + build + 7 numeric
-    expect(headerCells).toHaveLength(11);
-    expect(firstBodyRow.querySelectorAll("th, td")).toHaveLength(11);
+    // champ + player + loadout + build + 5 numeric (KDA, CS, Dmg, KP, Score)
+    expect(headerCells).toHaveLength(9);
+    expect(firstBodyRow.querySelectorAll("th, td")).toHaveLength(9);
   });
 
   it('does not label the spells/runes column', () => {

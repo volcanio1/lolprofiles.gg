@@ -103,13 +103,20 @@ async function loadStaticData(
   // Data_Dragon, pinned to a derived {major}.{minor} — never Community_Dragon's
   // own "latest" alias.
   const cherryAugmentsUrl = `${COMMUNITY_DRAGON_BASE}/${encodeURIComponent(communityDragonVersionOf(version))}/plugins/rcp-be-lol-game-data/global/default/v1/cherry-augments.json`;
-  const [championJson, itemJson, summonerJson, runesJson, cherryAugmentsJson] = await Promise.all([
+
+  // The four Data_Dragon files are the CORE index — champion / item / summoner /
+  // rune rendering across the whole app depends on them, so a failure here stays
+  // NOT_READY and is retried on the next load. The Community_Dragon augments file
+  // is a SEPARATE, less-reliable CDN feeding one niche asset class (ARAM Mayhem
+  // augment icons); its failure must never sink the core index — it is fetched
+  // apart and its absence just means augments fall back to their raw id.
+  const [championJson, itemJson, summonerJson, runesJson] = await Promise.all([
     fetchJson(`${cdn}/champion.json`, signal),
     fetchJson(`${cdn}/item.json`, signal),
     fetchJson(`${cdn}/summoner.json`, signal),
     fetchJson(`${cdn}/runesReforged.json`, signal),
-    fetchJson(cherryAugmentsUrl, signal),
   ]);
+  const cherryAugmentsJson = await fetchJson(cherryAugmentsUrl, signal).catch(() => undefined);
 
   const index = buildStaticDataIndex(version, championJson, itemJson, summonerJson, runesJson, cherryAugmentsJson);
   writeStoredIndex(index, now());

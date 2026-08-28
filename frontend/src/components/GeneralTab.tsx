@@ -112,19 +112,17 @@ function ScoreboardRow({
 
       <td className="sb-num sb-kda">{formatKda3(participant.kills, participant.deaths, participant.assists)}</td>
       <td className="sb-num">{participant.cs}</td>
-      <td className="sb-num">{participant.visionScore}</td>
       <td className="sb-num sb-damage">
         <span className="sb-damage-value">{formatCompactNumber(participant.damageToChampions)}</span>
         <span className="sb-damage-bar" aria-hidden="true">
           <span className="sb-damage-bar-fill" style={{ width: `${String(damagePercent)}%` }} />
         </span>
       </td>
-      <td className="sb-num">{formatCompactNumber(participant.goldEarned)}</td>
       <td className="sb-num">{formatKillParticipation(participant.killParticipationPercent)}</td>
       <td className="sb-num sb-rating-cell">
         <span
           className={`sb-rating sb-rating--${rating.tier}`}
-          title="LP Score — overall match performance, 0 to 100"
+          title="Score — overall match performance, 0 to 100"
         >
           {rating.score}
         </span>
@@ -163,11 +161,9 @@ export function GeneralTab({ participants, durationSeconds }: GeneralTabProps) {
                 <th scope="col" className="sb-build">Build</th>
                 <th scope="col" className="sb-num">KDA</th>
                 <th scope="col" className="sb-num">CS</th>
-                <th scope="col" className="sb-num">Vis</th>
                 <th scope="col" className="sb-num">Dmg</th>
-                <th scope="col" className="sb-num">Gold</th>
                 <th scope="col" className="sb-num">KP</th>
-                <th scope="col" className="sb-num">LP</th>
+                <th scope="col" className="sb-num">Score</th>
               </tr>
             </thead>
             {/* Requirement 8.6: standard table row/header association is what ties

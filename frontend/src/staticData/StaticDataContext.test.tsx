@@ -13,11 +13,12 @@ function Probe() {
       <span data-testid="version">{provider.version ?? 'none'}</span>
       <span data-testid="name">{provider.championDisplayName('MonkeyKing')}</span>
       <span data-testid="icon">{provider.championIconUrl('MonkeyKing') ?? 'null'}</span>
+      <span data-testid="key-for-id">{provider.championKeyForId(62) ?? 'null'}</span>
     </div>
   );
 }
 
-const CHAMPION_JSON = { data: { MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' } } } };
+const CHAMPION_JSON = { data: { MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' }, key: '62' } } };
 const ITEM_JSON = { data: { '3031': { name: 'Infinity Edge', image: { full: '3031.png' }, depth: 2, gold: { total: 3500 } } } };
 const SUMMONER_JSON = { data: { SummonerFlash: { key: '4', name: 'Flash', image: { full: 'SummonerFlash.png' } } } };
 const RUNES_JSON = [
@@ -87,6 +88,28 @@ describe('StaticDataContextProvider', () => {
     expect(screen.getByTestId('version').textContent).toBe('16.17.1');
     expect(screen.getByTestId('name').textContent).toBe('Wukong');
     expect(screen.getByTestId('icon').textContent).toContain('/16.17.1/img/champion/MonkeyKing.png');
+    // live-game: the numeric-id -> key reverse lookup is built from champion.json's `key`.
+    expect(screen.getByTestId('key-for-id').textContent).toBe('MonkeyKing');
+  });
+
+  it('stays ready when only the Community_Dragon augments file fails — it must not sink the core index', async () => {
+    stubFetch((url) => {
+      if (url.includes('/api/static-data')) return ok({ dataDragonVersion: '16.17.1' });
+      if (url.includes('cherry-augments.json')) {
+        return { ok: false, status: 503, json: () => Promise.resolve({}) } as Response;
+      }
+      return ok(metadataResponse(url));
+    });
+
+    render(
+      <StaticDataContextProvider>
+        <Probe />
+      </StaticDataContextProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('ready').textContent).toBe('true'));
+    expect(screen.getByTestId('name').textContent).toBe('Wukong');
+    expect(screen.getByTestId('key-for-id').textContent).toBe('MonkeyKing');
   });
 
   it('fetches metadata straight from the CDN, never through the backend', async () => {

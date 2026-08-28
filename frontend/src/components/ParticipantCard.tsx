@@ -14,7 +14,7 @@
 import type { LiveParticipantCard, LobbyInsights } from '../api/types';
 import { useStaticData } from '../staticData';
 import { formatMasteryPoints, formatRank, rankedEntryForGame } from '../domain/liveGame';
-import { ChampionIcon } from './ChampionIcon';
+import { CdnImage } from './CdnImage';
 import { RankIcon } from './RankIcon';
 import { RuneIcon } from './RuneIcon';
 import { SummonerSpellIcon } from './SummonerSpellIcon';
@@ -28,6 +28,7 @@ export interface ParticipantCardProps {
 export function ParticipantCard({ card, gameQueueId, insights }: ParticipantCardProps) {
   const provider = useStaticData();
   const championKey = provider.championKeyForId(card.championId) ?? String(card.championId);
+  const championName = provider.championDisplayName(championKey);
 
   const name = card.isBot
     ? 'Bot'
@@ -49,7 +50,16 @@ export function ParticipantCard({ card, gameQueueId, insights }: ParticipantCard
       data-testid="participant-card"
       data-puuid={card.puuid}
     >
-      <ChampionIcon championKey={championKey} size={40} className="live-card-champ" />
+      <div className="live-card-champ-block">
+        <CdnImage
+          url={provider.championIconUrl(championKey)}
+          alt={championName}
+          fallbackLabel={`${championName} icon unavailable`}
+          size={40}
+          className="live-card-champ"
+        />
+        <span className="live-card-champ-name">{championName}</span>
+      </div>
 
       <div className="live-card-loadout">
         <SummonerSpellIcon spellId={card.spell1Id} size={16} />
@@ -58,7 +68,9 @@ export function ParticipantCard({ card, gameQueueId, insights }: ParticipantCard
       </div>
 
       <div className="live-card-identity">
-        <span className="live-card-name">{name}</span>
+        <span className="live-card-name" title={name}>
+          {name}
+        </span>
         <span className="live-card-rank">
           {rankedEntry !== undefined ? (
             <>

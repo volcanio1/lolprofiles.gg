@@ -1797,8 +1797,15 @@ figure {
 .scoreboard-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* The scoreboard is tuned to fit the drawer width without a horizontal scroll
+   (Vision score was dropped to make room). The `.table-scroll` wrapper stays as
+   a safety net for very narrow viewports but should not normally engage. */
+.general-tab .table-scroll {
+  overflow-x: auto;
 }
 
 /* A banded heading rather than a bare line of text, so the two teams read as two
@@ -1954,7 +1961,8 @@ figure {
    width and lets the column absorb the table's slack, so the identity gets the
    leftover space rather than the numeric columns stretching. */
 .sb-player {
-  width: 11rem;
+  width: 13rem;
+  max-width: 13rem;
   padding-left: 1rem;
 }
 
@@ -1963,38 +1971,38 @@ th[scope='row'].sb-player {
 }
 
 /*
- * Always exactly two lines tall (`min-height`), whether the name wraps or not —
- * that is what keeps EVERY row the same height, which in turn keeps the champion
- * names aligned down the column. A one-line name is centred in the box by
- * `align-content`; a name too long for two lines is clipped, with the full
- * `name#tag` still available as the cell's `title`.
+ * One line: the gameName truncates with an ellipsis while the #tag and the "You"
+ * badge stay fully visible, so every row is the same height and the champion
+ * column stays aligned. The full `name#tag` is on the cell's `title`.
  */
 .sb-name-line {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  align-content: center;
-  gap: 0 0.25rem;
+  gap: 0.25rem;
   line-height: 1.2;
-  min-height: 2.4em; /* 2 × line-height */
-  max-height: 2.4em;
-  overflow: hidden;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 12rem;
 }
 
 .sb-name {
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sb-tag {
   color: var(--dim);
   font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 /* Requirement 3.7: a visible label, not a colour, marks the analyzed player. */
 .you-badge {
   display: inline-block;
+  flex-shrink: 0;
   margin-left: 0.35rem;
   padding: 0 0.3rem;
   border: 1px solid var(--gold-dim);
@@ -2490,7 +2498,7 @@ th[scope='row'].sb-player {
 
 .live-card {
   display: grid;
-  grid-template-columns: 40px auto 1fr auto;
+  grid-template-columns: minmax(0, 9.5rem) auto 1fr auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.65rem;
@@ -2503,9 +2511,22 @@ th[scope='row'].sb-player {
   opacity: 0.7;
 }
 
+.live-card-champ-block {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.live-card-champ {
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+
 .live-card-loadout {
   display: flex;
   gap: 0.2rem;
+  flex-shrink: 0;
 }
 
 .live-card-identity {
@@ -2516,6 +2537,14 @@ th[scope='row'].sb-player {
 
 .live-card-name {
   font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-card-champ-name {
+  font-size: 0.78rem;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
