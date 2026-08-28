@@ -186,6 +186,8 @@ export interface MatchParticipantDto {
   turretKills?: number;
   dragonKills?: number;
   baronKills?: number;
+  /** Multi-kill counts (match-rating pentakill bonus). Always present in Match-V5. */
+  pentaKills?: number;
   /** The current, non-deprecated player-name fields; `summonerName` is empty on live matches. */
   riotIdGameName?: string;
   riotIdTagline?: string;

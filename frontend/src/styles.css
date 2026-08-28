@@ -825,6 +825,62 @@ figure {
   text-transform: capitalize;
 }
 
+/*
+ * LP Score — the headline number for each laner, riding the champion+loadout row
+ * and pushed to the inner edge (beside the mirror divider) to spend no extra
+ * vertical space.
+ */
+.lp-score {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  padding: 0.15rem 0.55rem 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: radial-gradient(circle at 50% 0%, rgba(232, 181, 74, 0.06), transparent 70%);
+}
+
+.match-side--opponent .lp-score {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.lp-score-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.5rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.lp-score-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.6rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.lp-score--bad .lp-score-value {
+  color: var(--error);
+}
+
+.lp-score--great {
+  border-color: rgba(232, 181, 74, 0.5);
+  background: radial-gradient(circle at 50% 0%, rgba(232, 181, 74, 0.16), transparent 72%);
+}
+
+.lp-score--great .lp-score-value {
+  color: var(--gold-bright);
+  text-shadow:
+    0 0 4px rgba(232, 181, 74, 0.85),
+    0 0 14px rgba(232, 181, 74, 0.5);
+}
+
 .match-duration,
 .match-queue-type {
   color: var(--dim);

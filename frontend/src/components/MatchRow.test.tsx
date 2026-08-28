@@ -39,6 +39,7 @@ function participant(overrides: Partial<MatchParticipant> = {}): MatchParticipan
     turretKills: 0,
     dragonKills: 0,
     baronKills: 0,
+    pentaKills: 0,
     killParticipationPercent: 'N/A',
     augments: [],
     ...overrides,
@@ -177,6 +178,34 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
     expect(screen.getByTestId('match-side-player')).toHaveTextContent('#Smile');
     expect(screen.getByTestId('match-side-opponent')).toHaveTextContent('RivalName');
     expect(screen.getByTestId('match-side-opponent')).toHaveTextContent('#EUW');
+  });
+
+  it('shows an LP Score for both laners, computed from their own participant records', () => {
+    const lobby: MatchParticipant[] = [
+      participant({ isAnalyzedPlayer: true, teamId: 100, kills: 14, deaths: 2, assists: 9, cs: 290, visionScore: 30, damageToChampions: 42000, goldEarned: 18000, killParticipationPercent: 72, turretKills: 3, dragonKills: 1 }),
+      ...[1, 2, 3, 4].map((i) => participant({ teamId: 100, teamPosition: ['TOP', 'JUNGLE', 'BOTTOM', 'UTILITY'][i - 1], kills: 3, deaths: 6, assists: 4, cs: 150, damageToChampions: 12000, goldEarned: 11000 })),
+      participant({ isEnemyLaner: true, teamId: 200, teamPosition: 'MIDDLE', kills: 1, deaths: 9, assists: 2, cs: 120, visionScore: 8, damageToChampions: 9000, goldEarned: 8000, killParticipationPercent: 20, win: false }),
+      ...[0, 1, 3, 4].map((i) => participant({ teamId: 200, teamPosition: ['TOP', 'JUNGLE', 'BOTTOM', 'UTILITY'][i > 1 ? i - 1 : i], kills: 4, deaths: 5, assists: 5, cs: 160, damageToChampions: 13000, goldEarned: 12000, win: false })),
+    ];
+    render(
+      <MatchRow
+        riotId={RID}
+        match={match({
+          participants: lobby,
+          opponent: { championName: 'Zed', kills: 1, deaths: 9, assists: 2, cs: 120, csPerMinute: 3.7, visionScore: 8, build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 } },
+        })}
+      />,
+    );
+    const player = Number(screen.getByTestId('lp-score-player').textContent?.replace(/\D/g, ''));
+    const opponent = Number(screen.getByTestId('lp-score-opponent').textContent?.replace(/\D/g, ''));
+    expect(player).toBeGreaterThan(75);
+    expect(opponent).toBeLessThan(player);
+  });
+
+  it('omits the LP Score when the match carries no participants to rate', () => {
+    render(<MatchRow riotId={RID} match={match({ participants: [] })} />);
+    expect(screen.queryByTestId('lp-score-player')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('lp-score-opponent')).not.toBeInTheDocument();
   });
 
   it('omits the name line rather than rendering a bare "#" when no marked participant supplied one', () => {

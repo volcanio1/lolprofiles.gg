@@ -21,6 +21,7 @@
 
 import { useState } from 'react';
 import type { MatchParticipant, RecentMatchSummary, RiotIdParts } from '../api/types';
+import { computeMatchRating } from '../domain/matchRating';
 import { DetailPanel, type DetailTabKey } from './DetailPanel';
 import { EMPTY_RUNE_PAGE, MatchSide } from './MatchSide';
 
@@ -64,6 +65,13 @@ export interface MatchRowProps {
 export function MatchRow({ match, riotId }: MatchRowProps) {
   const analyzed = findByMarker(match.participants, 'isAnalyzedPlayer');
   const enemyLaner = findByMarker(match.participants, 'isEnemyLaner');
+
+  const ratingOf = (participant: MatchParticipant | undefined) =>
+    participant && match.participants.length > 0
+      ? computeMatchRating(participant, match.participants, match.durationSeconds)
+      : null;
+  const playerRating = ratingOf(analyzed);
+  const opponentRating = ratingOf(enemyLaner);
 
   // Requirement 2.2/2.4/2.5: collapsed on initial render; General selected on
   // first expansion; the LAST selected tab is what "restored on a later
@@ -118,6 +126,7 @@ export function MatchRow({ match, riotId }: MatchRowProps) {
           build={match.build}
           summonerSpells={analyzed?.summonerSpells ?? [0, 0]}
           runes={analyzed?.runes ?? EMPTY_RUNE_PAGE}
+          rating={playerRating}
         />
 
         {match.opponent === null ? (
@@ -144,6 +153,7 @@ export function MatchRow({ match, riotId }: MatchRowProps) {
             build={match.opponent.build}
             summonerSpells={enemyLaner?.summonerSpells ?? [0, 0]}
             runes={enemyLaner?.runes ?? EMPTY_RUNE_PAGE}
+            rating={opponentRating}
           />
         )}
       </div>

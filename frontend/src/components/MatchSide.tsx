@@ -32,6 +32,7 @@
  */
 
 import type { ItemBuild, RunePage } from '../api/types';
+import type { MatchRating } from '../domain/matchRating';
 import { ChampionIcon } from './ChampionIcon';
 import { ItemBuildRow } from './ItemBuildRow';
 import { RuneIcon } from './RuneIcon';
@@ -74,6 +75,8 @@ export interface MatchSideProps {
   /** `[0, 0]` when no marked participant row supplied one — resolves to placeholders. */
   summonerSpells: readonly [number, number];
   runes: RunePage;
+  /** This laner's LP Score; `null` when no marked participant row exists to rate. */
+  rating: MatchRating | null;
 }
 
 export function MatchSide({
@@ -90,6 +93,7 @@ export function MatchSide({
   build,
   summonerSpells,
   runes,
+  rating,
 }: MatchSideProps) {
   const label = side === 'player' ? 'You' : 'Opponent';
   // Requirement 4.5: preserve Riot's reported slot order — the keystone is
@@ -119,6 +123,16 @@ export function MatchSide({
             selectionIds={runes.secondarySelections}
           />
         </div>
+        {rating ? (
+          <div
+            className={`lp-score lp-score--${rating.tier}`}
+            data-testid={`lp-score-${side}`}
+            title="LP Score — overall match performance, 0 to 100"
+          >
+            <span className="lp-score-label">LP Score</span>
+            <span className="lp-score-value">{rating.score}</span>
+          </div>
+        ) : null}
       </div>
       <dl className="match-side-stats">
         <div className="match-side-stat">

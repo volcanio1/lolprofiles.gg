@@ -36,6 +36,7 @@ function participant(overrides: Partial<MatchParticipant> = {}): MatchParticipan
     turretKills: 0,
     dragonKills: 0,
     baronKills: 0,
+    pentaKills: 0,
     killParticipationPercent: 'N/A',
     augments: [],
     ...overrides,

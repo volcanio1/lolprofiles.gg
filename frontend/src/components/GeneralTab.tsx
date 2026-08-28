@@ -124,7 +124,7 @@ function ScoreboardRow({
       <td className="sb-num sb-rating-cell">
         <span
           className={`sb-rating sb-rating--${rating.tier}`}
-          title="Match performance rating (0–100)"
+          title="LP Score — overall match performance, 0 to 100"
         >
           {rating.score}
         </span>
@@ -167,7 +167,7 @@ export function GeneralTab({ participants, durationSeconds }: GeneralTabProps) {
                 <th scope="col" className="sb-num">Dmg</th>
                 <th scope="col" className="sb-num">Gold</th>
                 <th scope="col" className="sb-num">KP</th>
-                <th scope="col" className="sb-num">Rating</th>
+                <th scope="col" className="sb-num">LP</th>
               </tr>
             </thead>
             {/* Requirement 8.6: standard table row/header association is what ties

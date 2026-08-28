@@ -134,6 +134,7 @@ describe('toIncludedMatch', () => {
           turretKills: 0,
           dragonKills: 0,
           baronKills: 0,
+          pentaKills: 0,
           win: true,
           killParticipationPercent: 'N/A',
           augments: [],

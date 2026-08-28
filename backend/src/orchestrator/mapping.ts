@@ -337,6 +337,7 @@ export function toMatchParticipant(
     turretKills: finiteOrZero(participant.turretKills),
     dragonKills: finiteOrZero(participant.dragonKills),
     baronKills: finiteOrZero(participant.baronKills),
+    pentaKills: finiteOrZero(participant.pentaKills),
     win: participant.win === true,
     killParticipationPercent: killParticipationOf(kills, assists, teamKills),
     augments: augmentsOf(participant),

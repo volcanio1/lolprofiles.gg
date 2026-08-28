@@ -27,6 +27,7 @@ function p(overrides: Partial<MatchParticipant> = {}): MatchParticipant {
     turretKills: 1,
     dragonKills: 0,
     baronKills: 0,
+    pentaKills: 0,
     killParticipationPercent: 55,
     augments: [],
     ...overrides,
@@ -108,8 +109,28 @@ describe('computeMatchRating', () => {
       killParticipationPercent: 58,
       turretKills: 2,
       dragonKills: 1,
+      win: false,
     });
-    const rating = computeMatchRating(avg, lobby(avg), DURATION);
+    // A lobby where the hero sits mid-pack on damage, KDA and gold efficiency.
+    const roles = ['TOP', 'JUNGLE', 'BOTTOM', 'UTILITY', 'TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'];
+    const kdaLines: Array<[number, number, number]> = [
+      [10, 4, 4], [7, 4, 4], [5, 5, 6], [12, 4, 4], [9, 4, 5], [6, 4, 4], [3, 5, 6], [11, 4, 4], [4, 6, 4],
+    ];
+    const dmg = [24000, 19000, 16000, 26000, 22000, 18000, 14000, 25000, 17000];
+    const others = roles.map((teamPosition, i) =>
+      p({
+        teamId: i < 4 ? 100 : 200,
+        teamPosition,
+        kills: kdaLines[i][0],
+        deaths: kdaLines[i][1],
+        assists: kdaLines[i][2],
+        damageToChampions: dmg[i],
+        goldEarned: 13000,
+        killParticipationPercent: 58,
+        turretKills: 2,
+      }),
+    );
+    const rating = computeMatchRating(avg, [avg, ...others], DURATION);
     expect(rating.tier).toBe('decent');
     expect(rating.score).toBeGreaterThanOrEqual(48);
     expect(rating.score).toBeLessThan(75);

@@ -177,6 +177,8 @@ export interface MatchParticipant {
   turretKills: number;
   dragonKills: number;
   baronKills: number;
+  /** Pentakills in this game, for the match-performance rating. */
+  pentaKills: number;
   /** Requirement 3.4/3.6. 'N/A' exactly when the team's total kills is 0. */
   killParticipationPercent: number | 'N/A';
   /**
