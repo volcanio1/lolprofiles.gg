@@ -44,6 +44,16 @@ export function formatMatchDuration(durationSeconds: number): string {
   return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * A game that ended in an early-surrender remake — no win or loss is recorded
+ * against it. Riot does not expose the early-surrender flag through this
+ * application's model, so it is inferred from the game length: a remake ends
+ * seconds after the 3:00 vote, and no real game finishes that fast.
+ */
+export function isRemake(durationSeconds: number): boolean {
+  return Number.isFinite(durationSeconds) && durationSeconds > 0 && durationSeconds < 300;
+}
+
 function formatMatchDate(epochMs: number): string {
   const parsed = new Date(epochMs);
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
@@ -81,13 +91,17 @@ export function MatchRow({ match, riotId }: MatchRowProps) {
   const [selectedTab, setSelectedTab] = useState<DetailTabKey>('general');
   const panelId = `match-detail-panel-${match.matchId}`;
 
+  const remake = isRemake(match.durationSeconds);
+  const outcomeModifier = remake ? 'match-row--remake' : match.win ? 'match-row--win' : 'match-row--loss';
+  const outcomeText = remake ? 'Remake' : match.win ? 'Victory' : 'Defeat';
+
   return (
     <li
       data-testid={`recent-match-${match.matchId}`}
-      className={match.win ? 'match-row match-row--win' : 'match-row'}
+      className={`match-row ${outcomeModifier}`}
     >
       <div className="match-head">
-        <span className="match-outcome">{match.win ? 'Victory' : 'Defeat'}</span>
+        <span className="match-outcome">{outcomeText}</span>
         {/* Requirement 11.5: '' covers both an undetermined role on a laned
             match and every Laneless_Match — neither has a role worth showing. */}
         {match.role !== '' ? <span className="match-role">{match.role}</span> : null}

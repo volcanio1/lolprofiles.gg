@@ -152,6 +152,22 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
     expect(row).toHaveTextContent('24');
   });
 
+  it('marks a defeat with the loss modifier (red rail), not the neutral one reserved for remakes', () => {
+    render(<MatchRow riotId={RID} match={match({ win: false, durationSeconds: 1_800 })} />);
+    const row = screen.getByTestId('recent-match-NA1_1');
+    expect(row).toHaveTextContent('Defeat');
+    expect(row).toHaveClass('match-row--loss');
+    expect(row).not.toHaveClass('match-row--remake');
+  });
+
+  it('marks a game that ended in an early-surrender remake as neither a win nor a loss', () => {
+    render(<MatchRow riotId={RID} match={match({ win: false, durationSeconds: 220 })} />);
+    const row = screen.getByTestId('recent-match-NA1_1');
+    expect(row).toHaveTextContent('Remake');
+    expect(row).toHaveClass('match-row--remake');
+    expect(row).not.toHaveClass('match-row--loss');
+  });
+
   it('shows each side’s player name above their champion, reading from the marked participant', () => {
     render(
       <MatchRow riotId={RID}

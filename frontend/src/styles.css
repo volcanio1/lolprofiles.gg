@@ -781,7 +781,8 @@ figure {
 .match-row {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--loss);
+  /* Left rail: red for a defeat, gold for a win, grey reserved for a remake. */
+  border-left: 3px solid var(--error);
   border-radius: var(--radius);
   padding: 0.9rem 1.1rem 1rem;
   display: flex;
@@ -791,6 +792,10 @@ figure {
 
 .match-row--win {
   border-left-color: var(--gold);
+}
+
+.match-row--remake {
+  border-left-color: var(--loss);
 }
 
 .match-head {
@@ -812,11 +817,15 @@ figure {
   font-size: 0.8rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
-  color: var(--loss);
+  color: var(--error);
 }
 
 .match-row--win .match-outcome {
   color: var(--gold);
+}
+
+.match-row--remake .match-outcome {
+  color: var(--dim);
 }
 
 .match-role {

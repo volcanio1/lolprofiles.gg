@@ -224,6 +224,14 @@ describe('toIncludedMatch', () => {
     expect(missing?.role).toBe('CARRY');
   });
 
+  it('surfaces the UTILITY position as "Support"', () => {
+    const included = toIncludedMatch(
+      matchDto({ participants: [participant({ teamPosition: 'UTILITY' })] }),
+      PUUID,
+    );
+    expect(included?.role).toBe('Support');
+  });
+
   it('reports a blank role when Riot supplies neither field', () => {
     const included = toIncludedMatch(
       matchDto({ participants: [participant({ teamPosition: '', role: '' })] }),

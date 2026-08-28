@@ -167,14 +167,20 @@ function finiteOrZero(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-/** Decision 6: normalized lane, falling back to Riot's older `role` field. */
+/**
+ * Decision 6: normalized lane, falling back to Riot's older `role` field.
+ *
+ * `UTILITY` — Match-V5's name for the bot-lane support — is surfaced as
+ * `Support`, the term players actually use. This is a display normalization on
+ * the summary `role` string only; `MatchParticipant.teamPosition` is read
+ * directly elsewhere (Requirement 3.8) and keeps Riot's raw `UTILITY`.
+ */
 function roleOf(participant: { teamPosition?: string; role?: string }): string {
   const teamPosition = typeof participant.teamPosition === 'string' ? participant.teamPosition.trim() : '';
-  if (teamPosition.length > 0) {
-    return teamPosition;
-  }
-  const role = typeof participant.role === 'string' ? participant.role.trim() : '';
-  return role;
+  const raw = teamPosition.length > 0
+    ? teamPosition
+    : typeof participant.role === 'string' ? participant.role.trim() : '';
+  return raw === 'UTILITY' ? 'Support' : raw;
 }
 
 /** Minion + neutral-monster kills, coerced per decision 5. */
