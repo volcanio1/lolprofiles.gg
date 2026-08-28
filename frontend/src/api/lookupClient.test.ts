@@ -10,6 +10,7 @@ import {
   readBuildPathResponse,
   readCachedReport,
   readErrorPayload,
+  readLiveGameResponse,
   readSuggestions,
   synthesizedError,
   type FetchLike,
@@ -497,5 +498,51 @@ describe('readSuggestions', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ gameName: `P${String(i)}`, tagLine: 'T', profileIconId: null, region: 'na1' }));
     expect(readSuggestions(many)).toHaveLength(8);
     expect(readSuggestions({})).toEqual([]);
+  });
+});
+
+describe('readLiveGameResponse', () => {
+  const participant = (over: Record<string, unknown> = {}) => ({
+    puuid: 'p1',
+    teamId: 100,
+    championId: 1,
+    spell1Id: 4,
+    spell2Id: 7,
+    perkIds: [8005],
+    isBot: false,
+    riotId: null,
+    rankedEntries: null,
+    championMasteryPoints: null,
+    championMasteryLevel: null,
+    ...over,
+  });
+  const lobby = (participants: unknown[]) => ({
+    kind: 'in_game',
+    lobby: {
+      gameId: 1,
+      platformId: 'EUW1',
+      matchId: 'EUW1_1',
+      queueId: 400,
+      mapId: 11,
+      gameStartTime: 1_700_000_000_000,
+      bannedChampionIds: [],
+      participants,
+      insights: { offChampion: [], oneTricks: [], rankSpread: null },
+    },
+  });
+
+  it('passes not_in_game through', () => {
+    expect(readLiveGameResponse({ kind: 'not_in_game' })).toEqual({ kind: 'not_in_game' });
+  });
+
+  it('accepts an in_game lobby, including a participant Riot did not give a puuid for', () => {
+    const parsed = readLiveGameResponse(lobby([participant(), participant({ puuid: '' })]));
+    expect(parsed?.kind).toBe('in_game');
+  });
+
+  it('rejects a body that is not a live-game response', () => {
+    expect(readLiveGameResponse({ kind: 'in_game', lobby: { matchId: 5 } })).toBeNull();
+    expect(readLiveGameResponse(null)).toBeNull();
+    expect(readLiveGameResponse(lobby([{ teamId: 100 }]))).toBeNull(); // participant missing fields
   });
 });

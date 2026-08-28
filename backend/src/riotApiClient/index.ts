@@ -72,6 +72,7 @@ import {
   type RateLimitManager,
 } from '../rateLimit';
 import type { TimelineEventDto } from '../insight/buildPath';
+import type { CurrentGameInfo } from '../liveGame/types';
 import type { PlatformRoutingValue, RegionalRoutingValue } from '../region';
 import { projectMatchDto } from './matchProjection';
 
@@ -102,6 +103,12 @@ export const RIOT_METHODS = {
   matchIds: 'matchIds',
   matchDetail: 'matchDetail',
   matchTimeline: 'matchTimeline',
+  /** live-game: Spectator-V5 active-games-by-summoner. */
+  spectator: 'spectator',
+  /** live-game: Account-V1 accounts-by-puuid (per-participant Riot ID). */
+  accountByPuuid: 'accountByPuuid',
+  /** live-game: Champion-Mastery-V4 by-puuid-by-champion. */
+  championMastery: 'championMastery',
 } as const;
 
 export type RiotMethod = (typeof RIOT_METHODS)[keyof typeof RIOT_METHODS];
@@ -134,6 +141,16 @@ export interface SummonerDto {
   id?: string;
   summonerLevel: number;
   profileIconId: number;
+}
+
+/**
+ * Champion-Mastery-V4 by-puuid-by-champion (live-game Requirement 2.3). Only the
+ * two fields the Participant Enricher reads are modelled (decision 5).
+ */
+export interface ChampionMasteryDto {
+  championId: number;
+  championLevel: number;
+  championPoints: number;
 }
 
 /** League-V4. `rank` is Riot's field name for the division (e.g. `"IV"`). */
@@ -303,6 +320,30 @@ export interface RiotApiClient {
     region: RegionalRoutingValue,
     matchId: string,
   ): Promise<RiotApiResult<MatchTimelineDto>>;
+  /**
+   * live-game Requirement 1.1. Spectator-V5 active-games-by-summoner, platform
+   * routing. A 404 maps to `{ kind: 'not_found' }`, which the Live Game
+   * Orchestrator reads as "not in a game" — a state, not an error (Requirement 1.2).
+   */
+  getActiveGameByPuuid(
+    platform: PlatformRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<CurrentGameInfo>>;
+  /** live-game Requirement 2.1. Account-V1 accounts-by-puuid, regional routing. */
+  getAccountByPuuid(
+    region: RegionalRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<AccountDto>>;
+  /**
+   * live-game Requirement 2.3. Champion-Mastery-V4 by-puuid-by-champion, platform
+   * routing. A 404 (the player has never played the champion) maps to
+   * `{ kind: 'not_found' }`; the enricher decides what that means for the card.
+   */
+  getChampionMastery(
+    platform: PlatformRoutingValue,
+    puuid: string,
+    championId: number,
+  ): Promise<RiotApiResult<ChampionMasteryDto>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -505,6 +546,36 @@ class HttpRiotApiClient implements RiotApiClient {
   ): Promise<RiotApiResult<MatchTimelineDto>> {
     const url = `${baseUrl(region)}/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`;
     return this.send<MatchTimelineDto>(url, region, RIOT_METHODS.matchTimeline);
+  }
+
+  /** live-game Requirement 1.1. Platform routing; same `send()` policy as every other call. */
+  async getActiveGameByPuuid(
+    platform: PlatformRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<CurrentGameInfo>> {
+    const url = `${baseUrl(platform)}/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`;
+    return this.send<CurrentGameInfo>(url, platform, RIOT_METHODS.spectator);
+  }
+
+  /** live-game Requirement 2.1. Regional routing. */
+  async getAccountByPuuid(
+    region: RegionalRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<AccountDto>> {
+    const url = `${baseUrl(region)}/riot/account/v1/accounts/by-puuid/${encodeURIComponent(puuid)}`;
+    return this.send<AccountDto>(url, region, RIOT_METHODS.accountByPuuid);
+  }
+
+  /** live-game Requirement 2.3. Platform routing. */
+  async getChampionMastery(
+    platform: PlatformRoutingValue,
+    puuid: string,
+    championId: number,
+  ): Promise<RiotApiResult<ChampionMasteryDto>> {
+    const url =
+      `${baseUrl(platform)}/lol/champion-mastery/v4/champion-masteries/by-puuid/` +
+      `${encodeURIComponent(puuid)}/by-champion/${encodeURIComponent(String(championId))}`;
+    return this.send<ChampionMasteryDto>(url, platform, RIOT_METHODS.championMastery);
   }
 
   /**

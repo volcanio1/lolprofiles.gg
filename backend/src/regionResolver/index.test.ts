@@ -27,6 +27,15 @@ function fakeClient(respond: (puuid: string) => Promise<RiotApiResult<AccountReg
     getMatchTimeline: () => {
       throw new Error('not used by RegionResolver');
     },
+    getActiveGameByPuuid: () => {
+      throw new Error('not used by RegionResolver');
+    },
+    getAccountByPuuid: () => {
+      throw new Error('not used by RegionResolver');
+    },
+    getChampionMastery: () => {
+      throw new Error('not used by RegionResolver');
+    },
   };
 }
 

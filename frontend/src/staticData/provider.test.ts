@@ -222,6 +222,29 @@ describe('StaticDataProvider — champions', () => {
   });
 });
 
+describe('StaticDataProvider — championKeyForId (live-game Requirement 7.3)', () => {
+  it('resolves a numeric champion id to its Champion_Key', () => {
+    expect(ready.championKeyForId(62)).toBe('MonkeyKing');
+    expect(ready.championKeyForId(266)).toBe('Aatrox');
+  });
+
+  it('returns null for an unknown id, before the index loads, and for hostile ids', () => {
+    expect(ready.championKeyForId(999_999)).toBeNull();
+    expect(versionOnly.championKeyForId(62)).toBeNull();
+    expect(empty.championKeyForId(62)).toBeNull();
+    for (const id of HOSTILE_IDS) {
+      expect(() => ready.championKeyForId(id)).not.toThrow();
+      expect(ready.championKeyForId(id)).toBeNull();
+    }
+  });
+
+  it('never resolves a prototype-chain key as if it were a champion id', () => {
+    for (const key of PROTOTYPE_KEYS) {
+      expect(ready.championKeyForId(Number(key))).toBeNull();
+    }
+  });
+});
+
 describe('StaticDataProvider — profile icons', () => {
   it('treats 0 as a real icon, because Data Dragon serves one', () => {
     expect(ready.profileIconUrl(0)).toBe(
@@ -420,6 +443,7 @@ describe('StaticDataProvider — totality (Requirements 5.3, 5.4)', () => {
     const traversal = createStaticDataProvider(VERSION, {
       version: VERSION,
       champions: { Evil: { name: 'Evil', image: '../../evil.png' } },
+      championsById: {},
       items: {},
       spells: {},
       runes: {},
@@ -451,6 +475,7 @@ describe('StaticDataProvider — regressions found in review', () => {
     const malformed = createStaticDataProvider(VERSION, {
       version: VERSION,
       champions: { Broken: { name: 42, image: null } as never },
+      championsById: {},
       items: { '1': { name: null } as never },
       spells: {},
       runes: {},

@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 
 /**
  * Route tests for the pinned Data Dragon version endpoint. The orchestrator is a
@@ -19,12 +20,17 @@ const stubBuildPathOrchestrator: BuildPathOrchestrator = {
   getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
 };
 
+const stubLiveGameOrchestrator: LiveGameOrchestrator = {
+  getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
+};
+
 function makeApp(dataDragonVersion = '16.17.1') {
   const now = () => 1_000;
   return createApp({
     dataDragonVersion,
     orchestrator: stubOrchestrator,
     buildPathOrchestrator: stubBuildPathOrchestrator,
+    liveGameOrchestrator: stubLiveGameOrchestrator,
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },
@@ -69,6 +75,7 @@ describe('GET /api/static-data', () => {
         },
       },
       buildPathOrchestrator: stubBuildPathOrchestrator,
+      liveGameOrchestrator: stubLiveGameOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

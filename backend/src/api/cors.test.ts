@@ -4,6 +4,7 @@ import express from 'express';
 import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import { createApiRouter } from './index';
 import { parseAllowedOrigins } from './cors';
 
@@ -28,6 +29,10 @@ const stubBuildPathOrchestrator: BuildPathOrchestrator = {
   getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
 };
 
+const stubLiveGameOrchestrator: LiveGameOrchestrator = {
+  getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
+};
+
 function makeApp(allowedOrigins?: readonly string[]) {
   const now = () => 1_000;
   const app = express();
@@ -37,6 +42,7 @@ function makeApp(allowedOrigins?: readonly string[]) {
       dataDragonVersion: '16.17.1',
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
+      liveGameOrchestrator: stubLiveGameOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

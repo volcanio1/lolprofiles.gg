@@ -342,3 +342,62 @@ export interface ApiErrorBody {
 export type CachedReportResponse =
   | { source: 'cache'; report: ProfileReport; fetchedAt: string }
   | { source: 'miss' };
+
+// ---------------------------------------------------------------------------
+// live-game: GET /api/live-game
+// ---------------------------------------------------------------------------
+
+/** One of a live lobby's ranked queue entries (mirror of the backend `LeagueEntry`). */
+export interface LiveRankedEntry {
+  queueType: string;
+  tier: string;
+  division: string;
+  leaguePoints: number;
+  wins: number;
+  losses: number;
+}
+
+/** One player in a live lobby: the Spectator-V5 participant plus the joined enrichment. */
+export interface LiveParticipantCard {
+  puuid: string;
+  teamId: number;
+  championId: number;
+  spell1Id: number;
+  spell2Id: number;
+  perkIds: readonly number[];
+  isBot: boolean;
+  /** `null` when enrichment failed or the participant is a bot. */
+  riotId: RiotIdParts | null;
+  /** `null` when the League-V4 call failed; `[]` is a successful "unranked". */
+  rankedEntries: readonly LiveRankedEntry[] | null;
+  championMasteryPoints: number | null;
+  championMasteryLevel: number | null;
+}
+
+export interface LobbyInsights {
+  /** puuids playing a champion they barely have mastery on. */
+  offChampion: readonly string[];
+  /** puuids who are a one-trick on the locked champion. */
+  oneTricks: readonly string[];
+  /** `null` when fewer than two participants are ranked in the game's queue. */
+  rankSpread: { highest: string; lowest: string } | null;
+}
+
+export interface LiveGameLobby {
+  gameId: number;
+  platformId: string;
+  /** `${platformId}_${gameId}` — the id the finished game is published under. */
+  matchId: string;
+  queueId: number;
+  mapId: number;
+  /** Epoch ms, or `null` for a game that has not started (Pre-Game). */
+  gameStartTime: number | null;
+  bannedChampionIds: readonly number[];
+  participants: readonly LiveParticipantCard[];
+  insights: LobbyInsights;
+}
+
+/** The body of `GET /api/live-game`. Both variants are HTTP 200. */
+export type LiveGameResponse =
+  | { kind: 'in_game'; lobby: LiveGameLobby }
+  | { kind: 'not_in_game' };

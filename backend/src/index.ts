@@ -48,6 +48,7 @@ import {
 import { createNoopMatchStore, MongoMatchStore, type MatchStore } from './db/matchStore';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
+import { createLiveGameOrchestrator } from './liveGame/orchestrator';
 import { createRateLimitManager } from './rateLimit';
 import { createRiotApiClient, type RiotHttpTransport } from './riotApiClient';
 
@@ -106,6 +107,8 @@ async function main(): Promise<void> {
 
   const buildPathOrchestrator = createBuildPathOrchestrator({ cache, riotApiClient, now });
 
+  const liveGameOrchestrator = createLiveGameOrchestrator({ client: riotApiClient, cache, now });
+
   const staticDir =
     config.frontendDistPath === undefined
       ? undefined
@@ -116,6 +119,7 @@ async function main(): Promise<void> {
   const app = createApp({
     orchestrator,
     buildPathOrchestrator,
+    liveGameOrchestrator,
     cache,
     now,
     allowedOrigins: config.allowedOrigins,

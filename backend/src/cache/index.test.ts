@@ -10,6 +10,7 @@ import {
 const ONE_HOUR_MS = 3_600_000;
 const TEN_MINUTES_MS = 600_000;
 const TWENTY_FOUR_HOURS_MS = 86_400_000;
+const THIRTY_SECONDS_MS = 30_000;
 
 /** Fake clock: tests never rely on wall-clock time. */
 function fakeClock(start = 1_000_000) {
@@ -33,6 +34,9 @@ describe('TTL_BY_ENDPOINT', () => {
       matchIds: TEN_MINUTES_MS,
       matchDetail: 'infinite',
       timelineSlice: 'infinite',
+      activeGame: THIRTY_SECONDS_MS,
+      championMastery: ONE_HOUR_MS,
+      tournamentSchedule: ONE_HOUR_MS,
     });
   });
 });
@@ -359,6 +363,34 @@ describe('InMemoryCacheStore.deleteByPuuid', () => {
     expect(
       await store.get({ endpoint: 'matchDetail', routingValue: 'americas', params: { matchId: 'NA1_2' } }),
     ).toBeDefined();
+  });
+
+  // live-game Requirements 6.5 / 6.6
+  it('removes the subject\'s own activeGame and championMastery entries and any lobby it appears inside', async () => {
+    const store = createInMemoryCacheStore({ now: fakeClock().now });
+    // Keyed by the subject.
+    await store.set(
+      { endpoint: 'activeGame', routingValue: 'na1', params: { puuid: TARGET } },
+      { gameId: 1, participants: [{ puuid: TARGET }, { puuid: OTHER }] },
+      TTL_BY_ENDPOINT.activeGame,
+    );
+    await store.set(
+      { endpoint: 'championMastery', routingValue: 'na1', params: { puuid: TARGET, championId: '62' } },
+      { championPoints: 1234 },
+      TTL_BY_ENDPOINT.championMastery,
+    );
+    // Another player's lobby that the subject is a participant of (Requirement 6.6).
+    await store.set(
+      { endpoint: 'activeGame', routingValue: 'na1', params: { puuid: OTHER } },
+      { gameId: 1, participants: [{ puuid: OTHER }, { puuid: TARGET }] },
+      TTL_BY_ENDPOINT.activeGame,
+    );
+
+    const result = await store.deleteByPuuid(TARGET);
+
+    expect(result.removedEntryCount).toBe(3);
+    expect(result.removedMatchDetailCount).toBe(0);
+    expect(store.size).toBe(0);
   });
 
   it('leaves entries belonging to an unrelated PUUID untouched', async () => {

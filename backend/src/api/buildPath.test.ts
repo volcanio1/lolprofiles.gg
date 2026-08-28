@@ -20,6 +20,7 @@ function appWith(getBuildPath: BuildPathOrchestrator['getBuildPath']) {
     createApiRouter({
       orchestrator: stubLookup,
       buildPathOrchestrator: { getBuildPath: vi.fn(getBuildPath) },
+      liveGameOrchestrator: { getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }) },
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

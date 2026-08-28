@@ -212,11 +212,11 @@ import type {
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
-  RiotApiResult,
   SummonerDto,
   TimeoutScheduler,
 } from '../riotApiClient';
 import type { RiotIdParts } from '../validator';
+import { enrich } from './enrich';
 import {
   cacheOrFetch,
   isCacheOrFetchFailure,
@@ -1301,19 +1301,6 @@ function canonicalRiotId(ctx: LookupContext): RiotIdParts {
     gameName: gameName ?? ctx.submittedRiotId.gameName,
     tagLine: tagLine ?? ctx.submittedRiotId.tagLine,
   };
-}
-
-/**
- * Requirement 4.1/4.4/4.5. Translates an Enrichment_Call's `RiotApiResult` into
- * `T | null` with no error channel at all — there is no failure branch to
- * inspect, which is what makes Requirement 4.5 ("no error code, routing
- * decision, or pipeline-halting condition derives from this call") checkable by
- * looking at this function's return type rather than by auditing every call
- * site that might have branched on it.
- */
-async function enrich<T>(fetch: () => Promise<RiotApiResult<T>>): Promise<T | null> {
-  const result = await fetch();
-  return result.kind === 'ok' ? result.data : null;
 }
 
 /**

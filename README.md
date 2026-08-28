@@ -43,7 +43,7 @@ Backend API (Express + TypeScript)
    │            └─ Rate Limit Manager ... one instance, per routing value
    └─ Insight Engine .... pure function over assembled data (no I/O)
    ▼
-Riot Games APIs — Account-V1, Summoner-V4, League-V4, Match-V5
+Riot Games APIs — Account-V1, Summoner-V4, League-V4, Match-V5, Spectator-V5, Champion-Mastery-V4
 ```
 
 Four decisions worth calling out:
@@ -230,6 +230,50 @@ Reconstructs one player's **build path** for one match — the ordered sequence 
 
 The frontend fetches this **only when the Build Path tab of an expanded match is selected** — never during report assembly, never on row expansion.
 
+### `GET /api/live-game`
+
+```
+GET /api/live-game?gameName=Faker&tagLine=KR1
+```
+
+Reports the game a player is **in right now**. `gameName`/`tagLine` are validated through the same Riot ID Validator as the lookup route; the platform is discovered from the PUUID (Region Resolver), so no region is supplied. Spectator-V5's active-games endpoint gives ten PUUIDs and champion ids and nothing else — every name, rank and mastery figure is joined onto that skeleton per participant from Account-V1, League-V4 and Champion-Mastery-V4.
+
+`200` for both outcomes — **not being in a game is a state, not an error**:
+
+```jsonc
+// in a game
+{ "kind": "in_game",
+  "lobby": {
+    "gameId": 987654, "platformId": "NA1",
+    "matchId": "NA1_987654",          // the id the finished game will be published under
+    "queueId": 420, "mapId": 11,
+    "gameStartTime": 1700000000000,   // epoch ms, or null for champion select (Pre-Game)
+    "bannedChampionIds": [200, 51],
+    "participants": [
+      { "puuid": "...", "teamId": 100, "championId": 266,
+        "spell1Id": 4, "spell2Id": 7, "perkIds": [8005, 9111],
+        "isBot": false,
+        "riotId": { "gameName": "...", "tagLine": "NA1" },  // null if enrichment failed / bot
+        "rankedEntries": [ { "queueType": "RANKED_SOLO_5x5", "tier": "GOLD", "division": "II",
+                             "leaguePoints": 40, "wins": 12, "losses": 8 } ],
+        // rankedEntries is [] for a successful "unranked", null if the League-V4 call failed
+        "championMasteryPoints": 60000, "championMasteryLevel": 7 }
+      // ... 9 more, in Spectator-V5's order
+    ],
+    "insights": {
+      "offChampion": ["puuid-a"],   // < 10,000 mastery on the locked champion, and some record exists
+      "oneTricks":   ["puuid-b"],   // >= 200,000 mastery on the locked champion
+      "rankSpread":  { "highest": "DIAMOND", "lowest": "SILVER" }  // null when < 2 participants are ranked in the game's queue
+    }
+  }
+}
+
+// not currently in a game
+{ "kind": "not_in_game" }
+```
+
+**A failed enrichment call degrades one field, never the card or the lobby** — a card always renders, with the failed field absent. Bot participants get a card with every enrichment field absent and no call issued. The frontend polls this endpoint no more often than **every 30 seconds** while the lobby is on screen, ticks the game clock locally between polls, and switches to a game-ended state when a lobby it was showing returns `not_in_game`.
+
 ### `GET /api/players/suggest`
 
 ```
@@ -329,6 +373,8 @@ A resolved platform is cached for 24 hours (the `accountRegion` cache endpoint) 
 | Match-V5 match IDs | 10 minutes | New matches appear |
 | Match-V5 match detail | Indefinite (in memory) + `match_details` collection when a database is configured, so it **survives restarts** — see [Database](#database) | A completed match is immutable. The raw 50–120 KB response is trimmed to the ~40 fields the code reads (~5 KB) before it's cached or stored |
 | Match-V5 timeline slice | Indefinite | One player's reconstructed build path (~2 KB); the match is immutable. Safe only because it's kilobytes — the raw 0.3–1 MB timeline it's derived from has **no** cache entry type and is discarded after parsing |
+| Spectator-V5 active game | **30 seconds** | The live game changes by the second; the TTL matches the poll floor so a poll is never answered entirely from cache. A `not_found` ("not in a game") is **never cached** — caching it would delay noticing a game starting by up to a full TTL |
+| Champion-Mastery-V4 (by-champion) | 1 hour | Mastery moves a few thousand points per game — invisible at the 10k / 200k insight thresholds over an hour. Account-V1 (by-puuid) and League-V4 enrichment reuse the `account` / `league` entries above; the live feature does **not** shorten them to the 30s active-game cadence |
 
 Cache keys are length-prefixed per segment so concatenation is injective — `{"a:b": "c"}` and `{"a": "b:c"}` can't collide.
 
@@ -366,7 +412,7 @@ npm run test:backend
 npm run test:frontend
 ```
 
-36 backend test files, 28 frontend. Beyond conventional unit and integration tests (including supertest-driven route tests and an end-to-end pass over fakes), the backend carries **24 property-based invariants** in 11 `*.property.test.ts` files, each running 100–400 cases via fast-check — covering region-mapping closure, the win-rate and KDA formulas, top-champion ordering, tie-breaking, 429 retry bounds, cache key injectivity, TTL staleness, deletion idempotence, the guarantee that the API key never appears in client-facing output, and (added by `match-detail-tabs`) kill-participation bounds, participant-capture fidelity down to matches with fewer than ten players, PUUID absence, and the Enemy_Laner marker's correctness under a mirror pick. Each property test also asserts it actually exercised every branch it claims to, so degenerate coverage fails loudly.
+50+ backend test files, 40+ frontend. Beyond conventional unit and integration tests (including supertest-driven route tests and an end-to-end pass over fakes), the backend carries **24 property-based invariants** in 11 `*.property.test.ts` files, each running 100–400 cases via fast-check — covering region-mapping closure, the win-rate and KDA formulas, top-champion ordering, tie-breaking, 429 retry bounds, cache key injectivity, TTL staleness, deletion idempotence, the guarantee that the API key never appears in client-facing output, and (added by `match-detail-tabs`) kill-participation bounds, participant-capture fidelity down to matches with fewer than ten players, PUUID absence, and the Enemy_Laner marker's correctness under a mirror pick. Each property test also asserts it actually exercised every branch it claims to, so degenerate coverage fails loudly.
 
 No test touches the live Riot API, real credentials, real network, or real timers.
 

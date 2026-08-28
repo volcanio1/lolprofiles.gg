@@ -12,6 +12,7 @@ import {
 } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import { createApiRouter, type ApiLogger } from './index';
 
 /**
@@ -34,6 +35,10 @@ const stubOrchestrator: LookupOrchestrator = {
 
 const stubBuildPathOrchestrator: BuildPathOrchestrator = {
   getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
+};
+
+const stubLiveGameOrchestrator: LiveGameOrchestrator = {
+  getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
 };
 
 interface Harness {
@@ -65,6 +70,7 @@ function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
     createApiRouter({
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
+      liveGameOrchestrator: stubLiveGameOrchestrator,
       cache: store,
       now,
       logger,

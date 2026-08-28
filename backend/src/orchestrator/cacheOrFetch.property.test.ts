@@ -45,6 +45,9 @@ const EXPECTED_RETENTION_MS: Readonly<Record<CacheEndpoint, number | 'infinite'>
   matchIds: 10 * 60 * 1000,
   matchDetail: 'infinite',
   timelineSlice: 'infinite',
+  activeGame: 30 * 1000,
+  championMastery: 60 * 60 * 1000,
+  tournamentSchedule: 60 * 60 * 1000,
 };
 
 /** Independent staleness oracle: non-stale up to and including the boundary. */
@@ -157,6 +160,9 @@ describe('cacheOrFetch properties', () => {
       matchIds: 0,
       matchDetail: 0,
       timelineSlice: 0,
+      activeGame: 0,
+      championMastery: 0,
+      tournamentSchedule: 0,
     };
     let boundaryCount = 0;
 

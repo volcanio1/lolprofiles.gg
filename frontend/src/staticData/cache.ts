@@ -50,8 +50,11 @@ import type { StaticDataIndex } from './provider';
  * `AssetDescription`), so every asset would resolve to a placeholder until the
  * entry expired. v5 -> v6 when summoner spell entries gained a `cooldown` field:
  * an older entry validates but shows no cooldown in the tooltip until it expires.
+ * v6 -> v7 when `live-game` added `championsById` (numeric id -> Champion_Key): an
+ * older entry validates by shape and would serve as "ready" while every live-game
+ * champion resolves to its numeric id for a full 24-hour retention period.
  */
-const STORAGE_KEY = 'lolprofiles.staticData.v6';
+const STORAGE_KEY = 'lolprofiles.staticData.v7';
 
 /** Requirement 4.4 — "no less than 24 hours". */
 export const STATIC_DATA_TTL_MS = 24 * 60 * 60 * 1000;
@@ -86,6 +89,8 @@ function isWellShapedIndex(candidate: unknown, version: string): candidate is St
     index.version === version &&
     index.champions !== null &&
     typeof index.champions === 'object' &&
+    index.championsById !== null &&
+    typeof index.championsById === 'object' &&
     index.items !== null &&
     typeof index.items === 'object' &&
     index.spells !== null &&

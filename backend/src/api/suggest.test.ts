@@ -9,6 +9,7 @@ import {
 } from '../db/lookedUpPlayerStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import { createInMemoryCacheStore } from '../cache';
 import { createApiRouter, type ApiLogger } from './index';
 import { clampLimit, MAX_SUGGESTIONS } from './suggest';
@@ -30,6 +31,10 @@ const stubBuildPathOrchestrator: BuildPathOrchestrator = {
   getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
 };
 
+const stubLiveGameOrchestrator: LiveGameOrchestrator = {
+  getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
+};
+
 interface Harness {
   app: Express;
   suggestErrors: unknown[];
@@ -49,6 +54,7 @@ function makeHarness(lookedUpPlayerStore?: LookedUpPlayerStore): Harness {
     createApiRouter({
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
+      liveGameOrchestrator: stubLiveGameOrchestrator,
       cache: createInMemoryCacheStore({ now: () => NOW }),
       now: () => NOW,
       logger,

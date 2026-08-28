@@ -53,7 +53,10 @@ export type CacheEndpoint =
   | 'league'
   | 'matchIds'
   | 'matchDetail'
-  | 'timelineSlice';
+  | 'timelineSlice'
+  | 'activeGame'
+  | 'championMastery'
+  | 'tournamentSchedule';
 
 export interface CacheKey {
   endpoint: CacheEndpoint;
@@ -103,6 +106,8 @@ export interface CacheStore {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const TEN_MINUTES_MS = 10 * 60 * 1000;
+/** live-game Requirement 6.2: bounds how stale a displayed lobby can be, and matches the poll floor. */
+const THIRTY_SECONDS_MS = 30 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -123,6 +128,16 @@ export const TTL_BY_ENDPOINT: Readonly<Record<CacheEndpoint, number | 'infinite'
   matchIds: TEN_MINUTES_MS,
   matchDetail: 'infinite',
   timelineSlice: 'infinite',
+  // live-game Requirements 6.2/6.4: the live game changes by the second (30s);
+  // mastery is invisible at this feature's thresholds over an hour. Enrichment
+  // endpoints keep their own retention (Requirement 6.3). A Spectator-V5
+  // `not_found` is not cached at all — that is task 5.1's rule, not this table's.
+  activeGame: THIRTY_SECONDS_MS,
+  championMastery: ONE_HOUR_MS,
+  // clash-scouting Requirement 5.4: Riot schedules Clash cups weeks ahead, and
+  // the tournaments endpoint's 10/min limit makes anything shorter unwise. Written
+  // only by the background Tournament Refresher, never on a request path.
+  tournamentSchedule: ONE_HOUR_MS,
 };
 
 /**

@@ -2405,3 +2405,159 @@ th[scope='row'].sb-player {
   color: #16130f;
   font-weight: 700;
 }
+
+/* --------------------------------------------------------------- live game */
+
+.live-game {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.live-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.live-clock {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-clock--pregame {
+  font-size: 1rem;
+  color: var(--dim);
+}
+
+.live-queue {
+  font-family: var(--font-display);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.live-spread {
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-left: auto;
+}
+
+.live-bans {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.live-bans-label {
+  font-family: var(--font-display);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--dim);
+  margin-right: 0.3rem;
+}
+
+.live-ban {
+  filter: grayscale(0.6) brightness(0.8);
+}
+
+.live-teams {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 800px) {
+  .live-teams {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.live-team {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.live-card {
+  display: grid;
+  grid-template-columns: 40px auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.live-card--bot {
+  opacity: 0.7;
+}
+
+.live-card-loadout {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.live-card-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.live-card-name {
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-card-rank {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.live-card-mastery {
+  font-size: 0.72rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-flag {
+  font-family: var(--font-display);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.live-flag--onetrick {
+  background: var(--gold);
+  color: #16130f;
+  border-color: var(--gold);
+}

@@ -61,6 +61,7 @@ import {
 import { platformLabel } from '../domain/regions';
 import { ChampionPreferences } from './ChampionPreferences';
 import { GamemodeFilter } from './GamemodeFilter';
+import { LiveGamePanel } from './LiveGamePanel';
 import { PremadesPanel } from './PremadesPanel';
 import { RankHistoryGraph } from './RankHistoryGraph';
 import { RolePerformancePanel } from './RolePerformancePanel';
@@ -151,6 +152,12 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
   const sidebarRoles = report.rolePerformanceByQueue[sidebarQueueFilter];
   const sidebarPremades = report.premadesByQueue[sidebarQueueFilter];
   const standingQueue = standingQueueFor(sidebarQueueFilter, report.stats.rankedByQueue);
+
+  const [mainTab, setMainTab] = useState<'recent' | 'live'>('recent');
+  const liveRiotId = useMemo(
+    () => ({ gameName: report.riotId.gameName, tagLine: report.riotId.tagLine }),
+    [report.riotId.gameName, report.riotId.tagLine],
+  );
 
   const [queueFilter, setQueueFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(RECENT_MATCHES_PAGE_SIZE);
@@ -323,31 +330,54 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
         </aside>
 
         <div className="report-main">
-          <section className="rsec" aria-labelledby="recent-matches-heading">
+          <section className="rsec" aria-label="Recent matches and live game">
             <div className="rsec-title-row">
-              <h3 id="recent-matches-heading" className="rsec-title">
-                Recent matches
-              </h3>
-              <label className="rsec-filter">
-                <span className="sr-only">Filter recent matches by queue type</span>
-                <select
-                  className="field-select rsec-filter-select"
-                  data-testid="recent-matches-queue-filter"
-                  value={queueFilter}
-                  onChange={(event) => {
-                    setQueueFilter(event.target.value);
-                    setVisibleCount(RECENT_MATCHES_PAGE_SIZE);
-                  }}
+              <div className="queue-tabs" role="tablist" aria-label="Recent matches or live game" data-testid="main-tabs">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mainTab === 'recent'}
+                  className={mainTab === 'recent' ? 'queue-tab queue-tab--active' : 'queue-tab'}
+                  data-testid="main-tab-recent"
+                  onClick={() => setMainTab('recent')}
                 >
-                  {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  Recent matches
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mainTab === 'live'}
+                  className={mainTab === 'live' ? 'queue-tab queue-tab--active' : 'queue-tab'}
+                  data-testid="main-tab-live"
+                  onClick={() => setMainTab('live')}
+                >
+                  Live game
+                </button>
+              </div>
+              {mainTab === 'recent' ? (
+                <label className="rsec-filter">
+                  <span className="sr-only">Filter recent matches by queue type</span>
+                  <select
+                    className="field-select rsec-filter-select"
+                    data-testid="recent-matches-queue-filter"
+                    value={queueFilter}
+                    onChange={(event) => {
+                      setQueueFilter(event.target.value);
+                      setVisibleCount(RECENT_MATCHES_PAGE_SIZE);
+                    }}
+                  >
+                    {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
-            {report.recentMatches.length === 0 ? (
+            {mainTab === 'live' ? (
+              <LiveGamePanel riotId={liveRiotId} />
+            ) : report.recentMatches.length === 0 ? (
               <p data-testid="no-recent-matches" className="empty-note">
                 No recent matches available.
               </p>

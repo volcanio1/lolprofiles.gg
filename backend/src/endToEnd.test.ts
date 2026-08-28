@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { createInMemoryCacheStore, type InMemoryCacheStore } from './cache';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
+import { createLiveGameOrchestrator } from './liveGame/orchestrator';
 import { createRateLimitManager } from './rateLimit';
 import {
   createRiotApiClient,
@@ -173,6 +174,7 @@ function makeHarness(): Harness {
     dataDragonVersion: '16.17.1',
     orchestrator,
     buildPathOrchestrator: createBuildPathOrchestrator({ cache, riotApiClient, now }),
+    liveGameOrchestrator: createLiveGameOrchestrator({ client: riotApiClient, cache, now }),
     cache,
     now,
     logger: { unexpectedError: () => undefined },

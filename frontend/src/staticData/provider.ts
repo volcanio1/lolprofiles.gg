@@ -263,6 +263,13 @@ export interface StaticDataIndex {
   version: string;
   /** Keyed by Champion_Key, e.g. `MonkeyKing`. */
   champions: Record<string, ChampionEntry>;
+  /**
+   * `live-game` Requirement 7.3. Numeric champion id (as a string) -> Champion_Key,
+   * e.g. `"62"` -> `MonkeyKing`. Spectator-V5 reports champions numerically while
+   * Match-V5 reports the key, so the lobby needs this direction to reach every
+   * other champion accessor. Built from `champion.json`'s existing `key` field.
+   */
+  championsById: Record<string, string>;
   /** Keyed by the item id as a string. */
   items: Record<string, ItemEntry>;
   /**
@@ -294,6 +301,12 @@ export interface StaticDataProvider {
   /** Display name for a Champion_Key; the key itself when unresolvable. */
   championDisplayName(key: string): string;
   championIconUrl(key: string): string | null;
+  /**
+   * `live-game` Requirement 7.3. Numeric champion id -> Champion_Key, or `null`
+   * when the index is not ready or the id is not in the pinned release. The
+   * caller falls back to the raw identifier (Requirement 7.4).
+   */
+  championKeyForId(championId: number): string | null;
   /** `0` is a REAL icon (verified 200), so only `null` means absent. */
   profileIconUrl(id: number | null): string | null;
   /** `0` is an EMPTY SLOT, never an item, so it resolves to `null`. */
@@ -473,6 +486,7 @@ export function buildStaticDataIndex(
   cherryAugmentsJson?: unknown,
 ): StaticDataIndex {
   const champions: Record<string, ChampionEntry> = {};
+  const championsById: Record<string, string> = {};
   const items: Record<string, ItemEntry> = {};
   const spells: Record<string, NamedIconEntry> = {};
   const runes: Record<string, NamedIconEntry> = {};
@@ -482,10 +496,15 @@ export function buildStaticDataIndex(
   const championData = (championJson as { data?: Record<string, unknown> } | null)?.data;
   if (championData && typeof championData === 'object') {
     for (const [key, value] of Object.entries(championData)) {
-      const entry = value as { name?: unknown; image?: { full?: unknown } };
+      const entry = value as { name?: unknown; image?: { full?: unknown }; key?: unknown };
       const name = typeof entry?.name === 'string' ? entry.name : key;
       const image = typeof entry?.image?.full === 'string' ? entry.image.full : `${key}.png`;
       champions[key] = { name, image };
+      // `key` is the numeric id as a string (e.g. `"62"`). Absent or malformed
+      // metadata simply yields no reverse entry for that champion.
+      if (typeof entry?.key === 'string' && /^\d+$/.test(entry.key)) {
+        championsById[entry.key] = key;
+      }
     }
   }
 
@@ -599,7 +618,7 @@ export function buildStaticDataIndex(
     }
   }
 
-  return { version, champions, items, spells, runes, runeTrees, augments };
+  return { version, champions, championsById, items, spells, runes, runeTrees, augments };
 }
 
 /**
@@ -698,6 +717,22 @@ export function createStaticDataProvider(
         return null;
       }
       return `${base}/img/champion/${encodeURIComponent(entry.image)}`;
+    },
+
+    championKeyForId(championId: number): string | null {
+      if (usable === null || !isUsableId(championId) || championId === 0) {
+        return null;
+      }
+      const map = usable.championsById;
+      if (map === null || typeof map !== 'object') {
+        return null;
+      }
+      const idKey = String(championId);
+      if (!Object.prototype.hasOwnProperty.call(map, idKey)) {
+        return null;
+      }
+      const key = (map as Record<string, unknown>)[idKey];
+      return typeof key === 'string' && key.length > 0 ? key : null;
     },
 
     profileIconUrl(id: number | null): string | null {

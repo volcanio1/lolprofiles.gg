@@ -53,7 +53,9 @@ import type { ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import type { MatchStore } from '../db/matchStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
+import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import { createBuildPathHandler } from './buildPath';
+import { createLiveGameHandler } from './liveGame';
 import { createCorsMiddleware } from './cors';
 import { internalError, malformedRequestError } from './errors';
 import { createLookupHandler } from './lookup';
@@ -93,6 +95,7 @@ export {
   type StaticDataResponse,
   type StaticDataHandlerDependencies,
 } from './staticData';
+export { createLiveGameHandler, type LiveGameResponseBody, type LiveGameRouteDependencies } from './liveGame';
 
 /** Decision 1. */
 export const REQUEST_BODY_LIMIT = '16kb';
@@ -138,6 +141,8 @@ export interface ApiDependencies {
   orchestrator: LookupOrchestrator;
   /** item-timeline: serves `GET /api/match/:matchId/build-path`. */
   buildPathOrchestrator: BuildPathOrchestrator;
+  /** live-game: serves `GET /api/live-game`. */
+  liveGameOrchestrator: LiveGameOrchestrator;
   cache: CacheStore;
   /**
    * Persistent_Store (specs/database/). Optional — omitted means the no-op
@@ -218,6 +223,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
     '/static-data',
     createStaticDataHandler({ dataDragonVersion: deps.dataDragonVersion }),
   );
+  router.get('/live-game', createLiveGameHandler({ liveGameOrchestrator: deps.liveGameOrchestrator }));
   router.get(
     '/players/suggest',
     createSuggestHandler({

@@ -200,6 +200,34 @@ describe('URL construction and routing values', () => {
     expect(harness.calls[0].url).toBe('https://americas.api.riotgames.com/lol/match/v5/matches/NA1_123');
   });
 
+  it('builds the Spectator-V5 active-games URL on the platform routing value (live-game 1.1)', async () => {
+    const harness = makeHarness();
+
+    await harness.client.getActiveGameByPuuid('euw1', 'puuid/with slash');
+
+    expect(harness.calls[0].url).toBe(
+      'https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/puuid%2Fwith%20slash',
+    );
+  });
+
+  it('builds the Account-V1 by-puuid URL on the regional routing value (live-game 2.1)', async () => {
+    const harness = makeHarness();
+
+    await harness.client.getAccountByPuuid('asia', 'puuid-1');
+
+    expect(harness.calls[0].url).toBe('https://asia.api.riotgames.com/riot/account/v1/accounts/by-puuid/puuid-1');
+  });
+
+  it('builds the Champion-Mastery-V4 by-champion URL on the platform routing value (live-game 2.3)', async () => {
+    const harness = makeHarness();
+
+    await harness.client.getChampionMastery('na1', 'puuid-1', 62);
+
+    expect(harness.calls[0].url).toBe(
+      'https://na1.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/puuid-1/by-champion/62',
+    );
+  });
+
   it('projects a 200 match body to the MatchDto shape, dropping undeclared fields (specs/match-cache/ Requirement 2.2)', async () => {
     const rawBody = {
       metadata: { dataVersion: '2', matchId: 'NA1_9', participants: ['p1'] },
@@ -299,6 +327,9 @@ describe('request wiring', () => {
     await harness.client.getLeagueEntriesByPuuid('na1', 'p');
     await harness.client.getMatchIdsByPuuid('americas', 'p', 20);
     await harness.client.getMatchById('americas', 'm');
+    await harness.client.getActiveGameByPuuid('na1', 'p');
+    await harness.client.getAccountByPuuid('americas', 'p');
+    await harness.client.getChampionMastery('na1', 'p', 1);
 
     expect(harness.reservations.map((reservation) => reservation.method)).toEqual([
       'account',
@@ -307,7 +338,18 @@ describe('request wiring', () => {
       'league',
       'matchIds',
       'matchDetail',
+      'spectator',
+      'accountByPuuid',
+      'championMastery',
     ]);
+  });
+
+  it('maps a Spectator-V5 404 to not_found — the orchestrator reads it as "not in a game" (live-game 1.2)', async () => {
+    const harness = makeHarness({ responses: [jsonResponse(404, { status: { message: 'Data not found' } })] });
+
+    const result = await harness.client.getActiveGameByPuuid('na1', 'p');
+
+    expect(result).toEqual({ kind: 'not_found' });
   });
 
   it('reports the response headers back to the rate limit manager', async () => {

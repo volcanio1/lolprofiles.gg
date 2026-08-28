@@ -180,6 +180,9 @@ function makeFakes(script: ClientScript = {}): Fakes {
         matchId,
       ),
     getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
+    getActiveGameByPuuid: () => Promise.reject(new Error('getActiveGameByPuuid not exercised by the lookup path')),
+    getAccountByPuuid: () => Promise.reject(new Error('getAccountByPuuid not exercised by the lookup path')),
+    getChampionMastery: () => Promise.reject(new Error('getChampionMastery not exercised by the lookup path')),
   };
 
   return { client, calls, callsAt: (stage) => calls.filter((call) => call.stage === stage) };

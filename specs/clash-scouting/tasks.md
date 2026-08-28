@@ -10,12 +10,12 @@ The feature depends on the `lookup-pipeline-fixes` spec for automatic platform r
 
 ## Tasks
 
-- [ ] 1. Build the pure engine and the tournament boundary
-  - [ ] 1.1 Implement the Scouting Insight Engine
-    - Pure `computeScoutingInsights(report)` returning ban recommendations, position mismatches and stack cohesion, with the 5-recommendation cap as a named constant
-    - Implement the ban order as the declared total order: recent wins descending, then mastery points descending, then recent games descending, then champion id ascending — the final key is what makes the order total rather than merely a sort
-    - Skip position-mismatch flagging for members declared UNSELECTED or FILL, and for members with an empty Recent_Form
-    - Take no client, no clock and no I/O, so a further Riot call is not expressible
+- [~] 1. Build the pure engine and the tournament boundary — **1.1, 1.3, 1.4 done (2026-08-28)**; 1.2 is the optional (`*`) property test, deferred. Backend 682 pass / 12 skip, tsc + eslint clean.
+  - [x] 1.1 Implement the Scouting Insight Engine
+    - `backend/src/clashScouting/scoutingInsights.ts` — pure `computeScoutingInsights(report)` + `MAX_BAN_RECOMMENDATIONS = 5` + exported `compareBanCandidates` (recent wins desc → mastery pts desc → recent games desc → champion id asc). No client/clock/I/O.
+    - `backend/src/clashScouting/types.ts` — the design.md data models (`Clash*Dto`, `RosterCard`, `RecentFormEntry`, `ChampionPoolEntry`, `ScoutingReport`, `ScoutingInsights`, `BanRecommendation`, `PositionMismatch`, `ClashTeamSummary`, `DeclaredPosition`).
+    - **Interpretation choices (design underspecified):** ban candidates are one per `championId` (union of every member's pool ∪ recent form). `recentWins`/`recentGames` are team-combined; `masteryPoints` is the most-invested member's (tie → smallest puuid); `puuid` ("whose champion") is that member, falling back to the member with the most recent-form games. `RecentFormEntry` carries `{ matchId, championId, role, win, participantPuuids }`; stack cohesion dedupes by `matchId` and counts members with ≥2 roster puuids present in one match.
+    - `scoutingInsights.test.ts` — 9 example tests (ban order + tie-break + cap + recent-form-only candidate; mismatch flag + UNSELECTED/FILL/empty-form skips; cohesion; purity). Property test 1.2 deferred.
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8_
 
   - [ ]* 1.2 Write property test for scouting insights
@@ -23,14 +23,14 @@ The feature depends on the `lookup-pipeline-fixes` spec for automatic platform r
     - **Validates: Requirements 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8**
     - Draw champion ids and mastery values from small ranges to force ties, and pin at least one case tied through to the champion-id tie-break with `fc.assert`'s `examples`, so the last two order keys cannot go unexercised
 
-  - [ ] 1.3 Introduce the `ClashTournamentSource` boundary
-    - Define `ClashTournamentSource` as an interface separate from `RiotApiClient`, holding `getClashTournaments` alone
-    - Ensure the Scouting Orchestrator's dependency type does not include it, so a request-path call fails to compile
+  - [x] 1.3 Introduce the `ClashTournamentSource` boundary
+    - `backend/src/clashScouting/tournamentSource.ts` — `interface ClashTournamentSource { getClashTournaments(platform) }`, separate from `RiotApiClient`. Only the Tournament Refresher will hold one; the Scouting Orchestrator's options (task 5) must not include it, so a request-path call is a compile error. `getClashTournaments` is NOT added to `RiotApiClient` (task 2.1 adds `getClashTournamentsByTeam`, the 200/min sibling, there instead).
     - _Requirements: 4.1_
 
-  - [ ] 1.4 Implement the Tournament Refresher
-    - Refresh the Tournament_Schedule on the injected scheduler at no more than once per interval, writing into the Cache_Store rather than holding its own state
-    - Default the interval to 5 minutes; retain the schedule entry for 1 hour
+  - [x] 1.4 Implement the Tournament Refresher
+    - `backend/src/clashScouting/tournamentRefresher.ts` — `createTournamentRefresher({ source, cache, platforms, now?, schedule? })` → `{ start(intervalMs?), stop() }`. `TOURNAMENT_REFRESH_INTERVAL_MS = 5min` default; refreshes immediately on `start` then on the injected `RepeatingScheduler`; a `lastRefreshAt` guard enforces "no more often than once per interval" (Req 4.2). Per-platform `getClashTournaments` → `cache.set({ endpoint: 'tournamentSchedule', routingValue: platform, params: {} }, data, 1h)`, fire-and-forget — a failed refresh leaves the prior entry (Req 4.4-safe). Holds no schedule state of its own (Req 5.4). Default `setInterval` handle is `.unref()`'d.
+    - **`tournamentSchedule` cache endpoint added** (`CacheEndpoint` + `TTL_BY_ENDPOINT` = 1h). `clashPlayers`/`clashTeam`/`championMasteryTop` deferred to task 2.2. Cache test fan-out (`index.test.ts`, `index.property.test.ts`, `cacheOrFetch.property.test.ts`) updated.
+    - `tournamentRefresher.test.ts` — 4 tests (immediate refresh + cache write, interval guard, failed-refresh keeps entry, stop cancels).
     - _Requirements: 4.1, 4.2, 5.4_
 
 - [ ] 2. Extend the Riot API Client and Cache Store

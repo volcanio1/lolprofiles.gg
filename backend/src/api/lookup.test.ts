@@ -54,6 +54,9 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
       buildPathOrchestrator: {
         getBuildPath: () => Promise.resolve({ kind: 'unavailable', reason: 'no_timeline' }),
       } satisfies BuildPathOrchestrator,
+      liveGameOrchestrator: {
+        getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
+      },
       cache: createInMemoryCacheStore({ now }),
       now,
       logger,

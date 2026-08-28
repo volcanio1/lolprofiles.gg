@@ -401,6 +401,24 @@ describe('Recent matches — queue-type filter', () => {
   });
 });
 
+describe('Recent matches / Live game tabs', () => {
+  it('defaults to the Recent matches tab', () => {
+    render(<ProfileReportView report={report()} />);
+    expect(screen.getByTestId('main-tab-recent')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('main-tab-live')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('recent-matches-queue-filter')).toBeInTheDocument();
+  });
+
+  it('switches to the Live game panel when the Live game tab is clicked', () => {
+    render(<ProfileReportView report={report()} />);
+    fireEvent.click(screen.getByTestId('main-tab-live'));
+    expect(screen.getByTestId('main-tab-live')).toHaveAttribute('aria-selected', 'true');
+    // the recent-matches queue filter is replaced by the live panel
+    expect(screen.queryByTestId('recent-matches-queue-filter')).not.toBeInTheDocument();
+    expect(screen.getByText(/checking for a live game/i)).toBeInTheDocument();
+  });
+});
+
 describe('Recent matches — load more', () => {
   function match(matchId: string, queueType: string): ProfileReport['recentMatches'][number] {
     return {

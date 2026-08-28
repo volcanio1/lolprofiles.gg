@@ -120,6 +120,9 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
       return Promise.resolve(script.matchDetail?.(matchId) ?? { kind: 'ok', data: matchDto({ matchId, queueId: 420, durationSeconds: 1_800, win: true }) });
     },
     getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
+    getActiveGameByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getAccountByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getChampionMastery: () => Promise.reject(new Error('not exercised by the lookup path')),
   };
 
   const orchestrator = createLookupOrchestrator({
@@ -459,6 +462,9 @@ describe('Lookup Orchestrator match-history properties', () => {
             });
           },
           getMatchTimeline: () => Promise.reject(new Error('getMatchTimeline not exercised by the lookup path')),
+          getActiveGameByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getAccountByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getChampionMastery: () => Promise.reject(new Error('not exercised by the lookup path')),
         };
 
         const orchestrator = createLookupOrchestrator({

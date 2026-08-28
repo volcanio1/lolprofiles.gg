@@ -51,6 +51,9 @@ import type {
   BuildPathResponse,
   CachedReportResponse,
   ErrorCode,
+  LiveGameLobby,
+  LiveGameResponse,
+  LiveParticipantCard,
   PlayerSuggestion,
   ProfileReport,
   RiotIdParts,
@@ -496,6 +499,108 @@ export async function lookupProfile(
     return {
       kind: 'error',
       error: parseFailed ? synthesizedError(errorCodeForStatus(response.status)) : readErrorPayload(parsed, response.status),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// live-game: GET /api/live-game
+// ---------------------------------------------------------------------------
+
+export type LiveGameOutcome = LiveGameResponse | { kind: 'error'; error: ApiErrorPayload };
+
+function isLiveParticipantCard(raw: unknown): raw is LiveParticipantCard {
+  if (raw === null || typeof raw !== 'object') {
+    return false;
+  }
+  const card = raw as Record<string, unknown>;
+  return (
+    typeof card.puuid === 'string' &&
+    typeof card.teamId === 'number' &&
+    typeof card.championId === 'number' &&
+    typeof card.isBot === 'boolean' &&
+    Array.isArray(card.perkIds)
+  );
+}
+
+/** Narrows an untrusted 200 body to a `LiveGameResponse`, or `null` when it is not one. */
+export function readLiveGameResponse(body: unknown): LiveGameResponse | null {
+  if (body === null || typeof body !== 'object') {
+    return null;
+  }
+  const candidate = body as Record<string, unknown>;
+  if (candidate.kind === 'not_in_game') {
+    return { kind: 'not_in_game' };
+  }
+  if (candidate.kind !== 'in_game' || candidate.lobby === null || typeof candidate.lobby !== 'object') {
+    return null;
+  }
+  const lobby = candidate.lobby as Record<string, unknown>;
+  const insights = lobby.insights as Record<string, unknown> | null;
+  if (
+    typeof lobby.matchId !== 'string' ||
+    !Array.isArray(lobby.participants) ||
+    !lobby.participants.every(isLiveParticipantCard) ||
+    insights === null ||
+    typeof insights !== 'object' ||
+    !Array.isArray(insights.offChampion) ||
+    !Array.isArray(insights.oneTricks)
+  ) {
+    return null;
+  }
+  return { kind: 'in_game', lobby: candidate.lobby as unknown as LiveGameLobby };
+}
+
+/**
+ * `GET /api/live-game`. Same contract as `lookupProfile`: never rejects, always
+ * settles. `not_in_game` is a normal outcome, not an error (Requirement 1.2).
+ */
+export async function fetchLiveGame(
+  riotId: RiotIdParts,
+  options: LookupClientOptions = {},
+): Promise<LiveGameOutcome> {
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const query = new URLSearchParams({ gameName: riotId.gameName, tagLine: riotId.tagLine });
+    const url = `${baseUrl}/api/live-game?${query.toString()}`;
+
+    let response: Response;
+    try {
+      response = await doFetch(url, { method: 'GET', signal: controller.signal });
+    } catch {
+      return { kind: 'error', error: synthesizedError(timedOut ? 'TIMEOUT' : 'NETWORK_ERROR') };
+    }
+
+    let parsed: unknown;
+    let parseFailed = false;
+    try {
+      parsed = await response.json();
+    } catch {
+      parseFailed = true;
+    }
+
+    if (response.ok) {
+      const narrowed = parseFailed ? null : readLiveGameResponse(parsed);
+      return narrowed ?? { kind: 'error', error: synthesizedError('RIOT_UNAVAILABLE') };
+    }
+
+    return {
+      kind: 'error',
+      error: parseFailed
+        ? synthesizedError(errorCodeForStatus(response.status))
+        : readErrorPayload(parsed, response.status),
     };
   } finally {
     clearTimeout(timer);

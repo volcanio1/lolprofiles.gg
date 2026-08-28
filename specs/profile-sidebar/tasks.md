@@ -88,11 +88,11 @@ This plan is ordered so the layout change (waves 1–2, no new data) lands and i
   ### Sidebar order as built (into `ProfileReportView`'s `.report-sidebar`):
   Rank-history graph → gamemode filter tabs → ranked standing (single) → champion preferences → role performance → premades.
 
-- [ ] 8. Final checkpoint — full suite, compliance/accessibility pass
-  - Ensure all tests pass (backend and frontend).
-  - Confirm `RiotDataPage` wrapping, attribution, and advertising gate are unaffected (Requirements 4.1, 4.2).
-  - Confirm heading order and landmark structure match design.md's architecture diagram (Requirement 6.3).
-  - Ask the user for a dpm.lol screenshot or measurement, if not already provided, before calling visual polish (sidebar width, card spacing) finished.
+- [x] 8. Final checkpoint — full suite, compliance/accessibility pass **(2026-08-28)**
+  - [x] All tests pass: backend **631 pass / 12 skip** (46 files), frontend **448 pass** (36 files); `tsc --noEmit` and `eslint` clean on both packages.
+  - [x] `RiotDataPage` wrapping, attribution, and advertising gate unaffected — sidebar work was entirely inside `ProfileReportView`; `ProfileReportPage` still wraps the report in `<RiotDataPage title="Profile report">` (`ProfileReportPage.tsx:146`), and `RiotDataPage.test.tsx` + `pages.test.tsx` (attribution text) pass (Requirements 4.1, 4.2).
+  - [x] Heading order and landmark structure intact: `report-identity` `<header>` → `<aside className="report-sidebar" aria-label="Player summary">` headings → `.report-main` headings (Requirement 6.3). Identity-above-columns deviation from design.md's diagram was a deliberate task-1.1 call, already flagged; screen-reader order unaffected.
+  - [x] Visual polish signed off through the five rounds of user feedback in wave 7 (compact rows, tab-bar filter, 1240px shell, band-layout match rows, drawer detail panel, per-queue Recent form). No standalone dpm.lol measurement pass — no browser automation on Node 18, so visual sign-off was iterative against the user's screenshots instead.
 
 ## Notes
 
