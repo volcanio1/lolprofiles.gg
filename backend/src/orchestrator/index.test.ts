@@ -691,6 +691,51 @@ describe('runLookup — report contents', () => {
     expect(result.report.stats.rankedByQueue).toEqual({});
   });
 
+  it('assembles per-queue stats/role-performance; statsByQueue.all stays identical to stats (profile-sidebar Req 7.1/8.1)', async () => {
+    // 4 matches: 2 solo (Ahri, both wins), 1 flex (Zed, loss), 1 normal (Lux, win).
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: ['s1', 's2', 'f1', 'n1'] },
+      matchDetail: (matchId) => {
+        const spec: Record<string, { queueId: number; champ: string; role: string; win: boolean }> = {
+          s1: { queueId: 420, champ: 'Ahri', role: 'MIDDLE', win: true },
+          s2: { queueId: 420, champ: 'Ahri', role: 'MIDDLE', win: true },
+          f1: { queueId: 440, champ: 'Zed', role: 'MIDDLE', win: false },
+          n1: { queueId: 400, champ: 'Lux', role: 'BOTTOM', win: true },
+        };
+        const s = spec[matchId];
+        return { kind: 'ok', data: matchDto(matchId, { queueId: s.queueId, championName: s.champ, role: s.role, win: s.win }) };
+      },
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    const { report } = result;
+
+    // Additive, not a rename.
+    expect(report.statsByQueue.all).toEqual(report.stats);
+    expect(Object.keys(report.statsByQueue).sort()).toEqual(['all', 'normal', 'ranked flex', 'ranked solo/duo']);
+
+    // 'all' sees every champion; the solo slice sees only Ahri.
+    expect(report.statsByQueue.all.topChampions.map((c) => c.championName).sort()).toEqual(['Ahri', 'Lux', 'Zed']);
+    expect(report.statsByQueue['ranked solo/duo'].topChampions.map((c) => c.championName)).toEqual(['Ahri']);
+    expect(report.statsByQueue['ranked solo/duo'].topChampions[0].gamesPlayed).toBe(2);
+
+    // Role performance is scoped the same way.
+    expect(report.rolePerformanceByQueue.all).toEqual([
+      { role: 'MIDDLE', gamesPlayed: 3, winRatePercent: 67 },
+      { role: 'BOTTOM', gamesPlayed: 1, winRatePercent: 100 },
+    ]);
+    expect(report.rolePerformanceByQueue['ranked solo/duo']).toEqual([
+      { role: 'MIDDLE', gamesPlayed: 2, winRatePercent: 100 },
+    ]);
+    expect(report.rolePerformanceByQueue['ranked flex']).toEqual([
+      { role: 'MIDDLE', gamesPlayed: 1, winRatePercent: 0 },
+    ]);
+  });
+
   it('prefers the canonical Riot ID casing returned by Account-V1', async () => {
     const harness = makeHarness({
       account: { kind: 'ok', data: account({ gameName: 'DoFFy', tagLine: 'SMILE' }) },

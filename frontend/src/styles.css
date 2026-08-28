@@ -33,6 +33,10 @@
 
   --track: 0.09em; /* letterspacing for caps */
   --radius: 4px;
+
+  /* profile-sidebar: fixed width of the summary rail at/above the two-column
+     breakpoint. */
+  --sidebar-width: 15rem;
 }
 
 /* ------------------------------------------------------------------- reset */
@@ -91,9 +95,15 @@ figure {
 
 /* ----------------------------------------------------------- page skeleton */
 
+/* Wide enough that the report's summary rail and its main column BOTH get their
+   natural width. At the old 1060px the rail's 15rem left the match rows ~28%
+   narrower than they were before the two-column layout existed, which squeezed
+   the mirrored match rows and the ten-player scoreboard. The hero/search pages
+   constrain their own content with their own max-widths, so widening the shell
+   does not stretch them. */
 .page {
   min-height: 100vh;
-  max-width: 1060px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 0 clamp(1rem, 4vw, 2.5rem) 2rem;
   display: flex;
@@ -161,6 +171,16 @@ figure {
 
 .page--hero .page-title {
   justify-content: center;
+}
+
+/* The shell is sized for the report's rail-plus-main layout, which is far wider
+   than a single search field wants to be. The report page keeps the full width
+   (its search bar sits over a full-width report and should match it); the
+   landing page holds its form to a readable measure and centres it. */
+.page--hero .search-form {
+  width: 100%;
+  max-width: 42rem;
+  margin-inline: auto;
 }
 
 /* The wordmark above already carries the gold underline; a second tick here
@@ -479,6 +499,43 @@ figure {
   }
 }
 
+/* profile-sidebar Requirements 1, 5: summary rail + main column.
+   Below 960px they stack as one flow, rail sections first (Req 5.2). At/above
+   960px a fixed-rail / fluid-main grid. The rail is a plain page element — it
+   scrolls with the page, is never independently scrollable, and has no sticky
+   behaviour (the spec's Requirement 2 persistence was dropped at the user's
+   request — the rail was taking up too much space and a scroll container on it
+   was unwanted). */
+
+.report-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+}
+
+.report-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+  min-width: 0; /* grid children must be allowed to shrink, or wide content overflows the page */
+}
+
+/* The rail is intentionally denser than the main column. */
+.report-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .report-columns {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    align-items: start; /* rail keeps its natural height instead of stretching to the main column */
+  }
+}
+
 /* Identity block */
 
 .report-identity {
@@ -538,6 +595,11 @@ figure {
   gap: 1rem;
 }
 
+/* Rail sections: header sits close to its content. */
+.rsec--tight {
+  gap: 0.5rem;
+}
+
 .rsec-title {
   font-family: var(--font-display);
   font-weight: 600;
@@ -583,41 +645,6 @@ figure {
   }
 }
 
-/* Ranked standing cards */
-
-.queue-grid {
-  list-style: none;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 0.75rem;
-}
-
-.queue-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.9rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.queue-card-label {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.68rem;
-  letter-spacing: var(--track);
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.queue-card-rank {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-
 /* Square viewport that crops the transparent canvas off a winged rank crest so
    the crest itself fills the box — see RankIcon's header. */
 .rank-crest {
@@ -639,65 +666,245 @@ figure {
   transform: translate(-50%, -50%);
 }
 
-.queue-card-tier {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.35rem;
-  line-height: 1.15;
-  text-transform: uppercase;
-}
-
-.queue-card-tier--none {
-  color: var(--loss);
-}
-
-.queue-card-wr {
-  color: var(--gold);
-  font-size: 0.88rem;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Recent form stat tiles */
-
-.stat-tiles {
-  list-style: none;
-  padding: 0;
+/* Match-window summary — three compact figures under the ranked standing.
+   Label above value, three across, hairline rule off the standing above. */
+.rank-extra {
+  margin: 0.6rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
 }
 
-.stat-tile {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.9rem 1rem 1rem;
+.rank-extra-stat {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.1rem;
+  min-width: 0;
 }
 
-.stat-tile-value {
+.rank-extra-stat dt {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.8rem;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-tile-unit {
-  font-family: var(--font-body);
-  font-weight: 400;
-  font-size: 0.85rem;
+  font-weight: 600;
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--dim);
 }
 
-.stat-tile-label {
-  font-family: var(--font-display);
+.rank-extra-stat dd {
+  margin: 0;
   font-weight: 600;
-  font-size: 0.68rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------- profile-sidebar rail panels */
+
+/* Rank-history graph (Requirement 10) */
+
+.rank-graph {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rank-graph-svg {
+  width: 100%;
+  height: 96px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.rank-graph-line {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rank-graph-dot {
+  fill: var(--gold);
+}
+
+.rank-graph-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.72rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
+  color: var(--dim);
+}
+
+.rank-graph-current {
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ranked-standing row (Requirement 6.1) — a single compact line for the
+   selected queue */
+
+.rank-standing {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 0.6rem;
+}
+
+.rank-standing--solo {
+  padding: 0.15rem 0;
+}
+
+.rank-standing-crest {
+  flex: none;
+}
+
+.rank-standing-queue {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.rank-standing-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  text-align: right;
+}
+
+.rank-standing-tier {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-standing-tier--none {
+  color: var(--loss);
+  font-size: 0.85rem;
+}
+
+.rank-standing-wr {
+  font-size: 0.72rem;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gamemode filter tabs (Requirement 9) */
+
+.queue-tabs {
+  display: flex;
+  gap: 0.15rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.queue-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.35rem 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.queue-tab:hover {
+  color: var(--text);
+}
+
+.queue-tab--active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+/* Compact rail tables — champion preferences (Req 7.5), role performance (Req 8),
+   premades */
+
+.champ-perf,
+.role-perf,
+.premade-perf {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.champ-perf thead th,
+.role-perf thead th,
+.premade-perf thead th {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  padding: 0 0 0.3rem;
+  text-align: right;
+}
+
+.champ-perf tbody th,
+.champ-perf tbody td,
+.role-perf tbody th,
+.role-perf tbody td,
+.premade-perf tbody th,
+.premade-perf tbody td {
+  padding: 0.3rem 0;
+  text-align: right;
+  font-weight: 400;
+}
+
+.champ-perf tbody th:first-child,
+.champ-perf thead th:first-child,
+.role-perf tbody th:first-child,
+.role-perf thead th:first-child,
+.premade-perf tbody th:first-child,
+.premade-perf thead th:first-child {
+  text-align: left;
+}
+
+.champ-perf-icon {
+  flex: none;
+  vertical-align: middle;
+}
+
+.role-perf tbody th {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.champ-perf-wr,
+.premade-wr {
+  color: var(--gold);
+}
+
+.premade-name {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.premade-tag {
   color: var(--dim);
 }
 
@@ -770,7 +977,7 @@ figure {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 
 .match-list-more {
@@ -784,10 +991,10 @@ figure {
   /* Left rail: red for a defeat, gold for a win, grey reserved for a remake. */
   border-left: 3px solid var(--error);
   border-radius: var(--radius);
-  padding: 0.9rem 1.1rem 1rem;
+  padding: 0.7rem 1rem 0.8rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.55rem;
 }
 
 .match-row--win {
@@ -798,23 +1005,21 @@ figure {
   border-left-color: var(--loss);
 }
 
+/* A thin meta strip above the mirror: outcome, role, queue, length, when, and
+   the expand control. Every item is the same small size so the strip reads as
+   one line of metadata rather than competing with the stats below it. */
 .match-head {
   display: flex;
   flex-wrap: wrap;
-  /* `center` rather than `baseline`: this row mixes plain-text spans of
-     different sizes (outcome, role, duration, queue type, date), and a
-     baseline-aligned wrap looks jagged the moment any one of them wraps to its
-     own line. `match-side-portrait` — the icon+text unit — moved out of this
-     row entirely into `.match-mirror` below it, so it is no longer a factor
-     here at all. */
   align-items: center;
-  gap: 0.35rem 0.9rem;
+  gap: 0.2rem 0.7rem;
+  font-size: 0.76rem;
 }
 
 .match-outcome {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--error);
@@ -830,36 +1035,30 @@ figure {
 
 .match-role {
   color: var(--dim);
-  font-size: 0.82rem;
   text-transform: capitalize;
 }
 
 /*
- * LP Score — the headline number for each laner, riding the champion+loadout row
- * and pushed to the inner edge (beside the mirror divider) to spend no extra
- * vertical space.
+ * LP Score — the headline number for each laner, at the outer edge of its side.
+ * Value first, label under it: the number is what the eye should land on, and
+ * stacking them keeps the block ~3.5rem wide instead of a full label's width.
  */
 .lp-score {
-  margin-left: auto;
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.05rem;
-  padding: 0.15rem 0.55rem 0.25rem;
+  padding: 0.25rem 0.5rem 0.3rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: radial-gradient(circle at 50% 0%, rgba(232, 181, 74, 0.06), transparent 70%);
 }
 
-.match-side--opponent .lp-score {
-  margin-left: 0;
-  margin-right: auto;
-}
-
 .lp-score-label {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.5rem;
+  font-size: 0.48rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--dim);
@@ -868,7 +1067,7 @@ figure {
 .lp-score-value {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -893,68 +1092,144 @@ figure {
 .match-duration,
 .match-queue-type {
   color: var(--dim);
-  font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
 }
 
 .match-date {
   color: var(--loss);
-  font-size: 0.82rem;
   margin-left: auto;
 }
 
 .matchup-note {
   color: var(--dim);
-  font-size: 0.88rem;
+  font-size: 0.85rem;
+  align-self: center;
 }
 
 /*
  * The mirrored row: the analyzed player's side and the Enemy_Laner's side as two
- * equal-width columns. `wrap` rather than a fixed two-column grid because the
- * no-opponent case replaces the second column with a single note that should
- * not be forced into a column's width.
+ * equal-width bands. `wrap` rather than a fixed two-column grid because the
+ * no-opponent case replaces the second band with a single note that should not
+ * be forced into a column's width.
  */
 .match-mirror {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.2rem;
+  gap: 1rem;
+  /* Queried below so the divider can follow the wrap. A media query cannot: how
+     much room this row has depends on whether the summary rail is beside it,
+     not on the viewport alone — at 960px wide the rail is gone and the row is
+     WIDER than it is at 1000px, where the rail is back. */
+  container-type: inline-size;
+  container-name: match-mirror;
 }
 
+/*
+ * One side is a horizontal band of four blocks — portrait+loadout, identity +
+ * line stats, final build, LP Score — each near its natural width so both sides
+ * fit the main column side by side. `minmax(0, 1fr)` on the figures column is
+ * what lets a long Riot ID ellipsize instead of widening the band.
+ */
 .match-side {
-  flex: 1 1 220px;
+  flex: 1 1 340px;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.8rem;
 }
 
-/* A hairline divider between the two mirrored sides, gold-tinted on the
-   opponent's side to read as "the other half" without a second hue. */
+/* A hairline divider between the two mirrored sides. Below the width at which
+   both bands fit (2 x the 340px basis, plus the gap and this padding) they wrap
+   to a stack, and the divider has to turn with them — a vertical rule above a
+   stacked block would point at nothing. */
 .match-side--opponent {
   border-left: 1px solid var(--line);
-  padding-left: 1.2rem;
+  padding-left: 1rem;
+}
+
+@container match-mirror (max-width: 715px) {
+  .match-side--opponent {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 0.7rem;
+  }
+
+  /* Stacked, the two bands sit one above the other rather than either side of a
+     rule, so there is nothing left to mirror around — reversed, the lower band
+     would just look like a different layout from the upper one. */
+  .match-side--opponent,
+  .match-side--opponent .match-side-portrait,
+  .match-side--opponent .match-side-loadout,
+  .match-side--opponent .item-build-row {
+    flex-direction: row;
+  }
+
+  .match-side--opponent .match-side-name {
+    text-align: left;
+  }
+
+  .match-side--opponent .match-side-stats {
+    direction: ltr;
+  }
+
+  .match-side--opponent .match-side-stats dd {
+    text-align: right;
+  }
+
+  .match-side--opponent .match-side-build {
+    justify-content: flex-end;
+  }
+}
+
+.match-side-figures {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 
 .match-side-name {
   margin: 0;
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .match-side-tagline {
   color: var(--dim);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 400;
   margin-left: 0.1rem;
 }
 
-.match-side--opponent .match-side-name {
-  text-align: right;
-}
-
+/* Portrait above its champion name, with the four loadout icons as a 2x2 block
+   beside them — one compact unit at the outer edge of the side. */
 .match-side-portrait {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+}
+
+.match-side-portrait .champion-icon-label {
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 3.6rem;
+}
+
+.match-side-portrait .champion-icon-name {
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .match-side-champion-icon {
@@ -965,8 +1240,8 @@ figure {
 .match-side-loadout {
   display: flex;
   flex-wrap: wrap;
-  align-content: flex-start;
-  width: 36px; /* exactly two 16px icons plus one 4px gap, wrapping to a 2x2 block */
+  align-content: center;
+  width: 40px; /* exactly two 18px icons plus one 4px gap, wrapping to a 2x2 block */
   gap: 0.25rem;
 }
 
@@ -976,32 +1251,63 @@ figure {
   border-radius: var(--radius);
 }
 
+/*
+ * Line stats as a label/value grid rather than three side-by-side columns: the
+ * same three figures in about a third of the width, which is what lets the band
+ * fit. `display: contents` dissolves each `<div>` wrapper so its `dt`/`dd` land
+ * directly in this grid as their own items; the wrappers stay in the markup
+ * because a `<div>` around each term/definition pair is HTML's own grouping
+ * element inside a `<dl>`, and dropping them would leave six loose children with
+ * no stated pairing. `display: contents` is safe on a plain grouping `<div>` —
+ * the semantics live on the `dl`/`dt`/`dd` themselves, which keep their boxes.
+ */
 .match-side-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.8rem;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 0.1rem 0.6rem;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .match-side-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  display: contents;
 }
 
-.match-side-stat dt {
+.match-side-stats dt {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--dim);
+  align-self: center;
 }
 
-.match-side-stat dd {
+.match-side-stats dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Six items plus the trinket, wrapping to 4 over 3 — half the width of a single
+   seven-slot row, and the same height as the portrait block beside it. The width
+   is exactly four 20px icons plus three 0.25rem gaps, so the wrap point is set
+   by arithmetic rather than by whatever happens to fit. */
+.match-side-build {
+  flex: none;
+  flex-wrap: wrap;
+  width: 5.75rem;
+  gap: 0.25rem;
+  justify-content: flex-end;
+}
+
+/* The trinket's gold border already sets it apart in this compact block, so the
+   full-size row's extra hairline divider would only cost width here. */
+.match-side-build .item-build-slot--trinket {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
 }
 
 /*
@@ -1018,34 +1324,40 @@ figure {
  * here. Setting `flex-end` would pack it at the left instead, undoing the
  * reversal — that was this rule's first, wrong draft.
  */
+.match-side--opponent,
 .match-side--opponent .match-side-portrait,
 .match-side--opponent .match-side-loadout,
-.match-side--opponent .match-side-stats,
 .match-side--opponent .item-build-row {
   flex-direction: row-reverse;
 }
 
-.match-side--opponent .match-side-stat {
-  align-items: flex-end;
+.match-side--opponent .match-side-name {
+  text-align: right;
 }
 
-/* `ChampionIcon` always renders icon-then-name internally — it has no notion
-   of "side". Reversing its own wrapper here is what puts the name first and
-   the portrait last (i.e. the image on the right of the name) for this side. */
-.match-side--opponent .champion-icon-label {
-  flex-direction: row-reverse;
+/*
+ * The stats grid mirrors by flipping the container's inline direction, which
+ * reverses the two columns AND the packing edge in one declaration while leaving
+ * DOM order untouched. `order` cannot do this: every `dt` shares one order value
+ * and every `dd` another, so ordering would group all three labels ahead of all
+ * three values and break the pairing. Each cell restores `ltr` so `8/2/6` and
+ * `7.0(210)` still read left to right.
+ */
+.match-side--opponent .match-side-stats {
+  direction: rtl;
 }
 
-/* The trinket separator reads left-to-right in DOM order (item slots, then
-   trinket last) — reversed, the trinket lands on the visual left, so its
-   hairline divider and spacing must flip sides with it. */
-.match-side--opponent .item-build-slot--trinket {
-  margin-left: 0;
-  padding-left: 0;
-  border-left: 0;
-  margin-right: 0.4rem;
-  padding-right: 0.4rem;
-  border-right: 1px solid var(--line);
+.match-side--opponent .match-side-stats dt,
+.match-side--opponent .match-side-stats dd {
+  direction: ltr;
+}
+
+.match-side--opponent .match-side-stats dd {
+  text-align: left;
+}
+
+.match-side--opponent .match-side-build {
+  justify-content: flex-start;
 }
 
 /* Fun facts and recommendations */
@@ -1299,18 +1611,20 @@ figure {
 
 /* -------------------------------------------------------------- detail panel */
 
+/* Quiet by default — it repeats on every row, so a bordered button per row would
+   read as a column of buttons rather than as metadata. */
 .match-expand-toggle {
   margin-left: auto;
   background: none;
-  border: 1px solid var(--gold-dim);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  color: var(--gold);
+  color: var(--gold-dim);
   font-family: var(--font-display);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 600;
   letter-spacing: var(--track);
   text-transform: uppercase;
-  padding: 0.3rem 0.6rem;
+  padding: 0.2rem 0.5rem;
   cursor: pointer;
 }
 
@@ -1322,44 +1636,61 @@ figure {
 
 .match-expand-toggle:hover,
 .match-expand-toggle:focus-visible {
-  background: var(--surface-2);
+  color: var(--gold);
+  border-color: var(--gold-dim);
 }
 
+/* The expanded panel is inset from the row's own padding and sits on the darker
+   surface, so it reads as a drawer opening out of the row rather than as more
+   of the row. */
+/* The negative insets are exactly `.match-row`'s own padding, so the drawer
+   spans the row edge to edge (inside its borders) instead of sitting in a
+   channel; the rounded bottom corners then line up with the row's. */
 .detail-panel {
-  margin-top: 0.8rem;
-  padding-top: 0.8rem;
+  margin: 0.15rem -1rem -0.8rem;
+  padding: 0 1rem 1rem;
   border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--bg);
 }
 
+/* Full-width segmented bar: the three tabs split the row edge to edge and the
+   selected one is marked by an underline continuous with the bar's own rule. */
 .detail-tablist {
-  display: flex;
-  gap: 0.4rem;
-  margin-bottom: 0.9rem;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.1rem;
 }
 
 .detail-tab {
   background: none;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   color: var(--dim);
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: var(--track);
   text-transform: uppercase;
-  padding: 0.4rem 0.9rem;
+  padding: 0.7rem 0.5rem;
   cursor: pointer;
+}
+
+.detail-tab:hover {
+  color: var(--text);
 }
 
 .detail-tab--selected {
   color: var(--gold);
-  border-color: var(--gold-dim);
-  background: var(--surface-2);
+  border-bottom-color: var(--gold);
 }
 
 .detail-tab:focus-visible {
   outline: 2px solid var(--gold);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .detail-tabpanel {
@@ -1373,16 +1704,19 @@ figure {
 .general-tab {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 1.6rem;
 }
 
 .scoreboard-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
+/* A banded heading rather than a bare line of text, so the two teams read as two
+   distinct blocks at a glance — the tinted left edge carries the win/loss hue
+   that the row's own left rail uses. */
 .scoreboard-team-heading {
   caption-side: top;
   text-align: left;
@@ -1391,26 +1725,34 @@ figure {
   font-size: 0.68rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
-  color: var(--gold-dim);
-  padding-bottom: 0.4rem;
+  color: var(--gold);
+  border-left: 3px solid var(--gold);
+  padding: 0.3rem 0 0.4rem 0.6rem;
+  margin-bottom: 0.15rem;
 }
 
 .scoreboard-team-heading--enemy {
   color: var(--loss);
+  border-left-color: var(--loss);
 }
 
-/* Row height comes from padding + the two-line identity; text is comfortably
-   readable rather than compact. */
+/* Rows are given real height and per-cell breathing room: this table carries
+   eleven columns of dense figures, and tight padding turns it into a wall. */
 .scoreboard-table th,
 .scoreboard-table td {
-  padding: 0.5rem 0.55rem;
+  padding: 0.55rem 0.7rem;
   text-align: left;
   vertical-align: middle;
 }
 
 .scoreboard-table th:first-child,
 .scoreboard-table td:first-child {
-  padding-left: 0.3rem;
+  padding-left: 0.6rem;
+}
+
+.scoreboard-table th:last-child,
+.scoreboard-table td:last-child {
+  padding-right: 0.6rem;
 }
 
 /* Number columns: header and cell both right-aligned. Specificity beats the
@@ -1423,11 +1765,13 @@ figure {
 .scoreboard-table thead th {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--dim);
-  border-bottom: 1px solid var(--gold-dim);
+  border-bottom: 1px solid var(--line);
+  padding-top: 0;
+  padding-bottom: 0.4rem;
   white-space: nowrap;
 }
 
@@ -1455,7 +1799,7 @@ figure {
  * so every row is the same height whether or not any name actually wraps. This
  * `height` is then just the floor for the icon rows. */
 .scoreboard-table tbody tr {
-  height: 3rem;
+  height: 3.4rem;
 }
 
 .sb-kda {
@@ -1518,10 +1862,13 @@ figure {
   white-space: nowrap;
 }
 
-/* --- player name: its own headerless section --- */
+/* --- player name: its own headerless section ---
+   `width` on a table cell is a suggestion, not a cap: it sets the preferred
+   width and lets the column absorb the table's slack, so the identity gets the
+   leftover space rather than the numeric columns stretching. */
 .sb-player {
-  width: 10rem;
-  padding-left: 0.9rem;
+  width: 11rem;
+  padding-left: 1rem;
 }
 
 th[scope='row'].sb-player {
@@ -1593,7 +1940,7 @@ th[scope='row'].sb-player {
 
 /* --- damage: value with a bar scaled to the match's top damage --- */
 .sb-damage {
-  min-width: 4.5rem;
+  min-width: 5.25rem;
 }
 
 .sb-damage-value {
@@ -1602,8 +1949,10 @@ th[scope='row'].sb-player {
 
 .sb-damage-bar {
   display: block;
-  height: 3px;
-  margin-top: 3px;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  overflow: hidden;
   background: var(--line);
 }
 
@@ -1650,21 +1999,26 @@ th[scope='row'].sb-player {
 .augments-tab {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 1.6rem;
 }
 
+/* Same banded treatment as the General tab's team caption, so switching tabs
+   does not change how the two teams are marked off. */
 .rune-team-heading {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.68rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
-  color: var(--gold-dim);
-  margin: 0 0 0.6rem;
+  color: var(--gold);
+  border-left: 3px solid var(--gold);
+  padding: 0.3rem 0 0.4rem 0.6rem;
+  margin: 0 0 0.5rem;
 }
 
 .rune-team-heading--enemy {
   color: var(--loss);
+  border-left-color: var(--loss);
 }
 
 .rune-page-list {
@@ -1681,7 +2035,7 @@ th[scope='row'].sb-player {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.9rem;
-  padding: 0.5rem 0;
+  padding: 0.6rem;
   border-bottom: 1px solid var(--line);
 }
 

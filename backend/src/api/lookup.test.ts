@@ -65,6 +65,22 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
 }
 
 function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
+  const stats = {
+    rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60, leaguePoints: 51 } },
+    overallAverageKda: 3.5,
+    topChampions: [
+      { championName: 'Ahri', gamesPlayed: 6, winRatePercent: 50, averageKda: 3.5, averageCs: 180.25, averageCsPerMinute: 6.01 },
+    ],
+    mostPlayedRole: 'MIDDLE',
+    averageMatchDurationMinutes: 30,
+  };
+  const emptyStats = {
+    rankedByQueue: stats.rankedByQueue,
+    overallAverageKda: 0,
+    topChampions: [],
+    mostPlayedRole: 'Unknown',
+    averageMatchDurationMinutes: 0,
+  };
   return {
     riotId: { gameName: 'Doffy', tagLine: 'Smile' },
     puuid: 'puuid-1',
@@ -72,14 +88,21 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     profileIconId: 29,
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
-    stats: {
-      rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60, leaguePoints: 51 } },
-      overallAverageKda: 3.5,
-      topChampions: [
-        { championName: 'Ahri', gamesPlayed: 6, winRatePercent: 50, averageKda: 3.5, averageCs: 180.25, averageCsPerMinute: 6.01 },
-      ],
-      mostPlayedRole: 'MIDDLE',
+    stats,
+    statsByQueue: {
+      all: stats,
+      'ranked solo/duo': stats,
+      'ranked flex': emptyStats,
+      normal: emptyStats,
     },
+    rolePerformanceByQueue: {
+      all: [{ role: 'MIDDLE', gamesPlayed: 6, winRatePercent: 50 }],
+      'ranked solo/duo': [{ role: 'MIDDLE', gamesPlayed: 6, winRatePercent: 50 }],
+      'ranked flex': [],
+      normal: [],
+    },
+    premadesByQueue: { all: [], 'ranked solo/duo': [], 'ranked flex': [], normal: [] },
+    rankHistory: [],
     funFacts: [{ category: 'rolePreference', text: 'Favourite role: MIDDLE.' }],
     limitedDataNotice: false,
     recommendations: [

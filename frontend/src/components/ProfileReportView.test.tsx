@@ -1,9 +1,24 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { ProfileReport } from '../api/types';
+import type { ProfileReport, ProfileStats } from '../api/types';
+import { perQueueReportFields } from '../test/reportExtras';
 import { ProfileReportView, formatKda, formatWinRate, orderedQueueTypes, queueLabel } from './ProfileReportView';
 
 /** Task 16.4. Pure rendering assertions; no network, no hooks. */
+
+const baseStats: ProfileStats = {
+  rankedByQueue: {
+    RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50, leaguePoints: 50 },
+    RANKED_FLEX_SR: { tier: 'GOLD', division: 'II', winRatePercent: 41, leaguePoints: 12 },
+  },
+  overallAverageKda: 3.07,
+  topChampions: [
+    { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
+    { championName: 'Caitlyn', gamesPlayed: 3, winRatePercent: 67, averageKda: 3.17, averageCs: 165.33, averageCsPerMinute: 5.51 },
+  ],
+  mostPlayedRole: 'BOTTOM',
+  averageMatchDurationMinutes: 28.5,
+};
 
 function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
   return {
@@ -13,18 +28,8 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
     profileIconId: 7,
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
-    stats: {
-      rankedByQueue: {
-        RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 , leaguePoints: 50 },
-        RANKED_FLEX_SR: { tier: 'GOLD', division: 'II', winRatePercent: 41 , leaguePoints: 12 },
-      },
-      overallAverageKda: 3.07,
-      topChampions: [
-        { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
-        { championName: 'Caitlyn', gamesPlayed: 3, winRatePercent: 67, averageKda: 3.17, averageCs: 165.33, averageCsPerMinute: 5.51 },
-      ],
-      mostPlayedRole: 'BOTTOM',
-    },
+    stats: baseStats,
+    ...perQueueReportFields(baseStats),
     funFacts: [
       { category: 'rolePreference', text: 'Favourite role: BOTTOM, played in 19 of 28 recent matches (68%).' },
       { category: 'streak', text: 'Longest win streak in this window: 8; longest loss streak: 5.' },
@@ -47,12 +52,23 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
 }
 
 describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
-  it('shows tier, division and win rate per queue', () => {
+  it('shows a single standing — the queue the filter selects — with tier, division, LP and win rate', () => {
     render(<ProfileReportView report={report()} />);
 
-    expect(screen.getByTestId('queue-RANKED_SOLO_5x5')).toHaveTextContent('PLATINUM IV');
-    expect(screen.getByTestId('queue-RANKED_SOLO_5x5')).toHaveTextContent('50% win rate');
+    // Default filter is solo, so only the solo standing renders.
+    const solo = screen.getByTestId('queue-RANKED_SOLO_5x5');
+    expect(solo).toHaveTextContent('PLATINUM IV');
+    expect(solo).toHaveTextContent('50 LP');
+    expect(solo).toHaveTextContent('50% WR');
+    expect(screen.queryByTestId('queue-RANKED_FLEX_SR')).not.toBeInTheDocument();
+  });
+
+  it('shows the flex standing when the Flex tab is selected', () => {
+    render(<ProfileReportView report={report()} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-flex'));
+
     expect(screen.getByTestId('queue-RANKED_FLEX_SR')).toHaveTextContent('GOLD II');
+    expect(screen.queryByTestId('queue-RANKED_SOLO_5x5')).not.toBeInTheDocument();
   });
 
   it('renders "N/A" rather than a computed value when wins + losses is 0 (Requirement 6.6)', () => {
@@ -67,7 +83,7 @@ describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
       />,
     );
 
-    expect(screen.getByTestId('queue-RANKED_SOLO_5x5')).toHaveTextContent('N/A win rate');
+    expect(screen.getByTestId('queue-RANKED_SOLO_5x5')).toHaveTextContent('N/A WR');
   });
 
   it('renders "Unranked" for a queue with no entry (Requirement 6.1)', () => {
@@ -121,59 +137,148 @@ describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
   });
 });
 
-describe('Requirements 6.3, 6.5, 7.3 — recent form', () => {
+describe('Requirements 6.3, 6.5, 7.3 — recent form (scoped to the sidebar filter)', () => {
+  /** Overrides the default sidebar slice (`ranked solo/duo`), which the panel reads. */
+  function withSoloSlice(over: Partial<ProfileStats>): ProfileReport {
+    const base = report();
+    return report({
+      statsByQueue: {
+        ...base.statsByQueue,
+        'ranked solo/duo': { ...base.statsByQueue['ranked solo/duo'], ...over },
+      },
+    });
+  }
+
   it('shows the average KDA to 2 decimal places', () => {
-    render(<ProfileReportView report={report()} />);
+    render(<ProfileReportView report={withSoloSlice({ overallAverageKda: 3.07 })} />);
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('3.07');
   });
 
   it('pads a whole-number KDA to 2 decimals without changing the value', () => {
-    render(<ProfileReportView report={report({ stats: { ...report().stats, overallAverageKda: 3 } })} />);
+    render(<ProfileReportView report={withSoloSlice({ overallAverageKda: 3 })} />);
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('3.00');
     expect(formatKda(3)).toBe('3.00');
     expect(formatKda(3.07)).toBe('3.07');
   });
 
-  it('shows the most-played role (Requirement 6.5)', () => {
-    render(<ProfileReportView report={report()} />);
-    expect(screen.getByTestId('most-played-role')).toHaveTextContent('BOTTOM');
+  it('shows the most-played role for the selected slice (Requirement 6.5)', () => {
+    render(<ProfileReportView report={withSoloSlice({ mostPlayedRole: 'JUNGLE' })} />);
+    expect(screen.getByTestId('most-played-role')).toHaveTextContent('JUNGLE');
   });
 
-  it('shows the average match duration in minutes (Requirement 7.3)', () => {
-    render(<ProfileReportView report={report()} />);
-    expect(screen.getByTestId('average-duration')).toHaveTextContent('30.38 minutes');
+  it('shows the average match length for the selected slice, in minutes (Requirement 7.3)', () => {
+    render(<ProfileReportView report={withSoloSlice({ averageMatchDurationMinutes: 31.2 })} />);
+    expect(screen.getByTestId('average-duration')).toHaveTextContent('31m');
+  });
+
+  it('re-scopes the three figures when the filter tab changes', () => {
+    const base = report();
+    render(
+      <ProfileReportView
+        report={report({
+          statsByQueue: {
+            ...base.statsByQueue,
+            'ranked solo/duo': { ...base.statsByQueue['ranked solo/duo'], overallAverageKda: 1.1, mostPlayedRole: 'TOP', averageMatchDurationMinutes: 20 },
+            normal: { ...base.statsByQueue.normal, overallAverageKda: 9.9, mostPlayedRole: 'SUPPORT', averageMatchDurationMinutes: 40, topChampions: base.statsByQueue.all.topChampions },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('overall-kda')).toHaveTextContent('1.10');
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-normal'));
+    expect(screen.getByTestId('overall-kda')).toHaveTextContent('9.90');
+    expect(screen.getByTestId('most-played-role')).toHaveTextContent('SUPPORT');
+    expect(screen.getByTestId('average-duration')).toHaveTextContent('40m');
   });
 });
 
-describe('Requirement 6.4 — top champions', () => {
-  it('lists each champion with games, win rate and KDA, in the order supplied', () => {
+describe('profile-sidebar Requirement 9 — sidebar gamemode filter', () => {
+  function multiQueueReport(): ProfileReport {
+    const base = report();
+    const withChamp = (name: string): ProfileStats => ({
+      ...baseStats,
+      topChampions: [{ championName: name, gamesPlayed: 3, winRatePercent: 50, averageKda: 2, averageCs: 100, averageCsPerMinute: 5 }],
+    });
+    return report({
+      statsByQueue: {
+        all: withChamp('AllChamp'),
+        'ranked solo/duo': withChamp('SoloChamp'),
+        'ranked flex': { ...base.statsByQueue['ranked flex'], topChampions: [] },
+        normal: withChamp('NormalChamp'),
+      },
+      rolePerformanceByQueue: {
+        all: [{ role: 'MIDDLE', gamesPlayed: 3, winRatePercent: 50 }],
+        'ranked solo/duo': [{ role: 'TOP', gamesPlayed: 3, winRatePercent: 100 }],
+        'ranked flex': [],
+        normal: [{ role: 'JUNGLE', gamesPlayed: 3, winRatePercent: 0 }],
+      },
+    });
+  }
+
+  it('defaults to Ranked Solo/Duo and shows that slice (Requirement 9.4)', () => {
+    render(<ProfileReportView report={multiQueueReport()} />);
+    expect(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('champion-SoloChamp')).toBeInTheDocument();
+    expect(screen.getByTestId('role-perf-TOP')).toBeInTheDocument();
+  });
+
+  it('re-scopes champion preferences and role performance when changed, with no effect on recent matches', () => {
+    render(<ProfileReportView report={multiQueueReport()} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-normal'));
+
+    expect(screen.getByTestId('champion-NormalChamp')).toBeInTheDocument();
+    expect(screen.queryByTestId('champion-SoloChamp')).not.toBeInTheDocument();
+    expect(screen.getByTestId('role-perf-JUNGLE')).toBeInTheDocument();
+    // The recent-matches filter is independent and untouched.
+    expect(screen.getByTestId('recent-matches-queue-filter')).toHaveValue('all');
+  });
+
+  it('only offers queue values present in the report (plus the solo default)', () => {
+    // `multiQueueReport` has no flex matches, so flex is not offered.
+    render(<ProfileReportView report={multiQueueReport()} />);
+    const tabs = screen
+      .getByTestId('sidebar-queue-filter')
+      .querySelectorAll('[role="tab"]');
+    expect(Array.from(tabs).map((t) => t.textContent)).toEqual(['All', 'Solo', 'Normal']);
+  });
+});
+
+describe('profile-sidebar Requirement 7 — champion preferences panel', () => {
+  it('lists each champion with games, win rate and KDA', () => {
     render(<ProfileReportView report={report()} />);
 
-    const rows = screen.getAllByRole('row').slice(1); // skip the header row
-    expect(rows[0]).toHaveTextContent('Vayne');
-    expect(rows[0]).toHaveTextContent('6');
-    expect(rows[0]).toHaveTextContent('67%');
-    expect(rows[0]).toHaveTextContent('3.16');
-    expect(rows[1]).toHaveTextContent('Caitlyn');
+    const vayne = screen.getByTestId('champion-Vayne');
+    expect(vayne).toHaveTextContent('Vayne');
+    expect(vayne).toHaveTextContent('6'); // games
+    expect(vayne).toHaveTextContent('67%'); // win rate
+    expect(vayne).toHaveTextContent('3.16'); // KDA
   });
 
   it('does not reorder what the backend ranked', () => {
-    // Requirement 6.4's total order is computed and property-tested server-side.
+    // Requirement 7.3's total order is computed and property-tested server-side.
     render(<ProfileReportView report={report()} />);
 
-    const names = screen.getAllByRole('row').slice(1).map((row) => row.textContent ?? '');
+    const names = screen
+      .getAllByTestId(/^champion-(Vayne|Caitlyn)$/)
+      .map((el) => el.textContent ?? '');
     expect(names[0]).toContain('Vayne');
     expect(names[1]).toContain('Caitlyn');
   });
 
-  it('says so when there are no champions to rank', () => {
-    render(<ProfileReportView report={report({ stats: { ...report().stats, topChampions: [] } })} />);
+  it('says so when the selected queue slice has no champions', () => {
+    const base = report();
+    const empty = { ...base.statsByQueue['ranked solo/duo'], topChampions: [] };
+    render(
+      <ProfileReportView
+        report={report({ statsByQueue: { ...base.statsByQueue, 'ranked solo/duo': empty } })}
+      />,
+    );
     expect(screen.getByTestId('no-champions')).toBeInTheDocument();
   });
 
-  it('shows average CS/min with the raw average CS in brackets', () => {
+  it('shows CS per minute to one decimal place', () => {
     render(<ProfileReportView report={report()} />);
-    expect(screen.getByTestId('champion-Vayne-avg-cs')).toHaveTextContent('5.8(172.50)');
+    expect(screen.getByTestId('champion-Vayne-avg-cs')).toHaveTextContent('5.8');
   });
 });
 

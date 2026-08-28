@@ -45,6 +45,43 @@ export interface ProfileStats {
   overallAverageKda: number;
   topChampions: ChampionSummary[];
   mostPlayedRole: string;
+  /** Average match length in minutes for this slice's matches, 2dp. */
+  averageMatchDurationMinutes: number;
+}
+
+/**
+ * profile-sidebar Requirement 9: a Gamemode_Filter value. `'all'` or one of the
+ * three queue classes the backend captures. Mirrors the backend's
+ * `QueueFilterValue`.
+ */
+export type QueueFilterValue = 'all' | 'ranked solo/duo' | 'ranked flex' | 'normal';
+
+/** profile-sidebar Requirement 8: games + win rate for one role. */
+export interface RolePerformanceEntry {
+  role: string;
+  gamesPlayed: number;
+  winRatePercent: number;
+}
+
+/** A teammate the player has queued with 2+ times, and how those games went. */
+export interface PremadeEntry {
+  gameName: string;
+  tagLine: string;
+  gamesPlayed: number;
+  winRatePercent: number;
+}
+
+/**
+ * profile-sidebar Requirement 10: one recorded observation of a player's Ranked
+ * Solo/Duo standing, from `POST /api/lookup`'s `rankHistory`. Oldest first.
+ */
+export interface RankSnapshot {
+  queueType: string;
+  tier: string;
+  division: string;
+  leaguePoints: number;
+  /** Epoch ms. */
+  observedAt: number;
 }
 
 /**
@@ -211,6 +248,17 @@ export interface ProfileReport {
   /** lookup-pipeline-fixes Requirement 2.4: true when a diagnostic override was used. */
   usedPlatformOverride: boolean;
   stats: ProfileStats;
+  /**
+   * profile-sidebar Requirement 7.1 / 8.1: the same computations as `stats`
+   * (champions, KDA, role) plus per-role performance, keyed by Gamemode_Filter
+   * value. `statsByQueue.all` is identical to `stats`.
+   */
+  statsByQueue: Record<QueueFilterValue, ProfileStats>;
+  rolePerformanceByQueue: Record<QueueFilterValue, RolePerformanceEntry[]>;
+  /** Teammates the player queues with 2+ times, with shared games + win rate, per queue. */
+  premadesByQueue: Record<QueueFilterValue, PremadeEntry[]>;
+  /** profile-sidebar Requirement 10: Ranked Solo/Duo rank snapshots, oldest first. */
+  rankHistory: RankSnapshot[];
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5. */
   limitedDataNotice: boolean;

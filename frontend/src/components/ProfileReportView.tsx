@@ -51,9 +51,19 @@
 
 import { useMemo, useState } from 'react';
 
-import type { ProfileReport, RankedQueueStanding } from '../api/types';
+import type { ProfileReport, QueueFilterValue, RankedQueueStanding } from '../api/types';
+import { formatKda, formatWinRate } from '../domain/format';
+import {
+  SIDEBAR_QUEUE_FILTER_DEFAULT,
+  availableQueueFilterValues,
+  standingQueueFor,
+} from '../domain/queueFilters';
 import { platformLabel } from '../domain/regions';
-import { ChampionIcon } from './ChampionIcon';
+import { ChampionPreferences } from './ChampionPreferences';
+import { GamemodeFilter } from './GamemodeFilter';
+import { PremadesPanel } from './PremadesPanel';
+import { RankHistoryGraph } from './RankHistoryGraph';
+import { RolePerformancePanel } from './RolePerformancePanel';
 import { MatchRow } from './MatchRow';
 import { ProfileIcon } from './ProfileIcon';
 import { RankIcon } from './RankIcon';
@@ -85,27 +95,14 @@ export function orderedQueueTypes(rankedByQueue: Record<string, RankedQueueStand
   return [...known, ...rest];
 }
 
-/** Decision 1: pads for display only. */
-export function formatKda(value: number): string {
-  return Number.isFinite(value) ? value.toFixed(2) : '0.00';
-}
-
-/** Requirements 6.2/6.6. */
-export function formatWinRate(winRatePercent: number | 'N/A'): string {
-  return winRatePercent === 'N/A' ? 'N/A' : `${String(winRatePercent)}%`;
-}
+// Formatting helpers live in `domain/format.ts` now (shared with the sidebar
+// panels); re-exported here so existing importers/tests are unaffected.
+export { formatKda, formatWinRate };
 
 /** Decision 4. */
 function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString();
-}
-
-/** CS/min with the raw CS count in brackets, e.g. `5.6(124)`. */
-export function formatCsPerMinute(csPerMinute: number, cs: number): string {
-  const rate = Number.isFinite(csPerMinute) ? csPerMinute.toFixed(1) : '0.0';
-  const raw = Number.isInteger(cs) ? String(cs) : cs.toFixed(2);
-  return `${rate}(${raw})`;
 }
 
 const FUN_FACT_LABELS: Readonly<Record<string, string>> = {
@@ -145,7 +142,15 @@ export const RECENT_MATCH_QUEUE_FILTERS: readonly {
 export const RECENT_MATCHES_PAGE_SIZE = 10;
 
 export function ProfileReportView({ report }: ProfileReportViewProps) {
-  const queueTypes = orderedQueueTypes(report.stats.rankedByQueue);
+  // profile-sidebar Requirement 9.4: the sidebar filter defaults to ranked
+  // solo/duo and governs Champion_Preferences + Role_Performance. It is
+  // independent of the recent-matches queue filter below (Requirement 9.2).
+  const [sidebarQueueFilter, setSidebarQueueFilter] = useState<QueueFilterValue>(SIDEBAR_QUEUE_FILTER_DEFAULT);
+  const availableFilterValues = useMemo(() => availableQueueFilterValues(report), [report]);
+  const sidebarSlice = report.statsByQueue[sidebarQueueFilter];
+  const sidebarRoles = report.rolePerformanceByQueue[sidebarQueueFilter];
+  const sidebarPremades = report.premadesByQueue[sidebarQueueFilter];
+  const standingQueue = standingQueueFor(sidebarQueueFilter, report.stats.rankedByQueue);
 
   const [queueFilter, setQueueFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(RECENT_MATCHES_PAGE_SIZE);
@@ -214,213 +219,218 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
         ) : null}
       </header>
 
-      {/* Requirements 6.1, 6.2, 6.6 */}
-      <section className="rsec" aria-labelledby="ranked-heading">
-        <h3 id="ranked-heading" className="rsec-title">
-          Ranked standing
-        </h3>
-        {queueTypes.length === 0 ? (
-          <p data-testid="no-ranked-entries" className="empty-note">
-            Unranked in every queue.
-          </p>
-        ) : (
-          <ul className="queue-grid" role="list">
-            {queueTypes.map((queueType) => {
-              const standing = report.stats.rankedByQueue[queueType];
-              return (
-                <li key={queueType} data-testid={`queue-${queueType}`} className="queue-card">
-                  <span className="queue-card-label">{queueLabel(queueType)}</span>
-                  {standing === 'Unranked' ? (
-                    <span className="queue-card-tier queue-card-tier--none">Unranked</span>
-                  ) : (
-                    <>
-                      <div className="queue-card-rank">
-                        <RankIcon tier={standing.tier} size={52} />
-                        <span className="queue-card-tier">
-                          {standing.tier} {standing.division}
+      {/* profile-sidebar Requirement 1: the report splits into a summary rail
+          (identity above, then "who is this / how good") and a wider main column
+          for the match-by-match detail a visitor scrolls. Task 1 introduces the
+          wrappers only; the two-column grid and sticky behaviour are task 2. */}
+      <div className="report-columns">
+        <aside className="report-sidebar" aria-label="Player summary">
+          {/* profile-sidebar Requirement 10.3: rank-over-time graph, top of the rail. */}
+          <section className="rsec" aria-labelledby="rank-history-heading">
+            <h3 id="rank-history-heading" className="rsec-title">
+              Ranked Solo/Duo history
+            </h3>
+            <RankHistoryGraph history={report.rankHistory} />
+          </section>
+
+          {/* profile-sidebar Requirement 9.1/9.4: governs the two panels below. */}
+          <GamemodeFilter
+            value={sidebarQueueFilter}
+            onChange={setSidebarQueueFilter}
+            availableValues={availableFilterValues}
+            label="Filter champion stats and role performance by queue"
+            testId="sidebar-queue-filter"
+          />
+
+          {/* Requirements 6.1, 6.2, 6.6 — a single standing, for the queue the
+              gamemode filter selects (the user wants one, not the whole list). */}
+          <section className="rsec rsec--tight" aria-labelledby="ranked-heading">
+            <h3 id="ranked-heading" className="rsec-title">
+              Ranked standing
+            </h3>
+            {standingQueue === undefined ? (
+              <p data-testid="no-ranked-entries" className="empty-note">
+                Unranked in every queue.
+              </p>
+            ) : (
+              (() => {
+                const standing = report.stats.rankedByQueue[standingQueue];
+                return (
+                  <div data-testid={`queue-${standingQueue}`} className="rank-standing rank-standing--solo">
+                    <RankIcon
+                      tier={standing === 'Unranked' ? '' : standing.tier}
+                      size={40}
+                      className="rank-standing-crest"
+                    />
+                    <span className="rank-standing-queue">{queueLabel(standingQueue)}</span>
+                    {standing === 'Unranked' ? (
+                      <span className="rank-standing-tier rank-standing-tier--none">Unranked</span>
+                    ) : (
+                      <span className="rank-standing-detail">
+                        <span className="rank-standing-tier">
+                          {standing.tier} {standing.division} · {standing.leaguePoints} LP
                         </span>
-                      </div>
-                      <span className="queue-card-wr">{formatWinRate(standing.winRatePercent)} win rate</span>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+                        <span className="rank-standing-wr">{formatWinRate(standing.winRatePercent)} WR</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })()
+            )}
 
-      {/* Requirements 6.3, 6.5, 7.3 */}
-      <section className="rsec" aria-labelledby="overview-heading">
-        <h3 id="overview-heading" className="rsec-title">
-          Recent form
-        </h3>
-        <ul className="stat-tiles" role="list">
-          <li data-testid="overall-kda" className="stat-tile">
-            <span className="stat-tile-label">Average KDA</span>
-            <strong className="stat-tile-value">{formatKda(report.stats.overallAverageKda)}</strong>
-          </li>
-          <li data-testid="most-played-role" className="stat-tile">
-            <span className="stat-tile-label">Most-played role</span>
-            <strong className="stat-tile-value">{report.stats.mostPlayedRole}</strong>
-          </li>
-          <li data-testid="average-duration" className="stat-tile">
-            <span className="stat-tile-label">Average match duration</span>
-            <strong className="stat-tile-value">
-              {formatKda(report.averageMatchDurationMinutes)} <span className="stat-tile-unit">minutes</span>
-            </strong>
-          </li>
-        </ul>
-      </section>
+            {/* Requirements 6.3, 6.5, 7.3 — the match-window summary, scoped to
+                the selected gamemode filter like the panels below. */}
+            <dl className="rank-extra">
+              <div className="rank-extra-stat" data-testid="overall-kda">
+                <dt>Avg KDA</dt>
+                <dd>{formatKda(sidebarSlice.overallAverageKda)}</dd>
+              </div>
+              <div className="rank-extra-stat" data-testid="most-played-role">
+                <dt>Top role</dt>
+                <dd>{sidebarSlice.mostPlayedRole}</dd>
+              </div>
+              <div className="rank-extra-stat" data-testid="average-duration">
+                <dt>Avg length</dt>
+                <dd>{Math.round(sidebarSlice.averageMatchDurationMinutes)}m</dd>
+              </div>
+            </dl>
+          </section>
 
-      {/* Requirement 6.4 */}
-      <section className="rsec" aria-labelledby="champions-heading">
-        <h3 id="champions-heading" className="rsec-title">
-          Top champions
-        </h3>
-        {report.stats.topChampions.length === 0 ? (
-          <p data-testid="no-champions" className="empty-note">
-            No matches available to rank champions.
-          </p>
-        ) : (
-          <div className="table-scroll">
-            <table className="data-table">
-              <caption className="sr-only">Most-played champions in the recent match window</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Champion</th>
-                  <th scope="col">Games</th>
-                  <th scope="col">Win rate</th>
-                  <th scope="col">KDA</th>
-                  <th scope="col">Avg CS/min</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.stats.topChampions.map((champion) => (
-                  <tr key={champion.championName} data-testid={`champion-${champion.championName}`}>
-                    <th scope="row">
-                      <ChampionIcon championKey={champion.championName} size={32} className="top-champion-icon" />
-                    </th>
-                    <td>{champion.gamesPlayed}</td>
-                    <td>{champion.winRatePercent}%</td>
-                    <td>{formatKda(champion.averageKda)}</td>
-                    <td data-testid={`champion-${champion.championName}-avg-cs`}>
-                      {formatCsPerMinute(champion.averageCsPerMinute, champion.averageCs)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+          {/* profile-sidebar Requirement 7: Champion_Preferences, scoped to the
+              Sidebar_Queue_Filter, as a compact table (Requirement 7.5). */}
+          <section className="rsec rsec--tight" aria-labelledby="champions-heading">
+            <h3 id="champions-heading" className="rsec-title">
+              Champion preferences
+            </h3>
+            <ChampionPreferences champions={sidebarSlice.topChampions} />
+          </section>
 
-      <section className="rsec" aria-labelledby="recent-matches-heading">
-        <div className="rsec-title-row">
-          <h3 id="recent-matches-heading" className="rsec-title">
-            Recent matches
-          </h3>
-          <label className="rsec-filter">
-            <span className="sr-only">Filter recent matches by queue type</span>
-            <select
-              className="field-select rsec-filter-select"
-              data-testid="recent-matches-queue-filter"
-              value={queueFilter}
-              onChange={(event) => {
-                setQueueFilter(event.target.value);
-                setVisibleCount(RECENT_MATCHES_PAGE_SIZE);
-              }}
-            >
-              {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {report.recentMatches.length === 0 ? (
-          <p data-testid="no-recent-matches" className="empty-note">
-            No recent matches available.
-          </p>
-        ) : filteredMatches.length === 0 ? (
-          <p data-testid="no-recent-matches-for-queue" className="empty-note">
-            No recent matches in this queue.
-          </p>
-        ) : (
-          <>
-            <ul className="match-list" role="list">
-              {visibleMatches.map((match) => (
-                <MatchRow key={match.matchId} match={match} riotId={report.riotId} />
-              ))}
-            </ul>
-            {filteredMatches.length > visibleMatches.length ? (
-              <button
-                type="button"
-                className="btn btn-ghost match-list-more"
-                data-testid="recent-matches-load-more"
-                onClick={() => setVisibleCount((count) => count + RECENT_MATCHES_PAGE_SIZE)}
-              >
-                Load more
-              </button>
-            ) : null}
-          </>
-        )}
-      </section>
+          {/* profile-sidebar Requirement 8: Role_Performance, same queue scope. */}
+          <section className="rsec rsec--tight" aria-labelledby="role-perf-heading">
+            <h3 id="role-perf-heading" className="rsec-title">
+              Role performance
+            </h3>
+            <RolePerformancePanel roles={sidebarRoles} />
+          </section>
 
-      <div className="rsec-duo">
-        {/* Requirements 7.1, 7.2, 7.4 */}
-        <section className="rsec" aria-labelledby="fun-facts-heading">
-          <h3 id="fun-facts-heading" className="rsec-title">
-            Fun facts
-          </h3>
-          {report.funFacts.length === 0 ? (
-            <p data-testid="no-fun-facts" className="empty-note">
-              Not enough match history to derive fun facts yet.
-            </p>
-          ) : (
-            <ul className="fact-list" role="list">
-              {report.funFacts.map((fact) => (
-                <li key={fact.category} data-testid={`fun-fact-${fact.category}`} className="fact-item">
-                  <strong className="fact-label">{FUN_FACT_LABELS[fact.category] ?? fact.category}</strong>
-                  <span className="fact-text">{fact.text}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          {/* Premades — recurring teammates, same queue scope. */}
+          <section className="rsec rsec--tight" aria-labelledby="premades-heading">
+            <h3 id="premades-heading" className="rsec-title">
+              Premades
+            </h3>
+            <PremadesPanel premades={sidebarPremades} />
+          </section>
+        </aside>
 
-        {/* Requirement 8.5 */}
-        <section className="rsec" aria-labelledby="recommendations-heading">
-          <h3 id="recommendations-heading" className="rsec-title">
-            Improvement recommendations
-          </h3>
-          {report.recommendations.length === 0 ? (
-            // Decision 3: zero is valid under the amended Requirement 8.1.
-            <p data-testid="no-recommendations" className="empty-note">
-              No improvement recommendations were triggered by this match history.
-            </p>
-          ) : (
-            <ul className="reco-list" role="list">
-              {report.recommendations.map((recommendation) => (
-                <li
-                  key={recommendation.category}
-                  data-testid={`recommendation-${recommendation.category}`}
-                  className="reco-item"
+        <div className="report-main">
+          <section className="rsec" aria-labelledby="recent-matches-heading">
+            <div className="rsec-title-row">
+              <h3 id="recent-matches-heading" className="rsec-title">
+                Recent matches
+              </h3>
+              <label className="rsec-filter">
+                <span className="sr-only">Filter recent matches by queue type</span>
+                <select
+                  className="field-select rsec-filter-select"
+                  data-testid="recent-matches-queue-filter"
+                  value={queueFilter}
+                  onChange={(event) => {
+                    setQueueFilter(event.target.value);
+                    setVisibleCount(RECENT_MATCHES_PAGE_SIZE);
+                  }}
                 >
-                  <strong className="reco-label">
-                    {RECOMMENDATION_LABELS[recommendation.category] ?? recommendation.category}
-                  </strong>
-                  <span className="reco-text">{recommendation.text}</span>
-                  {/* Requirement 8.5: the metric name and the value that triggered it. */}
-                  <span data-testid={`metric-${recommendation.category}`} className="reco-metric">
-                    {recommendation.metricName}: {recommendation.metricValue}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                  {RECENT_MATCH_QUEUE_FILTERS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {report.recentMatches.length === 0 ? (
+              <p data-testid="no-recent-matches" className="empty-note">
+                No recent matches available.
+              </p>
+            ) : filteredMatches.length === 0 ? (
+              <p data-testid="no-recent-matches-for-queue" className="empty-note">
+                No recent matches in this queue.
+              </p>
+            ) : (
+              <>
+                <ul className="match-list" role="list">
+                  {visibleMatches.map((match) => (
+                    <MatchRow key={match.matchId} match={match} riotId={report.riotId} />
+                  ))}
+                </ul>
+                {filteredMatches.length > visibleMatches.length ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost match-list-more"
+                    data-testid="recent-matches-load-more"
+                    onClick={() => setVisibleCount((count) => count + RECENT_MATCHES_PAGE_SIZE)}
+                  >
+                    Load more
+                  </button>
+                ) : null}
+              </>
+            )}
+          </section>
+
+          <div className="rsec-duo">
+            {/* Requirements 7.1, 7.2, 7.4 */}
+            <section className="rsec" aria-labelledby="fun-facts-heading">
+              <h3 id="fun-facts-heading" className="rsec-title">
+                Fun facts
+              </h3>
+              {report.funFacts.length === 0 ? (
+                <p data-testid="no-fun-facts" className="empty-note">
+                  Not enough match history to derive fun facts yet.
+                </p>
+              ) : (
+                <ul className="fact-list" role="list">
+                  {report.funFacts.map((fact) => (
+                    <li key={fact.category} data-testid={`fun-fact-${fact.category}`} className="fact-item">
+                      <strong className="fact-label">{FUN_FACT_LABELS[fact.category] ?? fact.category}</strong>
+                      <span className="fact-text">{fact.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Requirement 8.5 */}
+            <section className="rsec" aria-labelledby="recommendations-heading">
+              <h3 id="recommendations-heading" className="rsec-title">
+                Improvement recommendations
+              </h3>
+              {report.recommendations.length === 0 ? (
+                // Decision 3: zero is valid under the amended Requirement 8.1.
+                <p data-testid="no-recommendations" className="empty-note">
+                  No improvement recommendations were triggered by this match history.
+                </p>
+              ) : (
+                <ul className="reco-list" role="list">
+                  {report.recommendations.map((recommendation) => (
+                    <li
+                      key={recommendation.category}
+                      data-testid={`recommendation-${recommendation.category}`}
+                      className="reco-item"
+                    >
+                      <strong className="reco-label">
+                        {RECOMMENDATION_LABELS[recommendation.category] ?? recommendation.category}
+                      </strong>
+                      <span className="reco-text">{recommendation.text}</span>
+                      {/* Requirement 8.5: the metric name and the value that triggered it. */}
+                      <span data-testid={`metric-${recommendation.category}`} className="reco-metric">
+                        {recommendation.metricName}: {recommendation.metricValue}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
       </div>
     </div>
   );

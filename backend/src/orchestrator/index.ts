@@ -192,6 +192,8 @@ import {
 import { computeFunFacts, isLimitedData, averageMatchDurationMinutesOf, type FunFact } from '../insight/funFacts';
 import { computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
 import { computeRecommendations, type Recommendation } from '../insight/recommendations';
+import { computePremades, type PremadeEntry } from '../insight/premades';
+import { computeRolePerformance, type RolePerformanceEntry } from '../insight/rolePerformance';
 import { computeStats, type IncludedMatch, type LanelessMatch, type ProfileStats } from '../insight/stats';
 import {
   DEFAULT_REGION,
@@ -200,7 +202,7 @@ import {
   type PlatformRoutingValue,
   type RegionalRoutingValue,
 } from '../region';
-import { createNoopRankHistoryStore, type RankHistoryStore } from '../db/rankHistoryStore';
+import { createNoopRankHistoryStore, type RankHistoryStore, type RankSnapshot } from '../db/rankHistoryStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
@@ -219,7 +221,13 @@ import {
   type CacheOrFetchOutcome,
   type RiotApiFailure,
 } from './cacheOrFetch';
-import { toIncludedMatch, toLanelessMatch, toLeagueEntries } from './mapping';
+import {
+  ALLOWED_QUEUE_TYPES,
+  toIncludedMatch,
+  toLanelessMatch,
+  toLeagueEntries,
+  type AllowedQueueType,
+} from './mapping';
 
 export {
   cacheOrFetch,
@@ -297,6 +305,16 @@ export type ErrorCode =
   | 'MATCH_HISTORY_UNAVAILABLE';
 
 /**
+ * profile-sidebar Requirement 7/8/9: the values a Gamemode_Filter can hold —
+ * `'all'` or one Allowed_Queue_Type. Every per-queue slice on the report is
+ * keyed by this.
+ */
+export type QueueFilterValue = 'all' | AllowedQueueType;
+
+/** `'all'` first, then the Allowed_Queue_Types in their declared order. */
+export const QUEUE_FILTER_VALUES: readonly QueueFilterValue[] = ['all', ...ALLOWED_QUEUE_TYPES];
+
+/**
  * design.md's `ProfileReport`, plus `averageMatchDurationMinutes` (decision 1).
  */
 export interface ProfileReport {
@@ -327,6 +345,32 @@ export interface ProfileReport {
   /** Requirement 2.4: true when `platformOverride` was supplied and used verbatim. */
   usedPlatformOverride: boolean;
   stats: ProfileStats;
+  /**
+   * profile-sidebar Requirement 7.1 / 8.1: the same computations as `stats`
+   * (champions, KDA, role) plus per-role performance, computed once for `'all'`
+   * and once per Allowed_Queue_Type. `statsByQueue['all']` is identical to
+   * `stats` — this is additive, not a rename; every existing `report.stats`
+   * consumer is unaffected. The `rankedByQueue` field inside each slice is the
+   * player's full current standing (it is not match-derived), so it is the same
+   * in every slice.
+   */
+  statsByQueue: Record<QueueFilterValue, ProfileStats>;
+  rolePerformanceByQueue: Record<QueueFilterValue, RolePerformanceEntry[]>;
+  /**
+   * Teammates the analyzed player has queued with in 2+ of the included matches,
+   * with games + win rate together, per Queue_Filter_Value. Keyed by Riot ID
+   * (participant records carry no PUUID). Empty when match participant lists are
+   * unavailable.
+   */
+  premadesByQueue: Record<QueueFilterValue, PremadeEntry[]>;
+  /**
+   * profile-sidebar Requirement 10.3: recorded Ranked Solo/Duo rank snapshots for
+   * this PUUID, oldest first. Empty when none have been recorded yet, when the
+   * persistent store is disabled, or when the read failed — the store is
+   * supplementary and its unavailability must never fail a lookup (design.md
+   * Error Handling).
+   */
+  rankHistory: RankSnapshot[];
   funFacts: FunFact[];
   /** Requirement 3.4 / 7.5: fewer than 5 included matches. */
   limitedDataNotice: boolean;
@@ -703,7 +747,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     // --- Phase 3: match details (Requirements 3.2, 3.3, 3.5) ------------------
     const window = await this.fetchMatchDetails(region, puuid, matchIds.value, gate);
 
-    const report = this.assembleReport({
+    const report = await this.assembleReport({
       ctx,
       puuid,
       resolvedPlatform: platform,
@@ -914,7 +958,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       }
     }
 
-    return this.assembleReport({
+    return await this.assembleReport({
       ctx,
       puuid,
       resolvedPlatform: platform,
@@ -945,8 +989,16 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     }
   }
 
-  /** Runs the Insight Engine over the assembled data and builds the report. */
-  private assembleReport(args: {
+  /**
+   * Runs the Insight Engine over the assembled data and builds the report.
+   *
+   * `async` only because of the `rankHistory` read (profile-sidebar Requirement
+   * 10.3): a single indexed lookup against the persistent store, `.catch`ed to
+   * `[]` so a slow or unreachable store yields an empty graph rather than a slow
+   * or failed lookup. With `MONGODB_URI` unset the no-op store resolves `[]`
+   * synchronously, so this adds nothing.
+   */
+  private async assembleReport(args: {
     ctx: LookupContext;
     puuid: string;
     resolvedPlatform: PlatformRoutingValue;
@@ -959,11 +1011,31 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     lanelessMatches: LanelessMatch[];
     ages: ComponentAge[];
     partialDataWarning: boolean;
-  }): ProfileReport {
+  }): Promise<ProfileReport> {
     const { ctx, puuid, resolvedPlatform, usedPlatformOverride, summoner, matches, lanelessMatches, ages, partialDataWarning } = args;
     // Requirements 2.8 / 6.1: an empty or unreadable entry list is Unranked.
     const league = toLeagueEntries(args.league);
-    const stats = computeStats(matches, league, puuid);
+
+    // profile-sidebar Requirement 7.1 / 8.1: one pass per Queue_Filter_Value over
+    // the matching subset (`'all'` is the whole set). `statsByQueue['all']` is
+    // therefore exactly today's single-pass `computeStats(matches, league)`, and
+    // `stats` is bound to it so nothing that reads `report.stats` changes.
+    const statsByQueue = {} as Record<QueueFilterValue, ProfileStats>;
+    const rolePerformanceByQueue = {} as Record<QueueFilterValue, RolePerformanceEntry[]>;
+    const premadesByQueue = {} as Record<QueueFilterValue, PremadeEntry[]>;
+    for (const value of QUEUE_FILTER_VALUES) {
+      const subset = value === 'all' ? matches : matches.filter((match) => match.queueType === value);
+      statsByQueue[value] = computeStats(subset, league, puuid);
+      rolePerformanceByQueue[value] = computeRolePerformance(subset);
+      premadesByQueue[value] = computePremades(subset);
+    }
+    const stats = statsByQueue.all;
+
+    // profile-sidebar Requirement 10.3 + design.md Error Handling: supplementary,
+    // never allowed to fail or stall the lookup.
+    const rankHistory = await this.rankHistoryStore
+      .history(puuid, SOLO_QUEUE_TYPE)
+      .catch(() => [] as RankSnapshot[]);
 
     return {
       riotId: canonicalRiotId(ctx),
@@ -973,6 +1045,10 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       resolvedPlatform,
       usedPlatformOverride,
       stats,
+      statsByQueue,
+      rolePerformanceByQueue,
+      premadesByQueue,
+      rankHistory,
       funFacts: computeFunFacts(matches), // Requirements 7.1-7.6
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
       recommendations: computeRecommendations(matches, stats), // Requirements 8.1-8.5

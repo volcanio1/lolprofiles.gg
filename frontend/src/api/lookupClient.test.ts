@@ -11,6 +11,7 @@ import {
   type FetchLike,
 } from './lookupClient';
 import type { ProfileReport } from './types';
+import { perQueueReportFields } from '../test/reportExtras';
 
 /**
  * The injected `fetch` means no network is touched. The timeout is exercised by
@@ -37,6 +38,7 @@ function unparseableResponse(status: number): Response {
 }
 
 function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
+  const stats = { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM', averageMatchDurationMinutes: 28.5 };
   return {
     riotId: { gameName: 'Doffy', tagLine: 'Smile' },
     puuid: 'p-1',
@@ -44,7 +46,8 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     profileIconId: 7,
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
-    stats: { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM' },
+    stats,
+    ...perQueueReportFields(stats),
     funFacts: [],
     limitedDataNotice: false,
     recommendations: [],

@@ -5,6 +5,22 @@
  * `match-detail-tabs` task 5.1 — Requirements 1.1, 1.2, 1.3, 1.4.
  *
  * ---------------------------------------------------------------------------
+ * LAYOUT: A HORIZONTAL BAND, NOT A STACK
+ * ---------------------------------------------------------------------------
+ *
+ * Four blocks read left to right (and right to left on the opponent's side, so
+ * the two mirror around the divider): portrait + loadout, identity + line stats,
+ * the Final_Build, and the LP Score. Each block is close to its natural width,
+ * so the whole side fits ~400px and two of them sit side by side inside the
+ * report's main column without wrapping — the stacked version this replaced
+ * needed roughly twice the height and still overflowed once the summary rail
+ * took its share of the page.
+ *
+ * The three line stats are a label/value grid rather than three side-by-side
+ * columns for the same reason: same information, about a third of the width,
+ * and it lines up with the portrait block's height.
+ *
+ * ---------------------------------------------------------------------------
  * "PRIMARY AND SECONDARY RUNE" IS KEYSTONE PLUS SECONDARY TREE
  * ---------------------------------------------------------------------------
  *
@@ -104,51 +120,68 @@ export function MatchSide({
   return (
     <div className={`match-side match-side--${side}`} data-testid={`match-side-${side}`}>
       <span className="sr-only">{label}</span>
-      {riotIdGameName.length > 0 ? (
-        <p className="match-side-name">
-          {riotIdGameName}
-          <span className="match-side-tagline">#{riotIdTagline}</span>
-        </p>
-      ) : null}
+
+      {/* Portrait (with the champion's name beneath it) and the four loadout
+          icons, as one fixed-width block at the outer edge of the side. */}
       <div className="match-side-portrait">
-        <ChampionIcon championKey={championName} size={40} className="match-side-champion-icon" />
+        <ChampionIcon championKey={championName} size={44} className="match-side-champion-icon" />
         <div className="match-side-loadout">
-          <SummonerSpellIcon spellId={summonerSpells[0]} size={16} className="match-side-spell-icon" />
-          <SummonerSpellIcon spellId={summonerSpells[1]} size={16} className="match-side-spell-icon" />
-          <RuneIcon runeId={keystoneId} size={16} className="match-side-rune-icon" />
+          <SummonerSpellIcon spellId={summonerSpells[0]} size={18} className="match-side-spell-icon" />
+          <SummonerSpellIcon spellId={summonerSpells[1]} size={18} className="match-side-spell-icon" />
+          <RuneIcon runeId={keystoneId} size={18} className="match-side-rune-icon" />
           <RuneTreeIcon
             styleId={runes.secondaryStyle}
-            size={16}
+            size={18}
             className="match-side-rune-tree-icon"
             selectionIds={runes.secondarySelections}
           />
         </div>
-        {rating ? (
-          <div
-            className={`lp-score lp-score--${rating.tier}`}
-            data-testid={`lp-score-${side}`}
-            title="LP Score — overall match performance, 0 to 100"
-          >
-            <span className="lp-score-label">LP Score</span>
-            <span className="lp-score-value">{rating.score}</span>
-          </div>
-        ) : null}
       </div>
-      <dl className="match-side-stats">
-        <div className="match-side-stat">
-          <dt>K/D/A</dt>
-          <dd>{formatKda3(kills, deaths, assists)}</dd>
+
+      {/* Who they are, then the three line stats as a compact label/value grid. */}
+      <div className="match-side-figures">
+        {riotIdGameName.length > 0 ? (
+          <p className="match-side-name">
+            {riotIdGameName}
+            <span className="match-side-tagline">#{riotIdTagline}</span>
+          </p>
+        ) : null}
+        {/* Abbreviated terms: this grid sits between the portrait and the build
+            in a ~400px band, and the full words ("K/D/A", "CS/min", "Vision")
+            set the label column ~40% wider than the figures need. The scoreboard
+            in the expanded panel already abbreviates the same three the same
+            way, so the two read consistently. */}
+        <dl className="match-side-stats">
+          <div className="match-side-stat">
+            <dt>KDA</dt>
+            <dd>{formatKda3(kills, deaths, assists)}</dd>
+          </div>
+          <div className="match-side-stat">
+            <dt>CS/m</dt>
+            <dd>{formatCsPerMinute(csPerMinute, cs)}</dd>
+          </div>
+          <div className="match-side-stat">
+            <dt>Vis</dt>
+            <dd>{visionScore}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <ItemBuildRow build={build} size={20} className="match-side-build" />
+
+      {rating ? (
+        <div
+          className={`lp-score lp-score--${rating.tier}`}
+          data-testid={`lp-score-${side}`}
+          title="LP Score — overall match performance, 0 to 100"
+        >
+          <span className="lp-score-value">{rating.score}</span>
+          {/* Abbreviated to keep the block ~2.5rem wide in the band; the full
+              name and scale are in the `title`, and the expanded panel's
+              scoreboard heads the same figure with the same "LP". */}
+          <span className="lp-score-label">LP</span>
         </div>
-        <div className="match-side-stat">
-          <dt>CS/min</dt>
-          <dd>{formatCsPerMinute(csPerMinute, cs)}</dd>
-        </div>
-        <div className="match-side-stat">
-          <dt>Vision</dt>
-          <dd>{visionScore}</dd>
-        </div>
-      </dl>
-      <ItemBuildRow build={build} size={24} />
+      ) : null}
     </div>
   );
 }

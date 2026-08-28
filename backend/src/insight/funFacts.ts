@@ -120,7 +120,6 @@
 
 import {
   mostPlayedRoleOf,
-  round2,
   roundHalfUp,
   topChampionsOf,
   UNKNOWN_ROLE,
@@ -263,17 +262,11 @@ export function longestLossStreakOf(matches: readonly IncludedMatch[]): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Requirement 7.3: average match duration over the window, in minutes, to 2
- * decimal places (decision 4). 0 for an empty window — there is nothing to
- * average. Surfaced by the report layer, not as a fun fact (decision 9).
+ * Requirement 7.3: average match duration over the window (decision 4).
+ * Moved to `stats.ts` so `computeStats` can compute it per queue without a
+ * circular import; re-exported here for existing callers and tests.
  */
-export function averageMatchDurationMinutesOf(matches: readonly IncludedMatch[]): number {
-  if (matches.length === 0) {
-    return 0;
-  }
-  const totalSeconds = matches.reduce((total, match) => total + match.durationSeconds, 0);
-  return round2(totalSeconds / matches.length / 60);
-}
+export { averageMatchDurationMinutesOf } from './stats';
 
 // ---------------------------------------------------------------------------
 // Champion loyalty and role preference (decision 7)

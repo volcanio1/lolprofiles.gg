@@ -182,6 +182,15 @@ export function isProfileReport(body: unknown): body is ProfileReport {
     (typeof candidate.summonerLevel === 'number' || candidate.summonerLevel === null) &&
     candidate.stats !== null &&
     typeof candidate.stats === 'object' &&
+    // profile-sidebar Requirements 7/8/10 — a report without these is a
+    // version-skewed backend, not a report this frontend can render.
+    candidate.statsByQueue !== null &&
+    typeof candidate.statsByQueue === 'object' &&
+    candidate.rolePerformanceByQueue !== null &&
+    typeof candidate.rolePerformanceByQueue === 'object' &&
+    candidate.premadesByQueue !== null &&
+    typeof candidate.premadesByQueue === 'object' &&
+    Array.isArray(candidate.rankHistory) &&
     Array.isArray(candidate.funFacts) &&
     Array.isArray(candidate.recommendations)
   );

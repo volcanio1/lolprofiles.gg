@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { LookupOutcome, LookupRequest } from '../api/lookupClient';
 import type { ApiErrorPayload, ProfileReport } from '../api/types';
+import { perQueueReportFields } from '../test/reportExtras';
 import { MAX_RETRIES, MIN_COOLDOWN_SECONDS, useLookup, type Scheduler } from './useLookup';
 
 /**
@@ -10,6 +11,7 @@ import { MAX_RETRIES, MIN_COOLDOWN_SECONDS, useLookup, type Scheduler } from './
  */
 
 function sampleReport(): ProfileReport {
+  const stats = { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM', averageMatchDurationMinutes: 28.5 };
   return {
     riotId: { gameName: 'Doffy', tagLine: 'Smile' },
     puuid: 'p-1',
@@ -17,7 +19,8 @@ function sampleReport(): ProfileReport {
     profileIconId: 7,
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
-    stats: { rankedByQueue: {}, overallAverageKda: 3.07, topChampions: [], mostPlayedRole: 'BOTTOM' },
+    stats,
+    ...perQueueReportFields(stats),
     funFacts: [],
     limitedDataNotice: false,
     recommendations: [],

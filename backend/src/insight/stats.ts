@@ -296,6 +296,8 @@ export interface ProfileStats {
   overallAverageKda: number;
   topChampions: ChampionSummary[];
   mostPlayedRole: string;
+  /** Requirement 7.3: average match length in minutes over this slice's matches, 2dp. */
+  averageMatchDurationMinutes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +363,20 @@ export function averageKdaOf(matches: readonly IncludedMatch[]): number {
     return round2(avgKills + avgAssists);
   }
   return round2((avgKills + avgAssists) / avgDeaths);
+}
+
+/**
+ * Requirement 7.3: average match duration over the window, in minutes, to 2
+ * decimal places. 0 for an empty window. Lives here (not in `funFacts.ts`, which
+ * imports this module) so `computeStats` can include it per queue without a
+ * circular import; `funFacts.ts` re-exports it for its existing callers.
+ */
+export function averageMatchDurationMinutesOf(matches: readonly IncludedMatch[]): number {
+  if (matches.length === 0) {
+    return 0;
+  }
+  const totalSeconds = matches.reduce((total, match) => total + match.durationSeconds, 0);
+  return round2(totalSeconds / matches.length / 60);
 }
 
 // ---------------------------------------------------------------------------
@@ -639,5 +655,6 @@ export function computeStats(
     overallAverageKda: averageKdaOf(matches),
     topChampions: topChampionsOf(matches),
     mostPlayedRole: mostPlayedRoleOf(matches),
+    averageMatchDurationMinutes: averageMatchDurationMinutesOf(matches),
   };
 }

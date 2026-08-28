@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { LookupOutcome, LookupRequest } from '../api/lookupClient';
 import type { ProfileReport } from '../api/types';
+import { perQueueReportFields } from '../test/reportExtras';
 import { RIOT_ATTRIBUTION_TEXT } from '../compliance/RiotDataPage';
 import type { UseLookupOptions } from '../hooks/useLookup';
 import { ProfileReportPage } from './ProfileReportPage';
@@ -15,6 +16,15 @@ import { SearchPage, reportPathFor } from './SearchPage';
  */
 
 function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
+  const stats = {
+    rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50, leaguePoints: 50 } },
+    overallAverageKda: 3.07,
+    topChampions: [
+      { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
+    ],
+    mostPlayedRole: 'BOTTOM',
+    averageMatchDurationMinutes: 28.5,
+  };
   return {
     riotId: { gameName: 'Doffy', tagLine: 'Smile' },
     puuid: 'p-1',
@@ -22,14 +32,8 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     profileIconId: 7,
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
-    stats: {
-      rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 , leaguePoints: 50 } },
-      overallAverageKda: 3.07,
-      topChampions: [
-        { championName: 'Vayne', gamesPlayed: 6, winRatePercent: 67, averageKda: 3.16, averageCs: 172.5, averageCsPerMinute: 5.75 },
-      ],
-      mostPlayedRole: 'BOTTOM',
-    },
+    stats,
+    ...perQueueReportFields(stats),
     funFacts: [{ category: 'rolePreference', text: 'Favourite role: BOTTOM.' }],
     limitedDataNotice: false,
     recommendations: [],
