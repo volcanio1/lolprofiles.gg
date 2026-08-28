@@ -167,7 +167,7 @@ function makeHarness(): Harness {
     riotApiClient,
     now,
     scheduleTimeout: () => () => undefined,
-    logger: { authFailure: () => undefined },
+    logger: { authFailure: () => undefined, storeWriteFailed: () => undefined },
   });
   const app = createApp({
     dataDragonVersion: '16.17.1',
@@ -213,6 +213,7 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
       tier: 'PLATINUM',
       division: 'IV',
       winRatePercent: 50,
+      leaguePoints: 51,
     });
     // Requirement 6.6: 0 wins + 0 losses renders as N/A, not 0%.
     expect(report.stats.rankedByQueue.RANKED_PREMADE_5x5.winRatePercent).toBe('N/A');

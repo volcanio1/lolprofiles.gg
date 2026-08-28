@@ -23,6 +23,8 @@ export interface RankedQueueSummary {
   division: string;
   /** `'N/A'` exactly when wins + losses is 0 (Requirement 6.6). */
   winRatePercent: number | 'N/A';
+  /** Current League Points within the division (standing, not a per-game delta). */
+  leaguePoints: number;
 }
 
 /** Requirement 6.1: a queue with no entry reads as `'Unranked'`. */

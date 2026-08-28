@@ -15,8 +15,8 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
     usedPlatformOverride: false,
     stats: {
       rankedByQueue: {
-        RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 },
-        RANKED_FLEX_SR: { tier: 'GOLD', division: 'II', winRatePercent: 41 },
+        RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 50 , leaguePoints: 50 },
+        RANKED_FLEX_SR: { tier: 'GOLD', division: 'II', winRatePercent: 41 , leaguePoints: 12 },
       },
       overallAverageKda: 3.07,
       topChampions: [
@@ -61,7 +61,7 @@ describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
         report={report({
           stats: {
             ...report().stats,
-            rankedByQueue: { RANKED_SOLO_5x5: { tier: 'IRON', division: 'IV', winRatePercent: 'N/A' } },
+            rankedByQueue: { RANKED_SOLO_5x5: { tier: 'IRON', division: 'IV', winRatePercent: 'N/A' , leaguePoints: 0 } },
           },
         })}
       />,
@@ -95,7 +95,7 @@ describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
         report={report({
           stats: {
             ...report().stats,
-            rankedByQueue: { RANKED_PREMADE_5x5: { tier: 'SILVER', division: 'II', winRatePercent: 33 } },
+            rankedByQueue: { RANKED_PREMADE_5x5: { tier: 'SILVER', division: 'II', winRatePercent: 33 , leaguePoints: 88 } },
           },
         })}
       />,

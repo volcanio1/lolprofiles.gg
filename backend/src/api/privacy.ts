@@ -53,7 +53,16 @@
  *    route contract declares only the two fields and the counts would tell an
  *    unauthenticated caller how much data we hold about a given player — a small
  *    but gratuitous information leak. They stay internal, where the Cache Store's
- *    own tests assert them.
+ *    own tests assert them. specs/database/ Requirement 5.4 is satisfied by
+ *    folding the Persistent_Store deletions into `found` (a boolean leaks
+ *    nothing), NOT by adding a `persistentRowsRemoved` count to the body — that
+ *    would reintroduce exactly the leak this decision removed.
+ *
+ * 4. THE PERSISTENT STORE DELETIONS ARE BEST-EFFORT (specs/database/ Requirement
+ *    5.3). Each is wrapped in `.catch(() => 0)`, so a database outage cannot fail
+ *    a request whose Cache_Store eviction already succeeded. A disabled store's
+ *    no-op `deleteByPuuid` returns 0 and is indistinguishable from "nothing to
+ *    delete", which is correct.
  *
  * 2. `deletedAt` IS SET WHEN THE DELETION COMPLETES, NOT WHEN THE REQUEST ARRIVED,
  *    because Requirement 12.5's confirmation is that the deletion *has been*
@@ -68,12 +77,21 @@
 
 import type { RequestHandler } from 'express';
 import type { CacheStore } from '../cache';
+import { createNoopRankHistoryStore, type RankHistoryStore } from '../db/rankHistoryStore';
+import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { missingFieldError } from './errors';
 
 export interface PrivacyRouteDependencies {
   cache: CacheStore;
   /** Injected clock; shared with the cache store and orchestrator. */
   now: () => number;
+  /**
+   * Persistent_Store deletion targets (specs/database/ Requirement 5.1). Optional
+   * so existing callers and tests are unaffected; default to the no-op stores,
+   * which is also the runtime state when `MONGODB_URI` is unset.
+   */
+  rankHistoryStore?: RankHistoryStore;
+  lookedUpPlayerStore?: LookedUpPlayerStore;
 }
 
 /** design.md's declared confirmation body (decision 1). */
@@ -87,6 +105,9 @@ export interface DeletionConfirmation {
  * data existed (Requirement 12.6), and idempotent because `deleteByPuuid` is.
  */
 export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): RequestHandler {
+  const rankHistoryStore = deps.rankHistoryStore ?? createNoopRankHistoryStore();
+  const lookedUpPlayerStore = deps.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
+
   return async (req, res, next) => {
     try {
       const body: unknown = req.body;
@@ -99,12 +120,22 @@ export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): Requ
         return;
       }
 
-      // Requirements 12.4/12.5: the Cache Store owns removal vs in-place scrubbing.
-      const result = await deps.cache.deleteByPuuid(rawPuuid.trim());
+      const puuid = rawPuuid.trim();
 
-      // Requirements 12.5/12.6: confirmation either way, never an error.
+      // Requirements 12.4/12.5: the Cache Store owns removal vs in-place scrubbing.
+      // specs/database/ Requirement 5.1: the Persistent_Store is cleared too, and
+      // 5.3: best-effort — a store failure must not fail a request whose cache
+      // eviction succeeded (decision 4).
+      const [cacheResult, snapshotsRemoved, playerRemoved] = await Promise.all([
+        deps.cache.deleteByPuuid(puuid),
+        rankHistoryStore.deleteByPuuid(puuid).catch(() => 0),
+        lookedUpPlayerStore.deleteByPuuid(puuid).catch(() => 0),
+      ]);
+
+      // Requirements 12.5/12.6 + specs/database/ 5.4: confirmation either way,
+      // never an error; `found` reflects removal from ANY store (decision 1).
       const confirmation: DeletionConfirmation = {
-        found: result.found,
+        found: cacheResult.found || snapshotsRemoved > 0 || playerRemoved > 0,
         deletedAt: new Date(deps.now()).toISOString(), // decision 2
       };
       res.status(200).json(confirmation);

@@ -42,7 +42,12 @@ interface Harness {
   logged: unknown[];
 }
 
-function makeHarness(cache?: CacheStore): Harness {
+interface HarnessStores {
+  rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
+  lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
+}
+
+function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
   const now = () => NOW;
   const store = (cache ?? createInMemoryCacheStore({ now })) as InMemoryCacheStore;
   const logged: unknown[] = [];
@@ -62,6 +67,8 @@ function makeHarness(cache?: CacheStore): Harness {
       now,
       logger,
       dataDragonVersion: '16.17.1',
+      rankHistoryStore: stores.rankHistoryStore,
+      lookedUpPlayerStore: stores.lookedUpPlayerStore,
     }),
   );
 
@@ -289,6 +296,97 @@ describe('POST /api/privacy/delete — request validation', () => {
     const harness = makeHarness();
     await seed(harness.cache);
 
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(Object.keys(response.body).sort()).toEqual(['deletedAt', 'found']);
+  });
+});
+
+describe('POST /api/privacy/delete — Persistent_Store (specs/database/ Requirement 5)', () => {
+  const SNAP = {
+    puuid: PUUID,
+    queueType: 'RANKED_SOLO_5x5',
+    tier: 'GOLD',
+    division: 'II',
+    leaguePoints: 40,
+    observedAt: NOW,
+  };
+  const PLAYER = {
+    puuid: PUUID,
+    gameName: 'Subject',
+    tagLine: 'EUW',
+    profileIconId: 1,
+    region: 'euw1',
+    lastLookedUpAt: NOW,
+  };
+
+  it('clears the PUUID from both collections and still reports found: true', async () => {
+    const { createInMemoryRankHistoryStore } = await import('../db/rankHistoryStore');
+    const { createInMemoryLookedUpPlayerStore } = await import('../db/lookedUpPlayerStore');
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    await rankHistoryStore.record(SNAP);
+    await lookedUpPlayerStore.remember(PLAYER);
+
+    // Cache is empty — the only data for this PUUID lives in the Persistent_Store.
+    const harness = makeHarness(undefined, { rankHistoryStore, lookedUpPlayerStore });
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5')).toEqual([]);
+    expect(await lookedUpPlayerStore.searchByNamePrefix('subject', 10)).toEqual([]);
+  });
+
+  it('still succeeds when a Persistent_Store deletion throws, as long as the cache half worked', async () => {
+    const { createInMemoryLookedUpPlayerStore } = await import('../db/lookedUpPlayerStore');
+    const throwingRankHistory = {
+      record: () => Promise.resolve(),
+      history: () => Promise.resolve([]),
+      deleteByPuuid: () => Promise.reject(new Error('mongo down, with sensitive detail')),
+    };
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    await lookedUpPlayerStore.remember(PLAYER);
+
+    const harness = makeHarness(undefined, {
+      rankHistoryStore: throwingRankHistory,
+      lookedUpPlayerStore,
+    });
+    await seed(harness.cache); // gives the cache something to delete for PUUID
+
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(JSON.stringify(response.body)).not.toContain('sensitive detail');
+    expect(harness.logged).toHaveLength(0); // a swallowed store error is not a defect
+    expect(await lookedUpPlayerStore.searchByNamePrefix('subject', 10)).toEqual([]);
+  });
+
+  it('reports found: false when nothing exists in any store', async () => {
+    const { createInMemoryRankHistoryStore } = await import('../db/rankHistoryStore');
+    const { createInMemoryLookedUpPlayerStore } = await import('../db/lookedUpPlayerStore');
+    const harness = makeHarness(undefined, {
+      rankHistoryStore: createInMemoryRankHistoryStore(),
+      lookedUpPlayerStore: createInMemoryLookedUpPlayerStore(),
+    });
+
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: 'nobody' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(false);
+  });
+
+  it('the response body still carries only { found, deletedAt }', async () => {
+    const { createInMemoryRankHistoryStore } = await import('../db/rankHistoryStore');
+    const { createInMemoryLookedUpPlayerStore } = await import('../db/lookedUpPlayerStore');
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    await rankHistoryStore.record(SNAP);
+
+    const harness = makeHarness(undefined, {
+      rankHistoryStore,
+      lookedUpPlayerStore: createInMemoryLookedUpPlayerStore(),
+    });
     const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
 
     expect(Object.keys(response.body).sort()).toEqual(['deletedAt', 'found']);

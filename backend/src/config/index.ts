@@ -33,6 +33,15 @@ export interface AppConfig {
    * everything 429s — set this to ~30 alongside a dev key.
    */
   matchHistoryCount?: number;
+  /**
+   * MongoDB connection string for the persistent store (rank history + player
+   * autocomplete), from `MONGODB_URI`. Optional: unset disables the persistent
+   * store entirely and the site runs exactly as it did before it existed. A
+   * set-but-unreachable value is logged once at startup and also runs disabled —
+   * it never crashes the process. Only the string's presence is validated here;
+   * the driver validates its shape.
+   */
+  mongodbUri?: string;
 }
 
 /** Parses a positive-integer env var, or `undefined` when unset/blank. Throws on garbage. */
@@ -87,6 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   const frontendDist = env.FRONTEND_DIST?.trim();
+  const mongodbUri = env.MONGODB_URI?.trim();
 
   return {
     riotApiKey,
@@ -95,5 +105,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDragonVersion,
     frontendDistPath: frontendDist && frontendDist.length > 0 ? frontendDist : undefined,
     matchHistoryCount: readPositiveInt(env.MATCH_HISTORY_COUNT, 'MATCH_HISTORY_COUNT'),
+    mongodbUri: mongodbUri && mongodbUri.length > 0 ? mongodbUri : undefined,
   };
 }

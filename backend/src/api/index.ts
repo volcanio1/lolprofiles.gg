@@ -47,6 +47,8 @@
 
 import express, { Router, type ErrorRequestHandler } from 'express';
 import type { CacheStore } from '../cache';
+import type { RankHistoryStore } from '../db/rankHistoryStore';
+import type { LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createBuildPathHandler } from './buildPath';
@@ -96,6 +98,14 @@ export interface ApiDependencies {
   /** item-timeline: serves `GET /api/match/:matchId/build-path`. */
   buildPathOrchestrator: BuildPathOrchestrator;
   cache: CacheStore;
+  /**
+   * Persistent_Store (specs/database/). Optional — omitted means the no-op
+   * stores, which is also the runtime state when `MONGODB_URI` is unset. Today
+   * only `POST /api/privacy/delete` consumes them (Requirement 5.1);
+   * `autofill-search` will add a read route over `lookedUpPlayerStore`.
+   */
+  rankHistoryStore?: RankHistoryStore;
+  lookedUpPlayerStore?: LookedUpPlayerStore;
   /** Injected clock, shared with the cache store and the orchestrator. */
   now?: () => number;
   logger?: ApiLogger;
@@ -147,7 +157,15 @@ export function createApiRouter(deps: ApiDependencies): Router {
     '/match/:matchId/build-path',
     createBuildPathHandler({ buildPathOrchestrator: deps.buildPathOrchestrator }),
   );
-  router.post('/privacy/delete', createPrivacyDeleteHandler({ cache: deps.cache, now }));
+  router.post(
+    '/privacy/delete',
+    createPrivacyDeleteHandler({
+      cache: deps.cache,
+      now,
+      rankHistoryStore: deps.rankHistoryStore,
+      lookedUpPlayerStore: deps.lookedUpPlayerStore,
+    }),
+  );
   router.get(
     '/static-data',
     createStaticDataHandler({ dataDragonVersion: deps.dataDragonVersion }),

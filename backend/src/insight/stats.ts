@@ -265,6 +265,13 @@ export interface RankedQueueSummary {
   division: string;
   /** `'N/A'` exactly when `wins + losses === 0` (Requirement 6.6). */
   winRatePercent: number | 'N/A';
+  /**
+   * Current League Points within the division, 0-100 below Master and unbounded
+   * at Master+ — the player's standing, not a per-game delta. Carried straight
+   * from League-V4's `leaguePoints`. Consumed by `specs/database/`'s rank-snapshot
+   * write hook and `specs/profile-sidebar/`'s rank-history graph.
+   */
+  leaguePoints: number;
 }
 
 /** Requirement 6.1 / 2.8: no entry for a queue type is a valid unranked state. */
@@ -376,6 +383,7 @@ export function rankedByQueueOf(league: readonly LeagueEntry[]): Record<string, 
       tier: entry.tier,
       division: entry.division,
       winRatePercent: winRatePercentOf(entry.wins, entry.losses),
+      leaguePoints: entry.leaguePoints,
     };
   }
   return rankedByQueue;

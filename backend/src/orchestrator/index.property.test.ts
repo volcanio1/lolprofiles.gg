@@ -127,7 +127,7 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
     riotApiClient: client,
     now,
     scheduleTimeout: neverFiringScheduler,
-    logger: { authFailure: () => undefined },
+    logger: { authFailure: () => undefined, storeWriteFailed: () => undefined },
   });
 
   return {
@@ -466,7 +466,7 @@ describe('Lookup Orchestrator match-history properties', () => {
           riotApiClient: client,
           now: () => clock,
           scheduleTimeout: neverFiringScheduler,
-          logger: { authFailure: () => undefined },
+          logger: { authFailure: () => undefined, storeWriteFailed: () => undefined },
           matchDetailConcurrency: concurrency,
         });
 
@@ -611,7 +611,10 @@ describe('Lookup Orchestrator unranked properties', () => {
 
           // Independent oracle: first entry per queue type wins; win rate is
           // 'N/A' exactly when wins + losses is 0 (Requirements 6.2 / 6.6).
-          const expected = new Map<string, { tier: string; division: string; winRatePercent: number | 'N/A' }>();
+          const expected = new Map<
+            string,
+            { tier: string; division: string; winRatePercent: number | 'N/A'; leaguePoints: number }
+          >();
           for (const entry of entries) {
             if (expected.has(entry.queueType)) {
               continue;
@@ -621,6 +624,7 @@ describe('Lookup Orchestrator unranked properties', () => {
               tier: entry.tier,
               division: entry.rank,
               winRatePercent: total === 0 ? 'N/A' : Math.round((100 * entry.wins) / total),
+              leaguePoints: entry.leaguePoints,
             });
           }
 

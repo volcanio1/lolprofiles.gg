@@ -6,6 +6,14 @@ import {
   type CacheStore,
   type InMemoryCacheStore,
 } from '../cache';
+import {
+  createInMemoryRankHistoryStore,
+  type RankHistoryStore,
+} from '../db/rankHistoryStore';
+import {
+  createInMemoryLookedUpPlayerStore,
+  type LookedUpPlayerStore,
+} from '../db/lookedUpPlayerStore';
 import type { PlatformRoutingValue } from '../region';
 import type {
   AccountDto,
@@ -201,12 +209,16 @@ function makeScheduler() {
 
 function recordingLogger() {
   const authFailures: { stage: LookupStage; routingValue: string; status: 401 | 403 }[] = [];
+  const storeWriteFailures: unknown[] = [];
   const logger: LookupLogger = {
     authFailure: (info) => {
       authFailures.push(info);
     },
+    storeWriteFailed: ({ reason }) => {
+      storeWriteFailures.push(reason);
+    },
   };
-  return { logger, authFailures };
+  return { logger, authFailures, storeWriteFailures };
 }
 
 interface HarnessOptions extends ClientScript {
@@ -214,6 +226,8 @@ interface HarnessOptions extends ClientScript {
   cache?: CacheStore;
   matchDetailConcurrency?: number;
   matchHistoryCount?: number;
+  rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
+  lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -221,7 +235,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const cache = options.cache ?? createInMemoryCacheStore({ now });
   const fakes = makeFakes(options);
   const scheduler = makeScheduler();
-  const { logger, authFailures } = recordingLogger();
+  const { logger, authFailures, storeWriteFailures } = recordingLogger();
   const orchestrator = createLookupOrchestrator({
     cache,
     riotApiClient: fakes.client,
@@ -230,8 +244,15 @@ function makeHarness(options: HarnessOptions = {}) {
     logger,
     matchDetailConcurrency: options.matchDetailConcurrency,
     matchHistoryCount: options.matchHistoryCount,
+    rankHistoryStore: options.rankHistoryStore,
+    lookedUpPlayerStore: options.lookedUpPlayerStore,
   });
-  return { orchestrator, cache, fakes, scheduler, authFailures, now };
+  return { orchestrator, cache, fakes, scheduler, authFailures, storeWriteFailures, now };
+}
+
+/** Lets the unawaited `recordLookupSideEffects` promise chain settle. */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function run(
@@ -637,7 +658,7 @@ describe('runLookup — report contents', () => {
     expect(report.profileIconId).toBe(29);
     // Requirement 6.1/6.2: ranked standing keyed by the queue types League-V4 returned.
     expect(report.stats.rankedByQueue).toEqual({
-      RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60 },
+      RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60, leaguePoints: 51 },
     });
     expect(report.stats.topChampions.map((champion) => champion.championName)).toEqual(['Ahri', 'Lux']);
     expect(report.stats.mostPlayedRole).toBe('MIDDLE');
@@ -942,5 +963,199 @@ describe('runLookup — Requirement 11.3 fallback to last-known cache', () => {
     });
 
     await expect(run(orchestrator)).resolves.toEqual({ kind: 'error', code: 'TIMEOUT', retriable: false });
+  });
+});
+
+describe('runLookup — Persistent_Store side effects (specs/database/ Requirement 2/3/4)', () => {
+  it('records a Ranked Solo/Duo snapshot and remembers the player on a fresh success', async () => {
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    const now = () => 1_726_000_000_000;
+    const harness = makeHarness({ now, rankHistoryStore, lookedUpPlayerStore });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    const history = await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5');
+    expect(history).toEqual([
+      {
+        puuid: PUUID,
+        queueType: 'RANKED_SOLO_5x5',
+        tier: 'PLATINUM',
+        division: 'IV',
+        leaguePoints: 51,
+        observedAt: now(),
+      },
+    ]);
+    const remembered = await lookedUpPlayerStore.searchByNamePrefix(GAME_NAME, 10);
+    expect(remembered).toEqual([
+      {
+        puuid: PUUID,
+        gameName: GAME_NAME,
+        tagLine: TAG_LINE,
+        profileIconId: 29,
+        region: 'na1',
+        lastLookedUpAt: now(),
+      },
+    ]);
+    expect(harness.storeWriteFailures).toEqual([]);
+  });
+
+  it('remembers the player but records no snapshot for an unranked lookup', async () => {
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    const harness = makeHarness({
+      league: { kind: 'ok', data: [] }, // unranked
+      rankHistoryStore,
+      lookedUpPlayerStore,
+    });
+
+    await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5')).toEqual([]);
+    expect(await lookedUpPlayerStore.searchByNamePrefix(GAME_NAME, 10)).toHaveLength(1);
+  });
+
+  it('touches neither store on a not_found result', async () => {
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    const harness = makeHarness({
+      account: { kind: 'not_found' },
+      rankHistoryStore,
+      lookedUpPlayerStore,
+    });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('not_found');
+    expect(rankHistoryStore.size).toBe(0);
+    expect(lookedUpPlayerStore.size).toBe(0);
+  });
+
+  it('touches neither store on an error result', async () => {
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    const harness = makeHarness({
+      league: { kind: 'network_error' },
+      rankHistoryStore,
+      lookedUpPlayerStore,
+    });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('error');
+    expect(rankHistoryStore.size).toBe(0);
+    expect(lookedUpPlayerStore.size).toBe(0);
+  });
+
+  it('does not record from the Requirement 11.3 stale-cache fallback', async () => {
+    let clock = 10_000;
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const lookedUpPlayerStore = createInMemoryLookedUpPlayerStore();
+    const cache = createInMemoryCacheStore({ now: () => clock });
+
+    // Seed a complete, still-readable snapshot for the PUUID.
+    await cache.set(
+      { endpoint: 'account', routingValue: 'americas', params: { gameName: GAME_NAME, tagLine: TAG_LINE } },
+      account(),
+      TTL_BY_ENDPOINT.account,
+    );
+    await cache.set(
+      { endpoint: 'accountRegion', routingValue: 'americas', params: { puuid: PUUID, game: 'lol' } },
+      { puuid: PUUID, game: 'lol', region: 'na1' },
+      TTL_BY_ENDPOINT.accountRegion,
+    );
+    await cache.set(
+      { endpoint: 'league', routingValue: 'na1', params: { puuid: PUUID } },
+      [leagueEntry()],
+      TTL_BY_ENDPOINT.league,
+    );
+    await cache.set(
+      { endpoint: 'matchIds', routingValue: 'americas', params: { puuid: PUUID } },
+      ['m1'],
+      TTL_BY_ENDPOINT.matchIds,
+    );
+    await cache.set(
+      { endpoint: 'matchDetail', routingValue: 'americas', params: { matchId: 'm1' } },
+      matchDto('m1'),
+      TTL_BY_ENDPOINT.matchDetail,
+    );
+
+    // Age past the league TTL so the pipeline must refresh it — then fail that
+    // refresh, forcing the Requirement 11.3 fallback onto the seeded snapshot.
+    clock += (TTL_BY_ENDPOINT.league as number) + 1;
+    const harness = makeHarness({
+      now: () => clock,
+      cache,
+      league: { kind: 'server_error', status: 503 },
+      rankHistoryStore,
+      lookedUpPlayerStore,
+    });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    if (result.kind === 'success') {
+      expect(result.report.partialDataWarning).toBe(true);
+    }
+    expect(rankHistoryStore.size).toBe(0);
+    expect(lookedUpPlayerStore.size).toBe(0);
+  });
+
+  it('a throwing store never fails the lookup and never escapes as a rejection', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const throwing = (): never => {
+        throw new Error('store is on fire');
+      };
+      const rankHistoryStore: RankHistoryStore = {
+        record: () => Promise.reject(new Error('record failed')),
+        history: () => Promise.resolve([]),
+        deleteByPuuid: () => Promise.resolve(0),
+      };
+      const lookedUpPlayerStore: LookedUpPlayerStore = {
+        remember: throwing,
+        searchByNamePrefix: () => Promise.resolve([]),
+        deleteByPuuid: () => Promise.resolve(0),
+      };
+      const harness = makeHarness({ rankHistoryStore, lookedUpPlayerStore });
+
+      const result = await run(harness.orchestrator);
+      await flushMicrotasks();
+
+      expect(result.kind).toBe('success');
+      expect(harness.storeWriteFailures.length).toBeGreaterThan(0);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('returns the success result without waiting for a slow store write', async () => {
+    let resolveWrite: (() => void) | undefined;
+    const rankHistoryStore: RankHistoryStore = {
+      record: () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+      history: () => Promise.resolve([]),
+      deleteByPuuid: () => Promise.resolve(0),
+    };
+    const harness = makeHarness({ rankHistoryStore });
+
+    const result = await run(harness.orchestrator);
+
+    // The write is still pending here; the lookup did not block on it.
+    expect(result.kind).toBe('success');
+    expect(resolveWrite).toBeTypeOf('function');
+    resolveWrite?.();
   });
 });

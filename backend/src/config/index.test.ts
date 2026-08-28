@@ -78,4 +78,20 @@ describe('loadConfig', () => {
       ).toThrow(/MATCH_HISTORY_COUNT/);
     }
   });
+
+  it('leaves mongodbUri undefined when MONGODB_URI is unset or blank', () => {
+    expect(loadConfig({ RIOT_API_KEY: 'k', DDRAGON_VERSION: '16.17.1' }).mongodbUri).toBeUndefined();
+    expect(
+      loadConfig({ RIOT_API_KEY: 'k', DDRAGON_VERSION: '16.17.1', MONGODB_URI: '   ' }).mongodbUri,
+    ).toBeUndefined();
+  });
+
+  it('surfaces MONGODB_URI trimmed when set (shape is validated by the driver, not here)', () => {
+    const cfg = loadConfig({
+      RIOT_API_KEY: 'k',
+      DDRAGON_VERSION: '16.17.1',
+      MONGODB_URI: '  mongodb+srv://u:p@host/db  ',
+    });
+    expect(cfg.mongodbUri).toBe('mongodb+srv://u:p@host/db');
+  });
 });

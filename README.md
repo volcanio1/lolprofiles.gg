@@ -74,15 +74,16 @@ npm install
 
 ### Backend
 
-There is no `.env` loader in the project yet (see [Known gaps](#known-gaps)), so export the key into the environment and run the compiled output:
+The backend loads `backend/.env` on startup (via `dotenv`). Copy the example, fill it in, and run the compiled output (`npm run dev` is currently broken — see [Known gaps](#known-gaps)):
 
 ```bash
 cd backend
-cp .env.example .env          # reference only — not read automatically
-export RIOT_API_KEY=RGAPI-your-key-here
+cp .env.example .env          # then edit: set RIOT_API_KEY and DDRAGON_VERSION
 npm run build
 npm start                     # listens on :3001
 ```
+
+`.env` is gitignored. Environment variables set in the shell still take precedence over the file.
 
 Check it's alive:
 
@@ -111,6 +112,9 @@ The Vite dev server proxies `/api` to `http://localhost:3001`, which makes brows
 | `CORS_ALLOWED_ORIGINS` | No | *(unset)* | Comma-separated list of **exact** origins. |
 | `DDRAGON_VERSION` | Yes | — | Exact Data Dragon release pinned for champion/item/profile-icon assets, e.g. `16.17.1`. No `"latest"` alias — a moving version would change rendered assets without a deploy, so a missing or `"latest"` value fails fast at startup. Bump it by editing this value and redeploying; see [Assets](#assets) for what depends on it. |
 | `FRONTEND_DIST` | No | *(unset)* | Path to the built frontend (`../frontend/dist`). When set, the API process also serves the SPA **with a history fallback**, so a hard refresh of `/profile` returns `index.html` instead of a 404. Leave unset when a CDN or reverse proxy serves the frontend — configure the fallback there instead (see [Deployment](#deployment)). |
+| `MONGODB_URI` | No | *(unset)* | MongoDB connection string for the [persistent store](#database). **Unset disables it entirely** — the site runs exactly as it did before the store existed. A set-but-unreachable value logs one line at startup (credentials stripped) and also runs disabled; it never crashes the process. Only used for rank-history and player-autocomplete data — never for caching. |
+
+The backend reads `.env` on startup (via `dotenv`), so a local `backend/.env` works; it is gitignored — never commit real secrets.
 
 There is deliberately no wildcard CORS option. `/api/lookup` is unauthenticated and spends the shared Riot rate-limit budget on a cache miss, so `*` would let any page on the internet consume it. Leave `CORS_ALLOWED_ORIGINS` unset for local development and same-origin deployments.
 
@@ -228,7 +232,7 @@ The frontend fetches this **only when the Build Path tab of an expanded match is
 
 ### `POST /api/privacy/delete`
 
-Takes a `puuid`, evicts its cached data and scrubs its participant rows from retained match details. Returns `{ found, deletedAt }`. A PUUID with nothing cached returns `found: false` with a 200 — not an error. See [Known gaps](#known-gaps) before exposing this publicly.
+Takes a `puuid`, evicts its cached data, scrubs its participant rows from retained match details, and (when the [persistent store](#database) is enabled) deletes its `rank_snapshots` and `looked_up_players` rows. Returns `{ found, deletedAt }` — `found` is `true` if *any* store removed something; row counts are deliberately not exposed. A PUUID with nothing stored returns `found: false` with a 200 — not an error. A persistent-store outage does not fail the request (the cache half still runs). See [Known gaps](#known-gaps) before exposing this publicly.
 
 ### `GET /api/static-data`
 
@@ -290,6 +294,27 @@ A resolved platform is cached for 24 hours (the `accountRegion` cache endpoint) 
 
 Cache keys are length-prefixed per segment so concatenation is injective — `{"a:b": "c"}` and `{"a": "b:c"}` can't collide.
 
+## Database
+
+The cache above is in-memory and disposable. Two features need data that *survives a restart and grows*, so there is one optional persistent store: **MongoDB** (Atlas M0 free tier in production), enabled by setting `MONGODB_URI`. **With it unset, none of this runs and the site is unchanged** — every store method is a no-op.
+
+| Collection | Written | Holds | Read by |
+|---|---|---|---|
+| `rank_snapshots` | On each successful lookup of a ranked player, **at most once per player per queue per UTC day** (a unique index enforces it) | `{ puuid, queueType, tier, division, leaguePoints, observedAt }` for Ranked Solo/Duo | `specs/profile-sidebar/`'s rank-over-time graph |
+| `looked_up_players` | On each successful lookup (upsert, keyed by PUUID) | `{ puuid, gameName, tagLine, profileIconId, region, lastLookedUpAt }` | `specs/autofill-search/`'s Riot-ID autocomplete |
+
+Both writes are **fire-and-forget** — issued as unawaited side effects of a lookup, never on its critical path. A slow, unreachable, or erroring database degrades to "the graph is a little younger and one name is missing from autocomplete", never to a slow or failed lookup. `POST /api/privacy/delete` clears both collections for a PUUID alongside the cache.
+
+**Redis is deliberately absent.** The roadmap once paired "a DB and Redis"; nothing actually needs a shared cache or shared rate-limit state while the backend runs as a single instance. The in-memory cache serves all caching. Revisit only when going multi-instance.
+
+### One-time Atlas M0 setup
+
+1. [cloud.mongodb.com](https://cloud.mongodb.com) → new project → **Build a Database** → **M0 (Free)** → region near the app host.
+2. **Database Access** → add a user with a generated password and the **Read and write to any database** role.
+3. **Network Access** → **Allow access from anywhere** (`0.0.0.0/0`). The app host (Render's lower tiers) has no static egress IP; SCRAM auth + TLS are the protection.
+4. **Connect → Drivers → Node.js** → copy the `mongodb+srv://…` string, insert the password, append the db name: `…mongodb.net/lolprofiles?retryWrites=true&w=majority`.
+5. Set it as `MONGODB_URI` (Render env var in production; `backend/.env` locally). The app selects the `lolprofiles` database and creates its indexes on first connect.
+
 ## Testing
 
 ```bash
@@ -343,9 +368,10 @@ The `specs/` directory holds, per feature, a requirements document, a design doc
 
 Stated plainly rather than left to be discovered:
 
-- **Both routes are unauthenticated.** `/api/privacy/delete` accepts any PUUID and its scrubbing is *not* recoverable from cache — since match details are cached indefinitely, a scrubbed entry is effectively permanent while it stays cached. This needs an explicit decision before any public deployment.
+- **The write routes are unauthenticated.** `/api/privacy/delete` accepts any PUUID; a scrubbed match detail is not recoverable from cache while it stays cached. This needs an explicit decision before any public deployment. The forthcoming `/api/players/suggest` (autocomplete) shares the unauthenticated posture but is far cheaper — one indexed query, no Riot call, no shared budget.
 - **`/api/lookup` spends a shared budget.** The rate limit manager guarantees the API key stays in good standing, but it can't stop an anonymous caller consuming the budget by requesting many distinct Riot IDs. Per-IP throttling is the mitigation and isn't implemented.
-- **No `.env` loading.** The backend reads `process.env` directly with no `dotenv` dependency, and `npm run dev` invokes `ts-node`, which isn't installed. Use `npm run build && npm start` with the variable exported.
+- **`npm run dev` is broken.** It invokes `ts-node`, which isn't installed. Use `npm run build && npm start`. (`.env` *is* loaded now — `dotenv` is a dependency and `index.ts` imports it.)
+- **The database has no backups and its deletion isn't durable.** `rank_snapshots` / `looked_up_players` on Atlas M0 have no automated backups (acceptable — both are derived data whose loss degrades gracefully). Privacy deletion clears them for a PUUID, but a later lookup of the same player lawfully re-creates the record. The Atlas network allow-list is `0.0.0.0/0` because the app host has no static egress IP.
 - **Performance targets are unverified.** The spec sets p95 ≤2s cached / ≤15s fresh. Unit tests can't prove that; it needs staging load testing, and no claim is made here.
 - **Account cache keys are case-sensitive.** `Faker#KR1` and `faker#kr1` occupy separate entries, so a hot endpoint loses hit rate. Normalising the key would change the declared cache key params.
 
@@ -355,7 +381,7 @@ Riot ToS obligations are enforced at the service layer rather than left to page 
 
 - **Attribution** — `RiotDataPage` renders the required disclaimer for the whole time it displays Riot data, and every page showing Riot data uses that template.
 - **No advertising** — the policy is inverted so it fails safe. `RiotDataPage` renders no ad slot unless handed an approved agreement, and there is exactly one place in the codebase where such an agreement can be introduced (hardcoded to `undefined`). Adding advertising requires a deliberate, reviewable edit to that file.
-- **Bounded retention and deletion on request** — TTLs are the single source of truth in the cache store; deletion runs through `/api/privacy/delete`.
+- **Bounded retention and deletion on request** — TTLs are the single source of truth in the cache store; `/api/privacy/delete` evicts the cache and clears the [persistent store](#database) rows for a PUUID.
 - **Assets served unmodified from Riot's own distribution** — champion, item, profile, summoner spell and rune icons are hot-linked from Data Dragon (see [Assets](#assets)) and never rehosted, altered or re-branded.
 
 lolprofiles.gg isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing League of Legends. League of Legends and Riot Games are trademarks or registered trademarks of Riot Games, Inc.

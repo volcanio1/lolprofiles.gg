@@ -200,6 +200,8 @@ import {
   type PlatformRoutingValue,
   type RegionalRoutingValue,
 } from '../region';
+import { createNoopRankHistoryStore, type RankHistoryStore } from '../db/rankHistoryStore';
+import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
   AccountDto,
@@ -245,6 +247,14 @@ export const FRESH_PATH_BUDGET_MS = 15_000;
 
 /** Decision 11: match details in flight at once. */
 export const MATCH_DETAIL_CONCURRENCY = 10;
+
+/**
+ * The raw League-V4 `queueType` for Ranked Solo/Duo — the key under which that
+ * standing appears in `ProfileStats.rankedByQueue`. specs/database/ Requirement
+ * 2.1 records a rank snapshot for this queue only; specs/profile-sidebar/
+ * Requirement 10.3 scopes the graph to it.
+ */
+export const SOLO_QUEUE_TYPE = 'RANKED_SOLO_5x5';
 
 /**
  * The pipeline stages, used for error attribution and server-side logging.
@@ -386,6 +396,13 @@ export interface LookupOrchestrator {
  */
 export interface LookupLogger {
   authFailure(info: { stage: LookupStage; routingValue: string; status: 401 | 403 }): void;
+  /**
+   * specs/database/ Requirement 4.2. A Persistent_Store write hook rejected. This
+   * is an operational note, not a defect: the lookup succeeded and the visitor
+   * was unaffected — only the rank snapshot / remembered-player row was not
+   * written. Defaults to a single `console.warn`.
+   */
+  storeWriteFailed(info: { reason: unknown }): void;
 }
 
 /**
@@ -400,6 +417,10 @@ export const consoleLookupLogger: LookupLogger = {
       `[lolprofiles] Riot API rejected the configured credential: HTTP ${String(status)} at stage ` +
         `"${stage}" for routing value "${routingValue}". No credential material is logged.`,
     );
+  },
+  storeWriteFailed({ reason }) {
+    // eslint-disable-next-line no-console
+    console.warn('[lolprofiles] Persistent store write failed (lookup was unaffected):', reason);
   },
 };
 
@@ -423,6 +444,15 @@ export interface LookupOrchestratorOptions {
   discoveryRegion?: RegionalRoutingValue;
   /** Injectable for tests; defaults to one built from the options above. */
   regionResolver?: RegionResolver;
+  /**
+   * Persistent_Store write targets (specs/database/). Optional — omitted means
+   * the no-op stores, which is also the runtime state when `MONGODB_URI` is
+   * unset. Written to only as unawaited side effects of a fresh successful
+   * lookup (`recordLookupSideEffects`); a slow or failing store can never delay
+   * or fail a lookup (Requirement 4).
+   */
+  rankHistoryStore?: RankHistoryStore;
+  lookedUpPlayerStore?: LookedUpPlayerStore;
 }
 
 const defaultTimeoutScheduler: TimeoutScheduler = (ms, onElapsed) => {
@@ -488,6 +518,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly matchDetailConcurrency: number;
   private readonly discoveryRegion: RegionalRoutingValue;
   private readonly regionResolver: RegionResolver;
+  private readonly rankHistoryStore: RankHistoryStore;
+  private readonly lookedUpPlayerStore: LookedUpPlayerStore;
 
   constructor(options: LookupOrchestratorOptions) {
     this.cache = options.cache;
@@ -498,6 +530,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.freshPathBudgetMs = options.freshPathBudgetMs ?? FRESH_PATH_BUDGET_MS;
     this.matchHistoryCount = options.matchHistoryCount ?? MATCH_HISTORY_COUNT;
     this.matchDetailConcurrency = Math.max(1, options.matchDetailConcurrency ?? MATCH_DETAIL_CONCURRENCY);
+    this.rankHistoryStore = options.rankHistoryStore ?? createNoopRankHistoryStore();
+    this.lookedUpPlayerStore = options.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
     this.discoveryRegion = options.discoveryRegion ?? DEFAULT_REGION;
     this.regionResolver =
       options.regionResolver ??
@@ -669,21 +703,78 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     // --- Phase 3: match details (Requirements 3.2, 3.3, 3.5) ------------------
     const window = await this.fetchMatchDetails(region, puuid, matchIds.value, gate);
 
-    return {
-      kind: 'success',
-      report: this.assembleReport({
-        ctx,
-        puuid,
-        resolvedPlatform: platform,
-        usedPlatformOverride: resolved.usedOverride,
-        summoner,
-        league: league.value,
-        matches: window.matches,
-        lanelessMatches: window.lanelessMatches,
-        ages: [ageOf(account), ageOf(league), ageOf(matchIds)],
-        partialDataWarning: false,
-      }),
+    const report = this.assembleReport({
+      ctx,
+      puuid,
+      resolvedPlatform: platform,
+      usedPlatformOverride: resolved.usedOverride,
+      summoner,
+      league: league.value,
+      matches: window.matches,
+      lanelessMatches: window.lanelessMatches,
+      ages: [ageOf(account), ageOf(league), ageOf(matchIds)],
+      partialDataWarning: false,
+    });
+
+    // specs/database/ Requirement 4.1: unawaited. Only the fresh success path
+    // records — never the Requirement 11.3 stale-cache fallback, which returns
+    // `kind: 'success'` from `runLookup`, not from here.
+    this.recordLookupSideEffects(report);
+
+    return { kind: 'success', report };
+  }
+
+  /**
+   * specs/database/ Requirement 2/3/4. Records a rank snapshot (Ranked Solo/Duo
+   * only) and remembers the player, as unawaited side effects of a successful
+   * lookup. Never awaited on the request path (4.1); a store rejection is logged
+   * and swallowed, never propagated (4.2); issues no Riot call (4.5).
+   */
+  private recordLookupSideEffects(report: ProfileReport): void {
+    const observedAt = this.now();
+    const solo = report.stats.rankedByQueue[SOLO_QUEUE_TYPE]; // Requirement 2.1
+
+    // Requirement 4.2: a store method that throws *synchronously* (rather than
+    // returning a rejected promise) must be caught too, or it escapes on the
+    // request path — so each call is wrapped.
+    const guard = (call: () => Promise<unknown>): Promise<unknown> => {
+      try {
+        return call();
+      } catch (reason) {
+        return Promise.reject(reason);
+      }
     };
+
+    void Promise.allSettled([
+      solo !== undefined && solo !== 'Unranked'
+        ? guard(() =>
+            this.rankHistoryStore.record({
+              puuid: report.puuid,
+              queueType: SOLO_QUEUE_TYPE,
+              tier: solo.tier,
+              division: solo.division,
+              leaguePoints: solo.leaguePoints,
+              observedAt,
+            }),
+          )
+        : Promise.resolve(), // Requirement 2.4: unranked ⇒ no snapshot
+      guard(() =>
+        this.lookedUpPlayerStore.remember({
+          puuid: report.puuid,
+          gameName: report.riotId.gameName,
+          tagLine: report.riotId.tagLine,
+          profileIconId: report.profileIconId,
+          region: report.resolvedPlatform,
+          lastLookedUpAt: observedAt,
+        }),
+      ),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          this.logger.storeWriteFailed({ reason: result.reason }); // Requirement 4.2
+        }
+      }
+    });
   }
 
   /**

@@ -73,7 +73,7 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     resolvedPlatform: 'na1',
     usedPlatformOverride: false,
     stats: {
-      rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60 } },
+      rankedByQueue: { RANKED_SOLO_5x5: { tier: 'PLATINUM', division: 'IV', winRatePercent: 60, leaguePoints: 51 } },
       overallAverageKda: 3.5,
       topChampions: [
         { championName: 'Ahri', gamesPlayed: 6, winRatePercent: 50, averageKda: 3.5, averageCs: 180.25, averageCsPerMinute: 6.01 },

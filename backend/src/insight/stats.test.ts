@@ -61,8 +61,8 @@ describe('rankedByQueue (Requirements 2.8, 6.1, 6.2, 6.6)', () => {
     );
 
     expect(stats.rankedByQueue).toEqual({
-      RANKED_SOLO_5x5: { tier: 'GOLD', division: 'II', winRatePercent: 50 },
-      RANKED_FLEX_SR: { tier: 'SILVER', division: 'IV', winRatePercent: 75 },
+      RANKED_SOLO_5x5: { tier: 'GOLD', division: 'II', winRatePercent: 50, leaguePoints: 42 },
+      RANKED_FLEX_SR: { tier: 'SILVER', division: 'IV', winRatePercent: 75, leaguePoints: 42 },
     });
   });
 
@@ -73,6 +73,7 @@ describe('rankedByQueue (Requirements 2.8, 6.1, 6.2, 6.6)', () => {
       tier: 'GOLD',
       division: 'II',
       winRatePercent: 50,
+      leaguePoints: 42,
     });
     expect(standingForQueue(stats, 'RANKED_FLEX_SR')).toBe('Unranked');
   });
@@ -94,6 +95,7 @@ describe('rankedByQueue (Requirements 2.8, 6.1, 6.2, 6.6)', () => {
       tier: 'GOLD',
       division: 'II',
       winRatePercent: 'N/A',
+      leaguePoints: 42,
     });
   });
 
