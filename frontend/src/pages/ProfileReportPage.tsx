@@ -44,6 +44,7 @@ import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ProfileReportView } from '../components/ProfileReportView';
 import { RefreshControl } from '../components/RefreshControl';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
+import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 import { useLookup, type UseLookupOptions } from '../hooks/useLookup';
 
@@ -142,8 +143,18 @@ export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetch
   // so the page is never blank while it decides between a snapshot and a lookup.
   const preparing = riotId.length > 0 && status === 'idle';
 
+  const reportReady = status === 'success' && report !== undefined;
+  const seoTitle = reportReady ? `${report.riotId.gameName}#${report.riotId.tagLine}` : 'Profile Report';
+  const seoDescription = reportReady
+    ? `${report.riotId.gameName}#${report.riotId.tagLine}'s League of Legends ranked stats, recent match history, champion mastery and performance insights.`
+    : 'Look up a League of Legends player by Riot ID for ranked standing, recent match history and performance insights.';
+
   return (
     <RiotDataPage title="Profile report">
+      {/* Individual profile reports are genuinely indexable content; the empty
+          prompt / loading / error states carry nothing worth surfacing in
+          search results. */}
+      <SEO title={seoTitle} description={seoDescription} noindex={!reportReady} />
       {/*
         Decision 3. The `key` remounts the form whenever the URL changes, so its
         field always agrees with the report beside it. `SearchForm` seeds its own

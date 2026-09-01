@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HelmetProvider } from 'react-helmet-async';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { LookupOutcome, LookupRequest } from '../api/lookupClient';
@@ -60,16 +61,18 @@ function renderApp(
   { strict = false }: { strict?: boolean } = {},
 ) {
   const tree = (
-    <MemoryRouter initialEntries={[initialPath]}>
-      <LocationProbe />
-      <Routes>
-        <Route path="/" element={<SearchPage />} />
-        <Route
-          path="/profile"
-          element={<ProfileReportPage lookupOptions={lookupOptions} fetchCachedReport={fetchCachedReport} />}
-        />
-      </Routes>
-    </MemoryRouter>
+    <HelmetProvider>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/" element={<SearchPage />} />
+          <Route
+            path="/profile"
+            element={<ProfileReportPage lookupOptions={lookupOptions} fetchCachedReport={fetchCachedReport} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </HelmetProvider>
   );
   return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
@@ -153,6 +156,15 @@ describe('ProfileReportPage — loading lifecycle (Requirements 9.6, 9.7)', () =
       expect(screen.queryByTestId('loading-indicator')).not.toBeInTheDocument();
     });
     expect(screen.getByTestId('profile-report')).toBeInTheDocument();
+  });
+
+  it('sets the document title to the Riot ID once the report loads (SEO)', async () => {
+    const lookup = () => Promise.resolve<LookupOutcome>({ kind: 'success', report: sampleReport() });
+    renderApp('/profile?riotId=Doffy%23Smile', { lookup });
+
+    await waitFor(() => {
+      expect(document.title).toBe('Doffy#Smile — lolprofiles.gg');
+    });
   });
 
   it('removes the indicator on an error too', async () => {

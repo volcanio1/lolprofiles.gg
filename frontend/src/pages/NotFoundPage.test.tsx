@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { HelmetProvider } from 'react-helmet-async';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -10,13 +11,15 @@ function Location() {
 
 function renderAt(path: string, { withLocation = false } = {}) {
   return render(
-    <MemoryRouter initialEntries={['/', path]} initialIndex={1}>
-      {withLocation ? <Location /> : null}
-      <Routes>
-        <Route path="/" element={<span>search page</span>} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <HelmetProvider>
+      <MemoryRouter initialEntries={['/', path]} initialIndex={1}>
+        {withLocation ? <Location /> : null}
+        <Routes>
+          <Route path="/" element={<span>search page</span>} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </MemoryRouter>
+    </HelmetProvider>,
   );
 }
 

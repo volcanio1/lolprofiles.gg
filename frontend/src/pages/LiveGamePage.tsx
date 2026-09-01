@@ -21,6 +21,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { LiveGameView } from '../components/LiveGameView';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
+import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 import { validateRiotId } from '../domain/riotId';
 import { useLiveGame, type UseLiveGameOptions } from '../hooks/useLiveGame';
@@ -49,6 +50,11 @@ export function LiveGamePage({ liveGameOptions }: LiveGamePageProps = {}) {
 
   return (
     <RiotDataPage title="Live game">
+      <SEO
+        title={status === 'in_game' && rawRiotId.length > 0 ? `${rawRiotId} — Live Game` : 'Live Game Tracker'}
+        description="Check whether a League of Legends player is in a live game right now, with the full lobby's champions, ranks and recent form."
+        noindex={status !== 'in_game'}
+      />
       <SearchForm key={rawRiotId} onSubmit={handleSubmit} initialRiotId={rawRiotId} busy={status === 'loading'} />
 
       {rawRiotId.length === 0 ? (

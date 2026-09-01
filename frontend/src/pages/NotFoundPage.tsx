@@ -13,6 +13,7 @@
  */
 
 import { useLocation, useNavigate } from 'react-router-dom';
+import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 
 /** Keep a pathological address bar from stretching the card. */
@@ -38,6 +39,7 @@ export function NotFoundPage() {
 
   return (
     <RiotDataPage title="No match" hero>
+      <SEO title="Page Not Found" description="This page doesn't exist. Search a League of Legends player by Riot ID instead." noindex />
       <p className="notfound-headline">This route won&rsquo;t resolve.</p>
       <p className="lede">
         The page you asked for isn&rsquo;t one we have. Search a player to pick up where you meant to

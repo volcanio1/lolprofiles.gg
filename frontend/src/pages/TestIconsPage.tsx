@@ -8,6 +8,7 @@
  */
 
 import { useStaticData } from '../staticData';
+import { SEO } from '../components/SEO';
 import { StatIcon, statIconKey } from '../components/StatIcon';
 import { Tooltip } from '../components/Tooltip';
 import { ItemBuildRow } from '../components/ItemBuildRow';
@@ -108,6 +109,7 @@ export function TestIconsPage() {
 
   return (
     <div className="report" style={{ padding: '2rem', maxWidth: 900, margin: '0 auto' }}>
+      <SEO title="Asset Coverage (internal)" description="Internal asset-inspection page." noindex />
       <h2 className="rsec-title">Stat icon coverage — {provider.version ?? 'loading…'}</h2>
       <p className="lede">
         Bundled League of Legends Wiki stat-icon set (Riot&rsquo;s in-game glyphs;

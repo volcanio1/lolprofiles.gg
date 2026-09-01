@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
+import { HelmetProvider } from 'react-helmet-async';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { LiveGameOutcome } from '../api/lookupClient';
@@ -17,11 +18,13 @@ function provider() {
 
 function renderPage(path: string, liveGameOptions?: UseLiveGameOptions): ReactElement | void {
   render(
-    <StaticDataContext.Provider value={provider()}>
-      <MemoryRouter initialEntries={[path]}>
-        <LiveGamePage liveGameOptions={liveGameOptions} />
-      </MemoryRouter>
-    </StaticDataContext.Provider>,
+    <HelmetProvider>
+      <StaticDataContext.Provider value={provider()}>
+        <MemoryRouter initialEntries={[path]}>
+          <LiveGamePage liveGameOptions={liveGameOptions} />
+        </MemoryRouter>
+      </StaticDataContext.Provider>
+    </HelmetProvider>,
   );
 }
 

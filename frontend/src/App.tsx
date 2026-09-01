@@ -1,3 +1,4 @@
+import { Analytics } from '@vercel/analytics/react';
 import { Route, Routes } from 'react-router-dom';
 import { LiveGamePage } from './pages/LiveGamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -25,6 +26,7 @@ export function App() {
         <Route path="/test" element={<TestIconsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      <Analytics />
     </StaticDataContextProvider>
   );
 }

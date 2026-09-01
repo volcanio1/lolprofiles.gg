@@ -28,6 +28,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
+import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 
 /**
@@ -52,6 +53,10 @@ export function SearchPage() {
 
   return (
     <RiotDataPage title="Search a player" hero>
+      <SEO
+        title="lolprofiles.gg"
+        description="Look up any League of Legends player by Riot ID for ranked standing, recent match history, live games, champion mastery and performance insights."
+      />
       <p className="lede">
         Enter a Riot ID to see ranked standing, recent form, habits and improvement suggestions.
       </p>
