@@ -53,9 +53,10 @@ function sampleReport(overrides: Partial<ProfileReport> = {}): ProfileReport {
     usedPlatformOverride: false,
     stats,
     ...perQueueReportFields(stats),
+    championMastery: [],
     funFacts: [],
     limitedDataNotice: false,
-    recommendations: [],
+    performanceFeedback: [],
     averageMatchDurationMinutes: 30.38,
     recentMatches: [],
     lastUpdated: null,
@@ -259,7 +260,7 @@ describe('response narrowing helpers', () => {
     expect(isProfileReport(sampleReport())).toBe(true);
     expect(isProfileReport(null)).toBe(false);
     expect(isProfileReport({})).toBe(false);
-    expect(isProfileReport({ ...sampleReport(), funFacts: 'nope' })).toBe(false);
+    expect(isProfileReport({ ...sampleReport(), rankHistory: 'nope' })).toBe(false);
     expect(isProfileReport({ ...sampleReport(), stats: null })).toBe(false);
   });
 });

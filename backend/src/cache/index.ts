@@ -59,7 +59,8 @@ export type CacheEndpoint =
   | 'tournamentSchedule'
   | 'clashPlayers'
   | 'clashTeam'
-  | 'championMasteryTop';
+  | 'championMasteryTop'
+  | 'earlyGameSlice';
 
 export interface CacheKey {
   endpoint: CacheEndpoint;
@@ -153,6 +154,14 @@ export const TTL_BY_ENDPOINT: Readonly<Record<CacheEndpoint, number | 'infinite'
   // but keyed differently (top-N by puuid vs per-champion by puuid+championId),
   // so it is its own endpoint entry rather than an alias.
   championMasteryTop: ONE_HOUR_MS,
+  // player-insights Phase 2: one player's derived early-game aggregate for one
+  // match (lane-phase death count, gold/CS diff at 10 vs their lane opponent),
+  // keyed `{ matchId, puuid }`. Retained indefinitely by the same immutability
+  // argument as `matchDetail`/`timelineSlice` — a completed match's timeline
+  // never changes, so the derived numbers never need to be recomputed. The
+  // RAW timeline itself is never cached (same as `item-timeline`'s decision 2
+  // for `timelineSlice`) — only this few-bytes-per-match derived result is.
+  earlyGameSlice: 'infinite',
 };
 
 /**

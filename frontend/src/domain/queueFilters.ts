@@ -22,7 +22,7 @@ export const QUEUE_FILTER_LABELS: Readonly<Record<QueueFilterValue, string>> = {
 };
 
 /** Requirement 9.4: the Sidebar_Queue_Filter's initial value. */
-export const SIDEBAR_QUEUE_FILTER_DEFAULT: QueueFilterValue = 'ranked solo/duo';
+export const SIDEBAR_QUEUE_FILTER_DEFAULT: QueueFilterValue = 'all';
 
 /**
  * Requirement 9.1: offer only the values that actually have included matches on
@@ -30,9 +30,10 @@ export const SIDEBAR_QUEUE_FILTER_DEFAULT: QueueFilterValue = 'ranked solo/duo';
  * is non-empty. A slice's `topChampions` is empty exactly when it had no matches,
  * so that is the presence signal.
  *
- * The Sidebar_Queue_Filter's default (`'ranked solo/duo'`) is included even when
- * empty, per Requirement 9.6 — the panels show their own empty-state messages
- * rather than the control silently dropping the option.
+ * The Sidebar_Queue_Filter's default (`'all'`) is included even when empty,
+ * per Requirement 9.6 — the panels show their own empty-state messages rather
+ * than the control silently dropping the option. (Always true for `'all'`
+ * anyway, since `value === 'all'` already short-circuits the check below.)
  */
 export function availableQueueFilterValues(report: ProfileReport): QueueFilterValue[] {
   return QUEUE_FILTER_VALUES.filter(

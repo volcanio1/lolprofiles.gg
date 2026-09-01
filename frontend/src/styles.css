@@ -964,8 +964,9 @@ figure {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--gold-dim);
-  padding: 0 0 0.3rem;
+  padding: 0 0 0.3rem 0.5rem;
   text-align: right;
+  white-space: nowrap;
 }
 
 .champ-perf tbody th,
@@ -974,9 +975,10 @@ figure {
 .role-perf tbody td,
 .premade-perf tbody th,
 .premade-perf tbody td {
-  padding: 0.3rem 0;
+  padding: 0.3rem 0 0.3rem 0.5rem;
   text-align: right;
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .champ-perf tbody th:first-child,
@@ -986,6 +988,7 @@ figure {
 .premade-perf tbody th:first-child,
 .premade-perf thead th:first-child {
   text-align: left;
+  padding-left: 0;
 }
 
 .champ-perf-icon {
@@ -1509,6 +1512,33 @@ figure {
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
   margin-top: 0.15rem;
+}
+
+.fact-item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fact-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fact-item-name {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.fact-item-count {
+  color: var(--dim);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
 }
 
 .empty-note {

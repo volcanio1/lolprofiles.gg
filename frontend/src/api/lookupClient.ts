@@ -207,8 +207,9 @@ export function isProfileReport(body: unknown): body is ProfileReport {
     candidate.premadesByQueue !== null &&
     typeof candidate.premadesByQueue === 'object' &&
     Array.isArray(candidate.rankHistory) &&
+    Array.isArray(candidate.championMastery) &&
     Array.isArray(candidate.funFacts) &&
-    Array.isArray(candidate.recommendations)
+    Array.isArray(candidate.performanceFeedback)
   );
 }
 

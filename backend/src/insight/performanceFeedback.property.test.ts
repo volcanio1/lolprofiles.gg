@@ -1,0 +1,280 @@
+/**
+ * Property tests for Performance Feedback (`player-insights` tasks 4.8, 4.9).
+ */
+
+import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
+import {
+  computePerformanceFeedback,
+  csPerMinuteFeedbackOf,
+  damageShareFeedbackOf,
+  earlyGameDeficitFeedbackOf,
+  isSupportMajority,
+  jungleObjectivesFeedbackOf,
+  killParticipationFeedbackOf,
+  lanePhaseDeathsFeedbackOf,
+  recentRankedWindowOf,
+  PERFORMANCE_FEEDBACK_CATEGORY_ORDER,
+  type EarlyGameAggregate,
+} from './performanceFeedback';
+import type { IncludedMatch, ItemBuild, MatchParticipant } from './stats';
+
+const EMPTY_BUILD: ItemBuild = { items: [0, 0, 0, 0, 0, 0], trinket: 0 };
+
+function baseParticipant(over: Partial<MatchParticipant> = {}): MatchParticipant {
+  return {
+    isAnalyzedPlayer: false,
+    isEnemyLaner: false,
+    teamId: 100,
+    riotIdGameName: '',
+    riotIdTagline: '',
+    championName: 'Ahri',
+    champLevel: 15,
+    teamPosition: 'MIDDLE',
+    summonerSpells: [4, 14],
+    runes: { primaryStyle: 0, secondaryStyle: 0, primarySelections: [], secondarySelections: [], statShards: [0, 0, 0] },
+    build: EMPTY_BUILD,
+    kills: 0,
+    deaths: 0,
+    assists: 0,
+    cs: 0,
+    visionScore: 0,
+    damageToChampions: 0,
+    goldEarned: 0,
+    win: true,
+    turretKills: 0,
+    dragonKills: 0,
+    baronKills: 0,
+    pentaKills: 0,
+    killParticipationPercent: 0,
+    augments: [],
+    neutralMinionsKilled: 0,
+    onMyWayPings: 0,
+    enemyMissingPings: 0,
+    enemyVisionPings: 0,
+    needVisionPings: 0,
+    pushPings: 0,
+    holdPings: 0,
+    getBackPings: 0,
+    assistMePings: 0,
+    allInPings: 0,
+    retreatPings: 0,
+    dangerPings: 0,
+    basicPings: 0,
+    commandPings: 0,
+    visionClearedPings: 0,
+    ...over,
+  };
+}
+
+const roleArb = fc.constantFrom('Support', 'TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM');
+const queueTypeArb = fc.constantFrom('ranked solo/duo', 'ranked flex', 'normal');
+
+/** Generates one match, optionally with a Full_Lobby carrying a self row + a few teammates/enemies. */
+function matchArb(matchId: string): fc.Arbitrary<IncludedMatch> {
+  return fc
+    .record({
+      queueType: queueTypeArb,
+      startTimestamp: fc.integer({ min: 0, max: 100 }),
+      durationSeconds: fc.integer({ min: 600, max: 3_000 }),
+      role: roleArb,
+      cs: fc.nat(400),
+      hasLobby: fc.boolean(),
+      selfDamage: fc.nat(20_000),
+      teammateDamage: fc.nat(20_000),
+      killParticipationPercent: fc.oneof(fc.nat(100), fc.constant('N/A' as const)),
+      isJungle: fc.boolean(),
+      selfJungleScore: fc.nat(200),
+      enemyJungleScore: fc.nat(200),
+      hasEnemyJungler: fc.boolean(),
+    })
+    .map((r) => {
+      const participants = r.hasLobby
+        ? [
+            baseParticipant({
+              isAnalyzedPlayer: true,
+              teamId: 100,
+              teamPosition: r.isJungle ? 'JUNGLE' : 'MIDDLE',
+              damageToChampions: r.selfDamage,
+              killParticipationPercent: r.killParticipationPercent,
+              neutralMinionsKilled: r.selfJungleScore,
+            }),
+            baseParticipant({ teamId: 100, damageToChampions: r.teammateDamage }),
+            baseParticipant({
+              teamId: 200,
+              teamPosition: r.hasEnemyJungler ? 'JUNGLE' : 'TOP',
+              neutralMinionsKilled: r.enemyJungleScore,
+            }),
+          ]
+        : undefined;
+      const match: IncludedMatch = {
+        matchId,
+        queueType: r.queueType,
+        startTimestamp: r.startTimestamp,
+        durationSeconds: r.durationSeconds,
+        championName: 'Ahri',
+        role: r.role,
+        win: true,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        visionScore: 0,
+        cs: r.cs,
+        participants,
+      };
+      return match;
+    });
+}
+
+const matchesArb: fc.Arbitrary<IncludedMatch[]> = fc
+  .integer({ min: 0, max: 12 })
+  .chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => matchArb(`m${String(i)}`))));
+
+describe('computePerformanceFeedback — Property 3: never emits an untriggered category, Support suppression is absolute', () => {
+  // Feature: player-insights, Property 3: Performance Feedback never emits an untriggered category, and Support suppression is absolute
+  // **Validates: Requirements 7, 8, 9, 10, 11, 12**
+  it('matches exactly the set of categories whose own function fired, in the fixed order, and never csPerMinute/damageShare under Support', () => {
+    fc.assert(
+      fc.property(matchesArb, (matches) => {
+        const result = computePerformanceFeedback(matches);
+
+        // Consistency: the assembled result is exactly the per-category
+        // functions' own outcomes, in PERFORMANCE_FEEDBACK_CATEGORY_ORDER.
+        const byCategory = {
+          csPerMinute: csPerMinuteFeedbackOf(matches),
+          damageShare: damageShareFeedbackOf(matches),
+          killParticipation: killParticipationFeedbackOf(matches),
+          jungleObjectives: jungleObjectivesFeedbackOf(matches),
+          // No earlyGame data is generated by this property, so both Phase 2
+          // categories are always undefined here — matching
+          // `computePerformanceFeedback`'s own default `earlyGame = []`.
+          lanePhaseDeaths: undefined,
+          earlyGameDeficit: undefined,
+        };
+        const expected = PERFORMANCE_FEEDBACK_CATEGORY_ORDER.map((c) => byCategory[c]).filter(
+          (item) => item !== undefined,
+        );
+        expect(result).toEqual(expected);
+
+        // Absolute suppression under Support.
+        if (isSupportMajority(matches)) {
+          expect(result.some((item) => item.category === 'csPerMinute')).toBe(false);
+          expect(result.some((item) => item.category === 'damageShare')).toBe(false);
+        }
+
+        // No duplicate categories, never exceeds 4.
+        const categories = result.map((item) => item.category);
+        expect(new Set(categories).size).toBe(categories.length);
+        expect(categories.length).toBeLessThanOrEqual(4);
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('Performance Feedback — Property 4: reads only the Recent_Ranked_Window', () => {
+  // Feature: player-insights, Property 4: Performance Feedback reads only the Recent_Ranked_Window
+  // **Validates: Requirement 6**
+  it('is unaffected by corrupting any match outside the Recent_Ranked_Window', () => {
+    fc.assert(
+      fc.property(matchesArb, fc.nat(50_000), (matches, corruptValue) => {
+        const window = recentRankedWindowOf(matches);
+        const windowIds = new Set(window.map((m) => m.matchId));
+
+        const corrupted = matches.map((m): IncludedMatch => {
+          if (windowIds.has(m.matchId)) {
+            return m; // leave in-window matches untouched
+          }
+          // Corrupt every performance-relevant field WITHOUT touching
+          // queueType/startTimestamp, so window membership (computed on the
+          // corrupted array) is provably identical.
+          return {
+            ...m,
+            cs: corruptValue,
+            participants: [
+              baseParticipant({
+                isAnalyzedPlayer: true,
+                teamId: 100,
+                teamPosition: 'JUNGLE',
+                damageToChampions: corruptValue,
+                killParticipationPercent: 0,
+                neutralMinionsKilled: corruptValue,
+              }),
+              baseParticipant({ teamId: 100, damageToChampions: 1 }),
+              baseParticipant({ teamId: 200, teamPosition: 'JUNGLE', neutralMinionsKilled: 1 }),
+            ],
+          };
+        });
+
+        // Window membership is unaffected (queueType/startTimestamp untouched).
+        const corruptedWindow = recentRankedWindowOf(corrupted);
+        expect(corruptedWindow.map((m) => m.matchId)).toEqual(window.map((m) => m.matchId));
+
+        expect(computePerformanceFeedback(recentRankedWindowOf(corrupted))).toEqual(
+          computePerformanceFeedback(window),
+        );
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+/** One `EarlyGameAggregate` per matchId, each field independently nullable. */
+function earlyGameArb(matchId: string): fc.Arbitrary<EarlyGameAggregate> {
+  return fc.record({
+    matchId: fc.constant(matchId),
+    lanePhaseDeaths: fc.option(fc.nat(10), { nil: null }),
+    goldDiffAt10: fc.option(fc.integer({ min: -3_000, max: 3_000 }), { nil: null }),
+    csDiffAt10: fc.option(fc.integer({ min: -60, max: 60 }), { nil: null }),
+  });
+}
+
+/** Matches paired with one `EarlyGameAggregate` per match (same matchIds). */
+const matchesWithEarlyGameArb: fc.Arbitrary<{ matches: IncludedMatch[]; earlyGame: EarlyGameAggregate[] }> =
+  matchesArb.chain((matches) =>
+    fc
+      .tuple(...matches.map((m) => earlyGameArb(m.matchId)))
+      .map((earlyGame) => ({ matches, earlyGame })),
+  );
+
+describe('computePerformanceFeedback — Property 5: Phase 2 categories mirror their own functions and read only in-window earlyGame entries', () => {
+  // Feature: player-insights, Property 5: Performance Feedback Phase 2 categories never emit untriggered, and only average earlyGame entries whose matchId is in the Recent_Ranked_Window
+  // **Validates: Requirements 15, 16**
+  it('matches lanePhaseDeathsFeedbackOf/earlyGameDeficitFeedbackOf exactly, and both handle a fully empty earlyGame array as "never fires"', () => {
+    fc.assert(
+      fc.property(matchesWithEarlyGameArb, ({ matches, earlyGame }) => {
+        const rankedMatches = recentRankedWindowOf(matches);
+        const result = computePerformanceFeedback(rankedMatches, earlyGame);
+
+        const byCategory = {
+          csPerMinute: csPerMinuteFeedbackOf(rankedMatches),
+          damageShare: damageShareFeedbackOf(rankedMatches),
+          killParticipation: killParticipationFeedbackOf(rankedMatches),
+          jungleObjectives: jungleObjectivesFeedbackOf(rankedMatches),
+          lanePhaseDeaths: lanePhaseDeathsFeedbackOf(rankedMatches, earlyGame),
+          earlyGameDeficit: earlyGameDeficitFeedbackOf(rankedMatches, earlyGame),
+        };
+        const expected = PERFORMANCE_FEEDBACK_CATEGORY_ORDER.map((c) => byCategory[c]).filter(
+          (item) => item !== undefined,
+        );
+        expect(result).toEqual(expected);
+
+        // Corrupting/removing earlyGame entries whose matchId falls OUTSIDE the
+        // Recent_Ranked_Window must never change either Phase 2 category.
+        const rankedIds = new Set(rankedMatches.map((m) => m.matchId));
+        const onlyInWindow = earlyGame.filter((entry) => rankedIds.has(entry.matchId));
+        expect(lanePhaseDeathsFeedbackOf(rankedMatches, onlyInWindow)).toEqual(
+          lanePhaseDeathsFeedbackOf(rankedMatches, earlyGame),
+        );
+        expect(earlyGameDeficitFeedbackOf(rankedMatches, onlyInWindow)).toEqual(
+          earlyGameDeficitFeedbackOf(rankedMatches, earlyGame),
+        );
+
+        // An empty earlyGame array never triggers either Phase 2 category.
+        expect(lanePhaseDeathsFeedbackOf(rankedMatches, [])).toBeUndefined();
+        expect(earlyGameDeficitFeedbackOf(rankedMatches, [])).toBeUndefined();
+      }),
+      { numRuns: 200 },
+    );
+  });
+});

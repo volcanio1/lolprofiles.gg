@@ -223,6 +223,26 @@ export interface MatchParticipantDto {
   riotIdGameName?: string;
   riotIdTagline?: string;
   /**
+   * player-insights Requirement 14.1. Fourteen per-participant ping-count
+   * fields Match-V5 already reports; consumed by `funFactsV2.ts`'s
+   * most-used-ping fact. No new Riot API call — these are unread fields in a
+   * response this codebase already fetches for every match.
+   */
+  onMyWayPings?: number;
+  enemyMissingPings?: number;
+  enemyVisionPings?: number;
+  needVisionPings?: number;
+  pushPings?: number;
+  holdPings?: number;
+  getBackPings?: number;
+  assistMePings?: number;
+  allInPings?: number;
+  retreatPings?: number;
+  dangerPings?: number;
+  basicPings?: number;
+  commandPings?: number;
+  visionClearedPings?: number;
+  /**
    * `match-detail-tabs` Requirement 12.1. Present in every queue, always `0`
    * outside queue 2400 (ARAM Mayhem) — verified live against real ARAM matches.
    */
@@ -263,6 +283,19 @@ export interface MatchDto {
  * out of scope for item-timeline (Requirement 7.2), and a response is 0.3-1 MB
  * of mostly that data; typing it would only invite its use.
  */
+/**
+ * player-insights Requirement 16.2. One participant's per-frame snapshot —
+ * gold and CS only, the two fields the early-game deficit feedback reads.
+ * Keyed by participant id AS A STRING in Riot's real payload
+ * (`frame.participantFrames["1"]`, etc.); `MatchTimelineDto.info.frames`
+ * models the map with that string-keyed shape unchanged.
+ */
+export interface ParticipantFrameDto {
+  totalGold?: number;
+  minionsKilled?: number;
+  jungleMinionsKilled?: number;
+}
+
 export interface MatchTimelineDto {
   metadata: {
     matchId: string;
@@ -276,7 +309,15 @@ export interface MatchTimelineDto {
      * but relying on that ordering is forbidden — read this array.
      */
     participants: { participantId: number; puuid: string }[];
-    frames: { timestamp: number; events: TimelineEventDto[] }[];
+    frames: {
+      timestamp: number;
+      events: TimelineEventDto[];
+      /**
+       * player-insights Requirement 16.2. Absent on any frame this codebase
+       * previously had no reason to keep (every frame before this spec).
+       */
+      participantFrames?: Record<string, ParticipantFrameDto>;
+    }[];
   };
 }
 

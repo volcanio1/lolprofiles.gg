@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relativeAge } from './format';
+import { formatMasteryPoints, relativeAge } from './format';
 
 const NOW = 1_700_000_000_000;
 const m = 60 * 1000;
@@ -17,5 +17,19 @@ describe('relativeAge — autofill-search Requirement 10.2', () => {
     [NOW + 5 * m, 'just now'], // a future timestamp never reads negative
   ])('relativeAge(%i) is %s', (from, expected) => {
     expect(relativeAge(from, NOW)).toBe(expected);
+  });
+});
+
+describe('formatMasteryPoints', () => {
+  it.each([
+    [999, '999'],
+    [1_000, '1.0k'],
+    [181_371, '181.4k'],
+    [999_999, '1000.0k'],
+    [1_000_000, '1.0m'],
+    [2_450_000, '2.5m'],
+    [0, '0'],
+  ])('formatMasteryPoints(%i) is %s', (points, expected) => {
+    expect(formatMasteryPoints(points)).toBe(expected);
   });
 });

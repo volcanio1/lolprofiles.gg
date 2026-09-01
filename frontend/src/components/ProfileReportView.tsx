@@ -59,10 +59,13 @@ import {
   standingQueueFor,
 } from '../domain/queueFilters';
 import { platformLabel } from '../domain/regions';
+import { ChampionMasteryPanel } from './ChampionMasteryPanel';
 import { ChampionPreferences } from './ChampionPreferences';
 import { ClashScoutingPanel } from './ClashScoutingPanel';
+import { FunFactsPanel } from './FunFactsPanel';
 import { GamemodeFilter } from './GamemodeFilter';
 import { LiveGamePanel } from './LiveGamePanel';
+import { PerformanceFeedbackPanel } from './PerformanceFeedbackPanel';
 import { PremadesPanel } from './PremadesPanel';
 import { RankHistoryGraph } from './RankHistoryGraph';
 import { RolePerformancePanel } from './RolePerformancePanel';
@@ -106,19 +109,6 @@ function formatTimestamp(iso: string): string {
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString();
 }
-
-const FUN_FACT_LABELS: Readonly<Record<string, string>> = {
-  rolePreference: 'Role preference',
-  championLoyalty: 'Champion loyalty',
-  timeOfDay: 'When they play',
-  streak: 'Streaks',
-};
-
-const RECOMMENDATION_LABELS: Readonly<Record<string, string>> = {
-  survivability: 'Survivability',
-  championSelection: 'Champion selection',
-  visionControl: 'Vision control',
-};
 
 /**
  * Recent-matches queue filter. `queueTypes` lists the raw `match.queueType`
@@ -170,6 +160,14 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
     return report.recentMatches.filter((match) => option.queueTypes.includes(match.queueType));
   }, [queueFilter, report.recentMatches]);
   const visibleMatches = filteredMatches.slice(0, visibleCount);
+
+  // player-insights Requirement 13.4: distinguishes "no ranked games at all"
+  // from "ranked games, but nothing stood out" — `report.performanceFeedback`
+  // alone can't tell those apart, since both render as an empty array.
+  const hasRankedMatches = useMemo(
+    () => report.recentMatches.some((match) => match.queueType === 'ranked solo/duo' || match.queueType === 'ranked flex'),
+    [report.recentMatches],
+  );
 
   return (
     <div data-testid="profile-report" className="report">
@@ -313,6 +311,15 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
             <ChampionPreferences champions={sidebarSlice.topChampions} />
           </section>
 
+          {/* Champion mastery — top 5 by mastery points, never queue-filtered
+              (mastery points have no queue dimension). */}
+          <section className="rsec rsec--tight" aria-labelledby="champion-mastery-heading">
+            <h3 id="champion-mastery-heading" className="rsec-title">
+              Champion mastery
+            </h3>
+            <ChampionMasteryPanel champions={report.championMastery} />
+          </section>
+
           {/* profile-sidebar Requirement 8: Role_Performance, same queue scope. */}
           <section className="rsec rsec--tight" aria-labelledby="role-perf-heading">
             <h3 id="role-perf-heading" className="rsec-title">
@@ -425,57 +432,21 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
           </section>
 
           <div className="rsec-duo">
-            {/* Requirements 7.1, 7.2, 7.4 */}
             <section className="rsec" aria-labelledby="fun-facts-heading">
               <h3 id="fun-facts-heading" className="rsec-title">
                 Fun facts
               </h3>
-              {report.funFacts.length === 0 ? (
-                <p data-testid="no-fun-facts" className="empty-note">
-                  Not enough match history to derive fun facts yet.
-                </p>
-              ) : (
-                <ul className="fact-list" role="list">
-                  {report.funFacts.map((fact) => (
-                    <li key={fact.category} data-testid={`fun-fact-${fact.category}`} className="fact-item">
-                      <strong className="fact-label">{FUN_FACT_LABELS[fact.category] ?? fact.category}</strong>
-                      <span className="fact-text">{fact.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <FunFactsPanel funFacts={report.funFacts} limitedDataNotice={report.limitedDataNotice} />
             </section>
 
-            {/* Requirement 8.5 */}
-            <section className="rsec" aria-labelledby="recommendations-heading">
-              <h3 id="recommendations-heading" className="rsec-title">
-                Improvement recommendations
+            <section className="rsec" aria-labelledby="performance-feedback-heading">
+              <h3 id="performance-feedback-heading" className="rsec-title">
+                Performance feedback
               </h3>
-              {report.recommendations.length === 0 ? (
-                // Decision 3: zero is valid under the amended Requirement 8.1.
-                <p data-testid="no-recommendations" className="empty-note">
-                  No improvement recommendations were triggered by this match history.
-                </p>
-              ) : (
-                <ul className="reco-list" role="list">
-                  {report.recommendations.map((recommendation) => (
-                    <li
-                      key={recommendation.category}
-                      data-testid={`recommendation-${recommendation.category}`}
-                      className="reco-item"
-                    >
-                      <strong className="reco-label">
-                        {RECOMMENDATION_LABELS[recommendation.category] ?? recommendation.category}
-                      </strong>
-                      <span className="reco-text">{recommendation.text}</span>
-                      {/* Requirement 8.5: the metric name and the value that triggered it. */}
-                      <span data-testid={`metric-${recommendation.category}`} className="reco-metric">
-                        {recommendation.metricName}: {recommendation.metricValue}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <PerformanceFeedbackPanel
+                performanceFeedback={report.performanceFeedback}
+                hasRankedMatches={hasRankedMatches}
+              />
             </section>
           </div>
         </div>

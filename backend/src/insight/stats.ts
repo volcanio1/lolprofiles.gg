@@ -89,6 +89,20 @@
 export const TOP_CHAMPION_LIMIT = 5;
 
 /**
+ * Requirement 7.5 (pre-`player-insights`): a window with fewer than this many
+ * successfully retrieved matches is "limited data" for `ProfileReport.limitedDataNotice`.
+ * Moved here from the now-removed `funFacts.ts` — `limitedDataNotice` is an
+ * existing report field this spec does not touch, so it needed a home that
+ * outlives that module's deletion.
+ */
+export const LIMITED_DATA_MATCH_THRESHOLD = 5;
+
+/** `ProfileReport.limitedDataNotice`'s source of truth (see `LIMITED_DATA_MATCH_THRESHOLD`). */
+export function isLimitedData(matches: readonly IncludedMatch[]): boolean {
+  return matches.length < LIMITED_DATA_MATCH_THRESHOLD;
+}
+
+/**
  * Decision 6: reported as the most-played role when there are no matches at all.
  */
 export const UNKNOWN_ROLE = 'Unknown';
@@ -187,6 +201,35 @@ export interface MatchParticipant {
    * unconditional; only ARAM Mayhem ever has a non-zero value to find.
    */
   augments: readonly number[];
+  /**
+   * player-insights Requirement 12.4. Neutral-monster (jungle camp) kills only,
+   * distinct from `cs` (which already combines this with lane minions) — needed
+   * on every participant, not only the analyzed player's own row, so a jungler's
+   * camp clear can be compared against the enemy jungler's.
+   */
+  neutralMinionsKilled: number;
+  /**
+   * player-insights Requirement 14.1. Fourteen per-participant ping counts,
+   * Riot's field order. Only the analyzed player's own row is read today
+   * (`funFactsV2.ts`'s most-used-ping fact), but the field lives on every
+   * participant for the same reason `killParticipationPercent` does — the
+   * analyzed player's row is just one row of a `Full_Lobby`, found by
+   * `isAnalyzedPlayer`, not re-derived from a separate top-level field.
+   */
+  onMyWayPings: number;
+  enemyMissingPings: number;
+  enemyVisionPings: number;
+  needVisionPings: number;
+  pushPings: number;
+  holdPings: number;
+  getBackPings: number;
+  assistMePings: number;
+  allInPings: number;
+  retreatPings: number;
+  dangerPings: number;
+  basicPings: number;
+  commandPings: number;
+  visionClearedPings: number;
 }
 
 /**
@@ -207,6 +250,8 @@ export interface LanelessMatch {
   win: boolean;
   queueType: 'aram' | 'aram mayhem';
   championName: string;
+  /** champion-mastery sidebar section: joins this match to a Champion-Mastery-V4 entry by id. Optional — absent on older cached matches. */
+  championId?: number;
   kills: number;
   deaths: number;
   assists: number;
@@ -224,6 +269,8 @@ export interface RawMatch {
   startTimestamp: number;
   durationSeconds: number;
   championName: string;
+  /** champion-mastery sidebar section: joins this match to a Champion-Mastery-V4 entry by id. Optional — absent on older cached matches. */
+  championId?: number;
   role: string;
   win: boolean;
   kills: number;

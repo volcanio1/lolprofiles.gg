@@ -59,10 +59,12 @@
 import type { ItemBuild } from './stats';
 
 /**
- * The four Match-V5 timeline events that change a participant's inventory, plus a
- * catch-all for every other event type the reducer ignores. Deliberately narrow:
- * `participantFrames` (gold, xp, position) is out of scope (Requirement 7.2) and
- * is not modelled here so it cannot be reached for.
+ * The four Match-V5 timeline events that change a participant's inventory,
+ * `CHAMPION_KILL` (added for `player-insights` Requirement 15's lane-phase
+ * death count), and a catch-all for every other event type the reducer
+ * ignores. `participantFrames` (gold, CS) is a separate, frame-level field —
+ * see `MatchTimelineDto` in `riotApiClient/index.ts` and `insight/earlyGame.ts`
+ * — not an event, so it stays out of this union.
  */
 export type TimelineEventDto =
   | { type: 'ITEM_PURCHASED'; timestamp: number; participantId: number; itemId: number }
@@ -77,6 +79,7 @@ export type TimelineEventDto =
       goldGain?: number;
     }
   | { type: 'SKILL_LEVEL_UP'; timestamp: number; participantId: number; skillSlot: number }
+  | { type: 'CHAMPION_KILL'; timestamp: number; victimId: number; killerId?: number }
   | { type: string; timestamp?: number };
 
 export interface BuildPathEntry {

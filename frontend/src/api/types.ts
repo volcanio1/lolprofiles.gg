@@ -40,6 +40,17 @@ export interface ChampionSummary {
   averageCsPerMinute: number;
 }
 
+/** Champion-mastery sidebar section: top 5 by mastery points, joined against match history by championId. */
+export interface ChampionMasteryEntry {
+  championId: number;
+  championLevel: number;
+  championPoints: number;
+  gamesPlayed: number;
+  /** `null` when `gamesPlayed` is 0 — the champion has no matches in the analyzed window. */
+  winRatePercent: number | null;
+  averageKda: number | null;
+}
+
 export interface ProfileStats {
   rankedByQueue: Record<string, RankedQueueStanding>;
   overallAverageKda: number;
@@ -227,18 +238,36 @@ export type BuildPathResponse =
     }
   | { kind: 'unavailable'; reason: 'no_timeline' | 'participant_absent' };
 
-/** Requirement 7.4's four categories. */
-export interface FunFact {
-  category: 'timeOfDay' | 'championLoyalty' | 'rolePreference' | 'streak';
-  text: string;
+// ---------------------------------------------------------------------------
+// player-insights: Fun Facts v2 / Performance Feedback
+// ---------------------------------------------------------------------------
+
+export interface FavoriteItem {
+  itemId: number;
+  count: number;
 }
 
-/** Requirement 8.5: every recommendation carries its metric name and value. */
-export interface Recommendation {
-  category: 'survivability' | 'championSelection' | 'visionControl';
+export interface FunFactV2 {
+  category: 'nemesis' | 'longestGame' | 'favoriteItems' | 'mostUsedPing' | 'averageKda' | 'averageGoldDiffAt10';
+  text: string;
+  /** Only present for `favoriteItems` — resolved to icons/names via the Static_Data_Provider. */
+  favoriteItems?: readonly FavoriteItem[];
+}
+
+export type PerformanceFeedbackCategory =
+  | 'csPerMinute'
+  | 'damageShare'
+  | 'killParticipation'
+  | 'jungleObjectives'
+  | 'lanePhaseDeaths'
+  | 'earlyGameDeficit';
+
+export interface PerformanceFeedback {
+  category: PerformanceFeedbackCategory;
   text: string;
   metricName: string;
   metricValue: number;
+  benchmarkValue: number;
 }
 
 export interface ProfileReport {
@@ -271,10 +300,14 @@ export interface ProfileReport {
   premadesByQueue: Record<QueueFilterValue, PremadeEntry[]>;
   /** profile-sidebar Requirement 10: Ranked Solo/Duo rank snapshots, oldest first. */
   rankHistory: RankSnapshot[];
-  funFacts: FunFact[];
+  /** Top 5 champions by Champion-Mastery-V4 points, joined against the full match window. Never queue-filtered. */
+  championMastery: ChampionMasteryEntry[];
+  /** player-insights Requirements 2-5. Drawn from the full match window (all allowed queue types). */
+  funFacts: FunFactV2[];
   /** Requirement 3.4 / 7.5. */
   limitedDataNotice: boolean;
-  recommendations: Recommendation[];
+  /** player-insights Requirements 6-12. Drawn from the analyzed player's most recent 30 ranked games only. */
+  performanceFeedback: PerformanceFeedback[];
   /** Requirement 7.3. */
   averageMatchDurationMinutes: number;
   /**

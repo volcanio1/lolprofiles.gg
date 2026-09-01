@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import type { ChampionSummary, PremadeEntry, RolePerformanceEntry } from '../api/types';
+import type { ChampionMasteryEntry, ChampionSummary, PremadeEntry, RolePerformanceEntry } from '../api/types';
+import { StaticDataContext, buildStaticDataIndex, createStaticDataProvider } from '../staticData';
+import { ChampionMasteryPanel } from './ChampionMasteryPanel';
 import { ChampionPreferences } from './ChampionPreferences';
 import { PremadesPanel } from './PremadesPanel';
 import { RolePerformancePanel } from './RolePerformancePanel';
@@ -28,6 +30,57 @@ describe('ChampionPreferences', () => {
   it('shows the empty-state note for no champions', () => {
     render(<ChampionPreferences champions={[]} />);
     expect(screen.getByTestId('no-champions')).toBeInTheDocument();
+  });
+});
+
+const VERSION = '16.17.1';
+const CHAMPION_JSON = { data: { MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' }, key: '62' } } };
+
+const masteryEntry = (championId: number, over: Partial<ChampionMasteryEntry> = {}): ChampionMasteryEntry => ({
+  championId,
+  championLevel: 7,
+  championPoints: 250_000,
+  gamesPlayed: 10,
+  winRatePercent: 60,
+  averageKda: 3.5,
+  ...over,
+});
+
+function renderMasteryPanel(champions: ChampionMasteryEntry[]) {
+  const provider = createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }));
+  return render(
+    <StaticDataContext.Provider value={provider}>
+      <ChampionMasteryPanel champions={champions} />
+    </StaticDataContext.Provider>,
+  );
+}
+
+describe('ChampionMasteryPanel', () => {
+  it('renders one row per champion, resolving championId to the champion display name', () => {
+    renderMasteryPanel([masteryEntry(62)]);
+    const row = screen.getByTestId('champion-mastery-62');
+    expect(row).toHaveTextContent('Wukong');
+    expect(row).toHaveTextContent('10'); // games
+    expect(row).toHaveTextContent('60%'); // win rate
+  });
+
+  it('shows mastery points formatted as x.xk / x.xm instead of KDA', () => {
+    renderMasteryPanel([masteryEntry(62, { championPoints: 181_371 })]);
+    const row = screen.getByTestId('champion-mastery-62');
+    expect(row).toHaveTextContent('181.4k');
+    expect(row).not.toHaveTextContent('KDA');
+  });
+
+  it('renders "—" for winRatePercent when null (no matches in the window)', () => {
+    renderMasteryPanel([masteryEntry(62, { gamesPlayed: 0, winRatePercent: null, averageKda: null })]);
+    const row = screen.getByTestId('champion-mastery-62');
+    expect(row).toHaveTextContent('—');
+    expect(row).not.toHaveTextContent('null');
+  });
+
+  it('shows the empty-state note for no champion mastery data', () => {
+    render(<ChampionMasteryPanel champions={[]} />);
+    expect(screen.getByTestId('no-champion-mastery')).toBeInTheDocument();
   });
 });
 

@@ -232,8 +232,14 @@ export function itemBuildOf(participant: {
  * picks). The predicate itself is byte-for-byte what `opponentOf` used inline
  * before the extraction; `mapping.test.ts`'s opponent tests, unchanged, are the
  * evidence of that.
+ *
+ * Exported (was private) for `player-insights` Phase 2's `orchestrator/earlyGame.ts`,
+ * a third consumer that needs the same Lane_Opponent selection — one raw
+ * `MatchParticipantDto` row in, not yet flattened through `toMatchParticipant`
+ * — to find the opponent's puuid for a timeline lookup, for the same "match by
+ * lane, never by champion identity" reason.
  */
-function opponentRowOf(
+export function opponentRowOf(
   participants: readonly MatchParticipantDto[],
   player: MatchParticipantDto,
 ): MatchParticipantDto | undefined {
@@ -347,6 +353,21 @@ export function toMatchParticipant(
     win: participant.win === true,
     killParticipationPercent: killParticipationOf(kills, assists, teamKills),
     augments: augmentsOf(participant),
+    neutralMinionsKilled: finiteOrZero(participant.neutralMinionsKilled),
+    onMyWayPings: finiteOrZero(participant.onMyWayPings),
+    enemyMissingPings: finiteOrZero(participant.enemyMissingPings),
+    enemyVisionPings: finiteOrZero(participant.enemyVisionPings),
+    needVisionPings: finiteOrZero(participant.needVisionPings),
+    pushPings: finiteOrZero(participant.pushPings),
+    holdPings: finiteOrZero(participant.holdPings),
+    getBackPings: finiteOrZero(participant.getBackPings),
+    assistMePings: finiteOrZero(participant.assistMePings),
+    allInPings: finiteOrZero(participant.allInPings),
+    retreatPings: finiteOrZero(participant.retreatPings),
+    dangerPings: finiteOrZero(participant.dangerPings),
+    basicPings: finiteOrZero(participant.basicPings),
+    commandPings: finiteOrZero(participant.commandPings),
+    visionClearedPings: finiteOrZero(participant.visionClearedPings),
   };
 }
 
@@ -452,6 +473,7 @@ export function toIncludedMatch(match: MatchDto | undefined, puuid: string): Inc
     startTimestamp,
     durationSeconds,
     championName: typeof participant.championName === 'string' ? participant.championName : '',
+    championId: typeof participant.championId === 'number' ? participant.championId : undefined,
     role: roleOf(participant),
     win: participant.win === true,
     kills: finiteOrZero(participant.kills),
@@ -529,6 +551,7 @@ export function toLanelessMatch(match: MatchDto | undefined, puuid: string): Lan
     startTimestamp,
     durationSeconds,
     championName: typeof participant.championName === 'string' ? participant.championName : '',
+    championId: typeof participant.championId === 'number' ? participant.championId : undefined,
     win: participant.win === true,
     kills: finiteOrZero(participant.kills),
     deaths: finiteOrZero(participant.deaths),

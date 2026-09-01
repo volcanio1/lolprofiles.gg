@@ -20,6 +20,7 @@ import type { PlatformRoutingValue } from '../region';
 import type {
   AccountDto,
   AccountRegionDto,
+  ChampionMasteryDto,
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
@@ -69,6 +70,8 @@ interface ClientScript {
   matchIds?: RiotApiResult<string[]>;
   /** Per-match-id outcome, so individual failures can be targeted. */
   matchDetail?: (matchId: string) => RiotApiResult<MatchDto>;
+  /** champion-mastery sidebar section. Defaults to an empty top-N (no mastery data). */
+  championMasteryTop?: RiotApiResult<ChampionMasteryDto[]>;
   /** Runs before each call resolves, so a test can fire the budget mid-pipeline. */
   onCall?: (stage: LookupStage, detail?: string) => void;
 }
@@ -187,7 +190,7 @@ function makeFakes(script: ClientScript = {}): Fakes {
     getClashTeam: () => Promise.reject(new Error('getClashTeam not exercised by the lookup path')),
     getClashTournamentsByTeam: () =>
       Promise.reject(new Error('getClashTournamentsByTeam not exercised by the lookup path')),
-    getChampionMasteryTop: () => Promise.reject(new Error('getChampionMasteryTop not exercised by the lookup path')),
+    getChampionMasteryTop: () => Promise.resolve(script.championMasteryTop ?? { kind: 'ok', data: [] }),
   };
 
   return { client, calls, callsAt: (stage) => calls.filter((call) => call.stage === stage) };
@@ -678,19 +681,164 @@ describe('runLookup — report contents', () => {
     expect(report.stats.mostPlayedRole).toBe('MIDDLE');
     // Requirement 7.3: 1800s per match is 30 minutes.
     expect(report.averageMatchDurationMinutes).toBe(30);
-    // Requirement 7.4: four eligible categories with 6 matches.
-    expect(report.funFacts.map((fact) => fact.category)).toEqual([
-      'rolePreference',
-      'championLoyalty',
-      'timeOfDay',
-      'streak',
-    ]);
     expect(report.limitedDataNotice).toBe(false);
     expect(report.partialDataWarning).toBe(false);
-    for (const recommendation of report.recommendations) {
-      expect(recommendation.metricName).not.toBe('');
-      expect(Number.isFinite(recommendation.metricValue)).toBe(true);
+  });
+
+  it('populates funFacts and performanceFeedback end to end from a realistic ranked fixture (player-insights task 5.2)', async () => {
+    type ParticipantOverrides = Partial<MatchDto['info']['participants'][number]> & { puuid: string };
+
+    function richParticipant(over: ParticipantOverrides): MatchDto['info']['participants'][number] {
+      return {
+        championName: 'Filler',
+        teamPosition: 'TOP',
+        teamId: 100,
+        win: true,
+        kills: 2,
+        deaths: 2,
+        assists: 2,
+        visionScore: 10,
+        totalMinionsKilled: 100,
+        neutralMinionsKilled: 0,
+        totalDamageDealtToChampions: 15_000,
+        turretKills: 0,
+        dragonKills: 0,
+        baronKills: 0,
+        pentaKills: 0,
+        item0: 0,
+        item1: 0,
+        item2: 0,
+        item3: 0,
+        item4: 0,
+        item5: 0,
+        item6: 0,
+        ...over,
+      };
     }
+
+    const ids = ['i1', 'i2', 'i3'];
+    function richMatch(matchId: string, index: number): MatchDto {
+      const win = index !== 2; // lose the third
+      return {
+        metadata: { matchId, participants: [PUUID, 't2', 't3', 't4', 't5', 'e1', 'e2', 'e3', 'e4', 'e5'] },
+        info: {
+          queueId: 420, // ranked solo/duo
+          gameStartTimestamp: 1_700_000_000_000 + index * 3_600_000,
+          gameDuration: 1_800 + index * 60,
+          participants: [
+            richParticipant({
+              puuid: PUUID,
+              championName: 'Ahri',
+              teamPosition: 'MIDDLE',
+              teamId: 100,
+              win,
+              kills: 1,
+              deaths: 4,
+              assists: 2, // low kill participation vs the team total below
+              visionScore: 8,
+              totalMinionsKilled: 40, // low CS/min (well under 8.5)
+              totalDamageDealtToChampions: 3_000, // low vs teammates' 15,000 average
+              item0: 3157,
+              item1: 6655,
+              onMyWayPings: 5,
+            }),
+            richParticipant({ puuid: 't2', teamId: 100, teamPosition: 'TOP' }),
+            richParticipant({ puuid: 't3', teamId: 100, teamPosition: 'JUNGLE' }),
+            richParticipant({ puuid: 't4', teamId: 100, teamPosition: 'BOTTOM' }),
+            richParticipant({ puuid: 't5', teamId: 100, teamPosition: 'UTILITY' }),
+            richParticipant({ puuid: 'e1', teamId: 200, teamPosition: 'MIDDLE', championName: 'Zed', win: !win }),
+            richParticipant({ puuid: 'e2', teamId: 200, teamPosition: 'TOP', win: !win }),
+            richParticipant({ puuid: 'e3', teamId: 200, teamPosition: 'JUNGLE', win: !win }),
+            richParticipant({ puuid: 'e4', teamId: 200, teamPosition: 'BOTTOM', win: !win }),
+            richParticipant({ puuid: 'e5', teamId: 200, teamPosition: 'UTILITY', win: !win }),
+          ],
+        },
+      };
+    }
+
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: ids },
+      matchDetail: (matchId) => ({ kind: 'ok', data: richMatch(matchId, ids.indexOf(matchId)) }),
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+    const { report } = result;
+
+    // Fun Facts: Nemesis (2-1 vs Zed, meets the 3-game minimum), longest game,
+    // favorite items (3157/6655 built every match), most-used ping, average
+    // KDA. No `averageGoldDiffAt10` — this fixture's timeline fetches never
+    // succeed, so `earlyGame` stays empty.
+    const factCategories = report.funFacts.map((f) => f.category);
+    expect(factCategories).toEqual(['nemesis', 'longestGame', 'favoriteItems', 'mostUsedPing', 'averageKda']);
+    expect(report.funFacts.find((f) => f.category === 'nemesis')?.text).toContain('Zed');
+    expect(report.funFacts.find((f) => f.category === 'favoriteItems')?.favoriteItems).toEqual([
+      { itemId: 3157, count: 3 },
+      { itemId: 6655, count: 3 },
+    ]);
+
+    // Performance Feedback: low CS/min, low damage share, low kill participation all trigger.
+    const feedbackCategories = report.performanceFeedback.map((f) => f.category);
+    expect(feedbackCategories).toEqual(['csPerMinute', 'damageShare', 'killParticipation']);
+    for (const item of report.performanceFeedback) {
+      expect(item.metricName).not.toBe('');
+      expect(Number.isFinite(item.metricValue)).toBe(true);
+      expect(Number.isFinite(item.benchmarkValue)).toBe(true);
+    }
+  });
+
+  it('populates championMastery end to end, joining Champion-Mastery-V4 top-N to the real match history by championId', async () => {
+    const ids = ['i1', 'i2'];
+    function masteryMatch(matchId: string, win: boolean): MatchDto {
+      return {
+        metadata: { matchId, participants: [PUUID, 'other-1'] },
+        info: {
+          queueId: 420,
+          gameStartTimestamp: 1_700_000_000_000,
+          gameDuration: 1_800,
+          participants: [
+            {
+              puuid: PUUID,
+              championName: 'Ahri',
+              championId: 103,
+              teamPosition: 'MIDDLE',
+              win,
+              kills: 6,
+              deaths: 2,
+              assists: 8,
+              visionScore: 20,
+            },
+            { puuid: 'other-1', championName: 'Garen', teamPosition: 'TOP', win: !win, kills: 1, deaths: 9, assists: 2, visionScore: 5 },
+          ],
+        },
+      };
+    }
+
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: ids },
+      matchDetail: (matchId) => ({ kind: 'ok', data: masteryMatch(matchId, matchId === 'i1') }),
+      championMasteryTop: {
+        kind: 'ok',
+        data: [
+          { championId: 103, championLevel: 7, championPoints: 250_000 }, // Ahri: played, 1-1
+          { championId: 999, championLevel: 5, championPoints: 10_000 }, // never played in this window
+        ],
+      },
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+
+    expect(result.report.championMastery).toEqual([
+      { championId: 103, championLevel: 7, championPoints: 250_000, gamesPlayed: 2, winRatePercent: 50, averageKda: 7 },
+      { championId: 999, championLevel: 5, championPoints: 10_000, gamesPlayed: 0, winRatePercent: null, averageKda: null },
+    ]);
   });
 
   it('renders an empty ranked entry list as a valid unranked state (Requirements 2.8, 6.1)', async () => {

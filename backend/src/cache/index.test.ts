@@ -41,6 +41,7 @@ describe('TTL_BY_ENDPOINT', () => {
       clashPlayers: FIVE_MINUTES_MS,
       clashTeam: FIVE_MINUTES_MS,
       championMasteryTop: ONE_HOUR_MS,
+      earlyGameSlice: 'infinite',
     });
   });
 });

@@ -12,6 +12,25 @@ export function formatKda(value: number): string {
   return Number.isFinite(value) ? value.toFixed(2) : '0.00';
 }
 
+/**
+ * Champion-mastery sidebar section: compact mastery-points display —
+ * `181371` -> `"181.4k"`, `1231400` -> `"1.2m"`. Below 1,000 shows the exact
+ * integer with no suffix.
+ */
+export function formatMasteryPoints(points: number): string {
+  if (!Number.isFinite(points)) {
+    return '0';
+  }
+  const abs = Math.abs(points);
+  if (abs >= 1_000_000) {
+    return `${(points / 1_000_000).toFixed(1)}m`;
+  }
+  if (abs >= 1_000) {
+    return `${(points / 1_000).toFixed(1)}k`;
+  }
+  return String(Math.round(points));
+}
+
 /** Requirements 6.2/6.6: `'N/A'` passes through, a number gets a `%`. */
 export function formatWinRate(winRatePercent: number | 'N/A'): string {
   return winRatePercent === 'N/A' ? 'N/A' : `${String(winRatePercent)}%`;

@@ -90,6 +90,20 @@ function matchBody(matchId: string) {
   };
 }
 
+/** Minimal Match-V5 timeline: no kills, no participantFrames data at 10 minutes. */
+function timelineBody(matchId: string) {
+  return {
+    metadata: { matchId, participants: [PUUID, 'other-player'] },
+    info: {
+      participants: [
+        { participantId: 1, puuid: PUUID },
+        { participantId: 2, puuid: 'other-player' },
+      ],
+      frames: [],
+    },
+  };
+}
+
 function headers(values: Record<string, string> = {}) {
   const lower = new Map(Object.entries(values).map(([key, value]) => [key.toLowerCase(), value]));
   return {
@@ -146,9 +160,22 @@ function makeHarness(): Harness {
     if (url.includes('/lol/match/v5/matches/by-puuid/')) {
       return Promise.resolve(json(200, MATCH_IDS));
     }
+    // player-insights Phase 2: served so `earlyGameSlice` actually caches (an
+    // unhandled/404 timeline is deliberately never cached, which would make
+    // every repeat lookup re-fetch it — see `orchestrator/earlyGame.ts`).
+    const timelineMatchId = /\/lol\/match\/v5\/matches\/([^/?]+)\/timeline$/.exec(url)?.[1];
+    if (timelineMatchId !== undefined) {
+      return Promise.resolve(json(200, timelineBody(timelineMatchId)));
+    }
     const matchId = /\/lol\/match\/v5\/matches\/([^/?]+)$/.exec(url)?.[1];
     if (matchId !== undefined) {
       return Promise.resolve(json(200, matchBody(matchId)));
+    }
+    // champion-mastery sidebar section: served so `championMasteryTop` actually
+    // caches (an unhandled/404 top-N is a genuine failure, never cached, which
+    // would make every repeat lookup re-fetch it).
+    if (url.includes('/lol/champion-mastery/v4/champion-masteries/by-puuid/')) {
+      return Promise.resolve(json(200, []));
     }
     return Promise.resolve(json(404, {}));
   };
@@ -228,7 +255,6 @@ describe('end-to-end: successful lookup through the assembled stack', () => {
     expect(report.averageMatchDurationMinutes).toBe(30);
     // Requirement 7.4: five included matches clears the limited-data threshold.
     expect(report.limitedDataNotice).toBe(false);
-    expect(report.funFacts).toHaveLength(4);
     expect(report.partialDataWarning).toBe(false);
     // Requirement 11.5: nothing was cached before, so this is a first retrieval.
     expect(report.lastUpdated).toBeNull();
@@ -395,7 +421,6 @@ describe('end-to-end: deletion flow (Requirements 12.5, 12.6)', () => {
 
     expect(after.status).toBe(200);
     expect(after.body.stats.topChampions).toHaveLength(championsBefore);
-    expect(after.body.funFacts).toHaveLength(before.body.funFacts.length);
     expect(after.body.limitedDataNotice).toBe(false);
     // Everything was re-fetched, so it is a first retrieval again.
     expect(after.body.lastUpdated).toBeNull();

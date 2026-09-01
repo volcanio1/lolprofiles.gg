@@ -51,6 +51,7 @@ const EXPECTED_RETENTION_MS: Readonly<Record<CacheEndpoint, number | 'infinite'>
   clashPlayers: 5 * 60 * 1000,
   clashTeam: 5 * 60 * 1000,
   championMasteryTop: 60 * 60 * 1000,
+  earlyGameSlice: 'infinite',
 };
 
 /** Independent staleness oracle: non-stale up to and including the boundary. */
@@ -169,6 +170,7 @@ describe('cacheOrFetch properties', () => {
       clashPlayers: 0,
       clashTeam: 0,
       championMasteryTop: 0,
+      earlyGameSlice: 0,
     };
     let boundaryCount = 0;
 

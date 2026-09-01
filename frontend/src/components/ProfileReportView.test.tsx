@@ -30,19 +30,10 @@ function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
     usedPlatformOverride: false,
     stats: baseStats,
     ...perQueueReportFields(baseStats),
-    funFacts: [
-      { category: 'rolePreference', text: 'Favourite role: BOTTOM, played in 19 of 28 recent matches (68%).' },
-      { category: 'streak', text: 'Longest win streak in this window: 8; longest loss streak: 5.' },
-    ],
+    championMastery: [],
+    funFacts: [],
     limitedDataNotice: false,
-    recommendations: [
-      {
-        category: 'visionControl',
-        text: 'Improve vision control.',
-        metricName: 'averageVisionScorePerMatch',
-        metricValue: 12.5,
-      },
-    ],
+    performanceFeedback: [],
     averageMatchDurationMinutes: 30.38,
     recentMatches: [],
     lastUpdated: null,
@@ -138,7 +129,11 @@ describe('Requirements 6.1, 6.2, 6.6 — ranked standing', () => {
 });
 
 describe('Requirements 6.3, 6.5, 7.3 — recent form (scoped to the sidebar filter)', () => {
-  /** Overrides the default sidebar slice (`ranked solo/duo`), which the panel reads. */
+  /**
+   * Overrides the `ranked solo/duo` slice, then selects that tab (the
+   * sidebar's default is `'all'` — these tests are about "the selected
+   * slice", so they select the slice they set up).
+   */
   function withSoloSlice(over: Partial<ProfileStats>): ProfileReport {
     const base = report();
     return report({
@@ -151,11 +146,13 @@ describe('Requirements 6.3, 6.5, 7.3 — recent form (scoped to the sidebar filt
 
   it('shows the average KDA to 2 decimal places', () => {
     render(<ProfileReportView report={withSoloSlice({ overallAverageKda: 3.07 })} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo'));
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('3.07');
   });
 
   it('pads a whole-number KDA to 2 decimals without changing the value', () => {
     render(<ProfileReportView report={withSoloSlice({ overallAverageKda: 3 })} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo'));
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('3.00');
     expect(formatKda(3)).toBe('3.00');
     expect(formatKda(3.07)).toBe('3.07');
@@ -163,11 +160,13 @@ describe('Requirements 6.3, 6.5, 7.3 — recent form (scoped to the sidebar filt
 
   it('shows the most-played role for the selected slice (Requirement 6.5)', () => {
     render(<ProfileReportView report={withSoloSlice({ mostPlayedRole: 'JUNGLE' })} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo'));
     expect(screen.getByTestId('most-played-role')).toHaveTextContent('JUNGLE');
   });
 
   it('shows the average match length for the selected slice, in minutes (Requirement 7.3)', () => {
     render(<ProfileReportView report={withSoloSlice({ averageMatchDurationMinutes: 31.2 })} />);
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo'));
     expect(screen.getByTestId('average-duration')).toHaveTextContent('31m');
   });
 
@@ -184,6 +183,7 @@ describe('Requirements 6.3, 6.5, 7.3 — recent form (scoped to the sidebar filt
         })}
       />,
     );
+    fireEvent.click(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo'));
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('1.10');
     fireEvent.click(screen.getByTestId('sidebar-queue-filter-normal'));
     expect(screen.getByTestId('overall-kda')).toHaveTextContent('9.90');
@@ -215,11 +215,11 @@ describe('profile-sidebar Requirement 9 — sidebar gamemode filter', () => {
     });
   }
 
-  it('defaults to Ranked Solo/Duo and shows that slice (Requirement 9.4)', () => {
+  it('defaults to All queues and shows that slice', () => {
     render(<ProfileReportView report={multiQueueReport()} />);
-    expect(screen.getByTestId('sidebar-queue-filter-ranked-solo-duo')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('champion-SoloChamp')).toBeInTheDocument();
-    expect(screen.getByTestId('role-perf-TOP')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-queue-filter-all')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('champion-AllChamp')).toBeInTheDocument();
+    expect(screen.getByTestId('role-perf-MIDDLE')).toBeInTheDocument();
   });
 
   it('re-scopes champion preferences and role performance when changed, with no effect on recent matches', () => {
@@ -267,18 +267,55 @@ describe('profile-sidebar Requirement 7 — champion preferences panel', () => {
 
   it('says so when the selected queue slice has no champions', () => {
     const base = report();
-    const empty = { ...base.statsByQueue['ranked solo/duo'], topChampions: [] };
-    render(
-      <ProfileReportView
-        report={report({ statsByQueue: { ...base.statsByQueue, 'ranked solo/duo': empty } })}
-      />,
-    );
+    const empty = { ...base.statsByQueue.all, topChampions: [] };
+    render(<ProfileReportView report={report({ statsByQueue: { ...base.statsByQueue, all: empty } })} />);
     expect(screen.getByTestId('no-champions')).toBeInTheDocument();
   });
 
   it('shows CS per minute to one decimal place', () => {
     render(<ProfileReportView report={report()} />);
     expect(screen.getByTestId('champion-Vayne-avg-cs')).toHaveTextContent('5.8');
+  });
+});
+
+describe('Champion mastery panel — sits under Champion Preferences, above Role Performance', () => {
+  it('renders the championMastery entries the report carries', () => {
+    render(
+      <ProfileReportView
+        report={report({
+          championMastery: [
+            { championId: 103, championLevel: 7, championPoints: 250_000, gamesPlayed: 4, winRatePercent: 75, averageKda: 4.2 },
+          ],
+        })}
+      />,
+    );
+    const row = screen.getByTestId('champion-mastery-103');
+    expect(row).toHaveTextContent('75%');
+    expect(row).toHaveTextContent('4');
+  });
+
+  it('shows the empty-state note when there is no mastery data', () => {
+    render(<ProfileReportView report={report({ championMastery: [] })} />);
+    expect(screen.getByTestId('no-champion-mastery')).toBeInTheDocument();
+  });
+
+  it('is positioned between the champion-preferences and role-performance headings', () => {
+    render(
+      <ProfileReportView
+        report={report({
+          championMastery: [
+            { championId: 103, championLevel: 7, championPoints: 250_000, gamesPlayed: 4, winRatePercent: 75, averageKda: 4.2 },
+          ],
+        })}
+      />,
+    );
+    const headingIds = screen.getAllByRole('heading', { level: 3 }).map((el) => el.id);
+    const championsIndex = headingIds.indexOf('champions-heading');
+    const masteryIndex = headingIds.indexOf('champion-mastery-heading');
+    const roleIndex = headingIds.indexOf('role-perf-heading');
+    expect(championsIndex).toBeGreaterThanOrEqual(0);
+    expect(masteryIndex).toBeGreaterThan(championsIndex);
+    expect(roleIndex).toBeGreaterThan(masteryIndex);
   });
 });
 
@@ -485,15 +522,8 @@ describe('Recent matches — load more', () => {
   });
 });
 
-describe('Requirements 7.1, 7.2, 7.4, 7.5 — fun facts and limited data', () => {
-  it('renders each fun fact with its category', () => {
-    render(<ProfileReportView report={report()} />);
-
-    expect(screen.getByTestId('fun-fact-rolePreference')).toHaveTextContent('Favourite role: BOTTOM');
-    expect(screen.getByTestId('fun-fact-streak')).toHaveTextContent('Longest win streak');
-  });
-
-  it('shows the limited-data notice when the backend sets it (Requirements 3.4, 7.5)', () => {
+describe('Requirements 3.4, 7.5 — limited data notice', () => {
+  it('shows the limited-data notice when the backend sets it', () => {
     render(<ProfileReportView report={report({ limitedDataNotice: true })} />);
 
     expect(screen.getByTestId('limited-data-notice')).toHaveTextContent(/limited data/i);
@@ -504,27 +534,55 @@ describe('Requirements 7.1, 7.2, 7.4, 7.5 — fun facts and limited data', () =>
     render(<ProfileReportView report={report({ limitedDataNotice: false })} />);
     expect(screen.queryByTestId('limited-data-notice')).not.toBeInTheDocument();
   });
-
-  it('says so when no fun facts were derived', () => {
-    render(<ProfileReportView report={report({ funFacts: [] })} />);
-    expect(screen.getByTestId('no-fun-facts')).toBeInTheDocument();
-  });
 });
 
-describe('Requirement 8.5 — recommendations carry their metric', () => {
-  it('renders the text, the metric name and the computed value', () => {
-    render(<ProfileReportView report={report()} />);
+describe('player-insights — Fun Facts v2 / Performance Feedback sections', () => {
+  function rankedMatch(matchId: string): ProfileReport['recentMatches'][number] {
+    return {
+      matchId,
+      championName: 'Ahri',
+      role: 'MIDDLE',
+      win: true,
+      kills: 1,
+      deaths: 1,
+      assists: 1,
+      cs: 100,
+      csPerMinute: 5,
+      visionScore: 10,
+      startTimestamp: 1_700_000_000_000,
+      durationSeconds: 1_800,
+      opponent: null,
+      build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
+      participants: [],
+      queueType: 'ranked solo/duo',
+    };
+  }
 
-    const item = screen.getByTestId('recommendation-visionControl');
-    expect(item).toHaveTextContent('Improve vision control.');
-    expect(screen.getByTestId('metric-visionControl')).toHaveTextContent('averageVisionScorePerMatch');
-    expect(screen.getByTestId('metric-visionControl')).toHaveTextContent('12.5');
+  it('renders the Fun Facts and Performance Feedback backend-computed contents', () => {
+    render(
+      <ProfileReportView
+        report={report({
+          funFacts: [{ category: 'longestGame', text: 'Longest game: 45m 00s on Ahri, a win.' }],
+          performanceFeedback: [
+            { category: 'killParticipation', text: 'Low KP.', metricName: 'averageKillParticipationPercent', metricValue: 30, benchmarkValue: 50 },
+          ],
+          recentMatches: [rankedMatch('NA1_1')],
+        })}
+      />,
+    );
+    expect(screen.getByTestId('fun-fact-longestGame')).toHaveTextContent('Longest game: 45m 00s on Ahri');
+    expect(screen.getByTestId('performance-feedback-killParticipation')).toHaveTextContent('Low KP.');
   });
 
-  it('states explicitly that none were triggered, since zero is a valid outcome', () => {
-    render(<ProfileReportView report={report({ recommendations: [] })} />);
+  it('shows the ranked-games-needed notice when there are no ranked matches in recentMatches', () => {
+    render(<ProfileReportView report={report({ performanceFeedback: [], recentMatches: [] })} />);
+    expect(screen.getByTestId('no-ranked-games-for-feedback')).toBeInTheDocument();
+  });
 
-    expect(screen.getByTestId('no-recommendations')).toBeInTheDocument();
+  it('shows "nothing stood out" instead when ranked matches exist but nothing triggered', () => {
+    render(<ProfileReportView report={report({ performanceFeedback: [], recentMatches: [rankedMatch('NA1_1')] })} />);
+    expect(screen.getByTestId('no-performance-feedback')).toBeInTheDocument();
+    expect(screen.queryByTestId('no-ranked-games-for-feedback')).toBeNull();
   });
 });
 

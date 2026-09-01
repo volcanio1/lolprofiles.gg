@@ -126,7 +126,7 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
     getClashPlayersByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
     getClashTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
     getClashTournamentsByTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
-    getChampionMasteryTop: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getChampionMasteryTop: () => Promise.resolve({ kind: 'ok', data: [] }),
   };
 
   const orchestrator = createLookupOrchestrator({
@@ -318,8 +318,6 @@ describe('Lookup Orchestrator halting properties', () => {
           expect(result.report.summonerLevel).toBeNull();
           expect(result.report.lastUpdated).not.toBeNull();
           expect(result.report.stats).toBeDefined();
-          expect(Array.isArray(result.report.funFacts)).toBe(true);
-          expect(Array.isArray(result.report.recommendations)).toBe(true);
         } else {
           errorCount += 1;
           // Requirements 2.7 / 3.6: no report at all.
@@ -472,7 +470,7 @@ describe('Lookup Orchestrator match-history properties', () => {
           getClashPlayersByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
           getClashTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
           getClashTournamentsByTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
-          getChampionMasteryTop: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getChampionMasteryTop: () => Promise.resolve({ kind: 'ok', data: [] }),
         };
 
         const orchestrator = createLookupOrchestrator({

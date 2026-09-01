@@ -189,12 +189,30 @@ import {
   type CacheKey,
   type CacheStore,
 } from '../cache';
-import { computeFunFacts, isLimitedData, averageMatchDurationMinutesOf, type FunFact } from '../insight/funFacts';
 import { computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
-import { computeRecommendations, type Recommendation } from '../insight/recommendations';
+import { computeFunFactsV2, type FunFactV2 } from '../insight/funFactsV2';
+import {
+  computeChampionMastery,
+  CHAMPION_MASTERY_TOP_COUNT,
+  type ChampionMasteryEntry,
+  type ChampionMasteryPoints,
+} from '../insight/championMastery';
 import { computePremades, type PremadeEntry } from '../insight/premades';
+import {
+  computePerformanceFeedback,
+  recentRankedWindowOf,
+  type EarlyGameAggregate,
+  type PerformanceFeedback,
+} from '../insight/performanceFeedback';
 import { computeRolePerformance, type RolePerformanceEntry } from '../insight/rolePerformance';
-import { computeStats, type IncludedMatch, type LanelessMatch, type ProfileStats } from '../insight/stats';
+import {
+  computeStats,
+  isLimitedData,
+  averageMatchDurationMinutesOf,
+  type IncludedMatch,
+  type LanelessMatch,
+  type ProfileStats,
+} from '../insight/stats';
 import {
   DEFAULT_REGION,
   isSupportedPlatform,
@@ -206,9 +224,11 @@ import { createNoopRankHistoryStore, type RankHistoryStore, type RankSnapshot } 
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import { createNoopMatchStore, type MatchStore, type StoredMatch } from '../db/matchStore';
+import { createEarlyGameProvider, type EarlyGameProvider } from './earlyGame';
 import { createRegionResolver, type RegionResolver } from '../regionResolver';
 import type {
   AccountDto,
+  ChampionMasteryDto,
   LeagueEntryDto,
   MatchDto,
   RiotApiClient,
@@ -257,6 +277,16 @@ export const FRESH_PATH_BUDGET_MS = 15_000;
 
 /** Decision 11: match details in flight at once. */
 export const MATCH_DETAIL_CONCURRENCY = 10;
+
+/**
+ * player-insights Phase 2 (design.md's confirmed "bounded + cached" strategy):
+ * early-game aggregates are computed for at most this many of the analyzed
+ * player's most recent Ranked_Matches — a further bound inside
+ * `recentRankedWindowOf`'s existing 30-match cap — so a cold lookup fetches at
+ * most this many Match_Timelines, not up to 30. A repeat lookup pays nothing
+ * per match already cached (`EarlyGameProvider`'s indefinite `earlyGameSlice`).
+ */
+export const EARLY_GAME_MATCH_LIMIT = 10;
 
 /**
  * The raw League-V4 `queueType` for Ranked Solo/Duo — the key under which that
@@ -373,10 +403,20 @@ export interface ProfileReport {
    * Error Handling).
    */
   rankHistory: RankSnapshot[];
-  funFacts: FunFact[];
+  /**
+   * The top `CHAMPION_MASTERY_TOP_COUNT` champions by Champion-Mastery-V4
+   * points, joined against the full match window (Summoner's Rift + ARAM) for
+   * games played / win rate / average KDA — never queue-filtered (decision 1
+   * in `insight/championMastery.ts`). Fetched only on the fresh path, same as
+   * `earlyGame`; empty on the stale-cache fallback.
+   */
+  championMastery: ChampionMasteryEntry[];
+  /** player-insights Requirements 2-5. Drawn from the full match window (all allowed queue types). */
+  funFacts: FunFactV2[];
   /** Requirement 3.4 / 7.5: fewer than 5 included matches. */
   limitedDataNotice: boolean;
-  recommendations: Recommendation[];
+  /** player-insights Requirements 6-12. Drawn from `recentRankedWindowOf(matches)` only — see that function's doc. */
+  performanceFeedback: PerformanceFeedback[];
   /** Requirement 7.3, in minutes to 2 decimal places (decision 1). */
   averageMatchDurationMinutes: number;
   /** Newest-first, capped at `RECENT_MATCH_TRANSPORT_LIMIT`; each carries the lane opponent's stats when known. */
@@ -511,6 +551,12 @@ export interface LookupOrchestratorOptions {
    * the no-op store, so the fan-out always fetches from Riot as today.
    */
   matchStore?: MatchStore;
+  /**
+   * player-insights Phase 2: resolves one match's lane-phase-death count and
+   * gold/CS diff at 10 minutes, caching the derived result indefinitely.
+   * Injectable for tests; defaults to one built from `riotApiClient`/`cache`.
+   */
+  earlyGameProvider?: EarlyGameProvider;
 }
 
 const defaultTimeoutScheduler: TimeoutScheduler = (ms, onElapsed) => {
@@ -580,6 +626,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly lookedUpPlayerStore: LookedUpPlayerStore;
   private readonly profileSnapshotStore: ProfileSnapshotStore;
   private readonly matchStore: MatchStore;
+  private readonly earlyGameProvider: EarlyGameProvider;
 
   constructor(options: LookupOrchestratorOptions) {
     this.cache = options.cache;
@@ -594,6 +641,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.lookedUpPlayerStore = options.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
     this.profileSnapshotStore = options.profileSnapshotStore ?? createNoopProfileSnapshotStore();
     this.matchStore = options.matchStore ?? createNoopMatchStore();
+    this.earlyGameProvider =
+      options.earlyGameProvider ?? createEarlyGameProvider({ client: this.client, cache: this.cache });
     this.discoveryRegion = options.discoveryRegion ?? DEFAULT_REGION;
     this.regionResolver =
       options.regionResolver ??
@@ -765,6 +814,19 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     // --- Phase 3: match details (Requirements 3.2, 3.3, 3.5) ------------------
     const window = await this.fetchMatchDetails(region, puuid, matchIds.value, gate);
 
+    // player-insights Phase 2: only the fresh path computes early-game
+    // aggregates — never the Requirement 11.3 stale-cache fallback, which has
+    // already run out of budget by the time it runs (same fresh-only
+    // discipline as `recordLookupSideEffects`). Bounded + budget-gate-checked
+    // (`computeEarlyGameAggregates`), so this can never itself blow the 15s
+    // budget beyond what the outer race in `runLookup` already tolerates.
+    // Independent of `earlyGame`; fetched in parallel. Also fresh-path only,
+    // for the same reason.
+    const [earlyGame, championMasteryPoints] = await Promise.all([
+      this.computeEarlyGameAggregates(region, puuid, window.matches, gate),
+      this.fetchChampionMasteryTop(platform, puuid),
+    ]);
+
     const report = await this.assembleReport({
       ctx,
       puuid,
@@ -776,6 +838,8 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       lanelessMatches: window.lanelessMatches,
       ages: [ageOf(account), ageOf(league), ageOf(matchIds)],
       partialDataWarning: false,
+      earlyGame,
+      championMasteryPoints,
     });
 
     // specs/database/ Requirement 4.1: unawaited. Only the fresh success path
@@ -1074,6 +1138,11 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
         { fromCache: true, retrievedAt: matchIds.retrievedAt },
       ],
       partialDataWarning: true, // Requirement 11.3
+      // player-insights Phase 2 / champion-mastery sidebar section: neither
+      // is computed on the fallback path — see `runPipeline`'s comment on
+      // the fresh-only discipline.
+      earlyGame: [],
+      championMasteryPoints: [],
     });
   }
 
@@ -1088,6 +1157,75 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * player-insights Phase 2 (Requirements 15-16), "Bounded + cached" per the
+   * confirmed design.md trade-off: computes early-game aggregates for only the
+   * most recent `EARLY_GAME_MATCH_LIMIT` Ranked matches within the already
+   * Recent_Ranked_Window, re-reading each match's raw detail from the cache
+   * `fetchMatchDetails` just populated (never a fresh `getMatchById`) so this
+   * adds zero new Match-V5 detail calls — only up to `EARLY_GAME_MATCH_LIMIT`
+   * new Match-Timeline calls, each cached indefinitely per matchId+puuid by
+   * `EarlyGameProvider` so a repeat lookup never re-fetches them.
+   */
+  private async computeEarlyGameAggregates(
+    region: RegionalRoutingValue,
+    puuid: string,
+    matches: readonly IncludedMatch[],
+    gate: BudgetGate,
+  ): Promise<EarlyGameAggregate[]> {
+    if (gate.expired()) {
+      return [];
+    }
+    const candidates = recentRankedWindowOf(matches).slice(0, EARLY_GAME_MATCH_LIMIT);
+    const results = await Promise.all(
+      candidates.map(async (match): Promise<EarlyGameAggregate | undefined> => {
+        const cached = await this.readCached<MatchDto>({
+          endpoint: 'matchDetail',
+          routingValue: region,
+          params: { matchId: match.matchId },
+        });
+        if (cached === undefined) {
+          return undefined;
+        }
+        return this.earlyGameProvider.getAggregate(region, cached.value, puuid).catch(() => undefined);
+      }),
+    );
+    return results.filter((r): r is EarlyGameAggregate => r !== undefined);
+  }
+
+  /**
+   * Champion-mastery sidebar section: Champion-Mastery-V4 top-N, platform
+   * routed, `cacheOrFetch`ed under the existing `championMasteryTop` cache
+   * entry (1h TTL) — the same endpoint/params `clash-scouting`'s Roster
+   * Enricher already uses for `CHAMPION_POOL_SIZE` (also 5), so the two
+   * features' cache entries coincide rather than duplicate for the same
+   * player. Supplementary data: any failure degrades to `[]` (an empty
+   * sidebar section) rather than failing the whole lookup, the same
+   * contract `rankHistory` already has in `assembleReport`.
+   */
+  private async fetchChampionMasteryTop(
+    platform: PlatformRoutingValue,
+    puuid: string,
+  ): Promise<ChampionMasteryPoints[]> {
+    const result = await cacheOrFetch<ChampionMasteryDto[]>(
+      this.cache,
+      { endpoint: 'championMasteryTop', routingValue: platform, params: { puuid, count: String(CHAMPION_MASTERY_TOP_COUNT) } },
+      TTL_BY_ENDPOINT.championMasteryTop,
+      () => this.client.getChampionMasteryTop(platform, puuid, CHAMPION_MASTERY_TOP_COUNT),
+      this.now,
+    );
+    if (isCacheOrFetchFailure(result) || !Array.isArray(result.value)) {
+      return [];
+    }
+    return result.value
+      .filter((dto): dto is ChampionMasteryDto => dto !== null && typeof dto === 'object')
+      .map((dto) => ({
+        championId: typeof dto.championId === 'number' ? dto.championId : 0,
+        championLevel: typeof dto.championLevel === 'number' ? dto.championLevel : 0,
+        championPoints: typeof dto.championPoints === 'number' ? dto.championPoints : 0,
+      }));
   }
 
   /**
@@ -1108,12 +1246,28 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     summoner: SummonerDto | null;
     league: LeagueEntryDto[];
     matches: IncludedMatch[];
-    /** `match-detail-tabs` Requirement 11.1. Never passed to `computeStats`/`computeFunFacts`/`computeRecommendations`/`averageMatchDurationMinutesOf`. */
+    /** `match-detail-tabs` Requirement 11.1. Never passed to `computeStats`/`averageMatchDurationMinutesOf`. */
     lanelessMatches: LanelessMatch[];
     ages: ComponentAge[];
     partialDataWarning: boolean;
+    /** player-insights Phase 2: bounded, cached per-match early-game aggregates. */
+    earlyGame: readonly EarlyGameAggregate[];
+    /** Champion-mastery sidebar section: top `CHAMPION_MASTERY_TOP_COUNT` by points. */
+    championMasteryPoints: readonly ChampionMasteryPoints[];
   }): Promise<ProfileReport> {
-    const { ctx, puuid, resolvedPlatform, usedPlatformOverride, summoner, matches, lanelessMatches, ages, partialDataWarning } = args;
+    const {
+      ctx,
+      puuid,
+      resolvedPlatform,
+      usedPlatformOverride,
+      summoner,
+      matches,
+      lanelessMatches,
+      ages,
+      partialDataWarning,
+      earlyGame,
+      championMasteryPoints,
+    } = args;
     // Requirements 2.8 / 6.1: an empty or unreadable entry list is Unranked.
     const league = toLeagueEntries(args.league);
 
@@ -1150,9 +1304,10 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       rolePerformanceByQueue,
       premadesByQueue,
       rankHistory,
-      funFacts: computeFunFacts(matches), // Requirements 7.1-7.6
+      championMastery: computeChampionMastery(matches, championMasteryPoints, lanelessMatches),
+      funFacts: computeFunFactsV2(matches, lanelessMatches, earlyGame), // player-insights Requirements 2-5 (full window, all queue types we have)
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
-      recommendations: computeRecommendations(matches, stats), // Requirements 8.1-8.5
+      performanceFeedback: computePerformanceFeedback(recentRankedWindowOf(matches), earlyGame), // player-insights Requirements 6-12, 15-16
       averageMatchDurationMinutes: averageMatchDurationMinutesOf(matches), // Requirement 7.3
       recentMatches: computeRecentMatches(matches, lanelessMatches),
       lastUpdated: lastUpdatedOf(ages), // Requirements 11.4 / 11.5
