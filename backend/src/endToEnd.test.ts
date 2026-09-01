@@ -5,6 +5,7 @@ import { createInMemoryCacheStore, type InMemoryCacheStore } from './cache';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createLiveGameOrchestrator } from './liveGame/orchestrator';
+import { createScoutingOrchestrator } from './clashScouting/orchestrator';
 import { createRateLimitManager } from './rateLimit';
 import {
   createRiotApiClient,
@@ -175,6 +176,7 @@ function makeHarness(): Harness {
     orchestrator,
     buildPathOrchestrator: createBuildPathOrchestrator({ cache, riotApiClient, now }),
     liveGameOrchestrator: createLiveGameOrchestrator({ client: riotApiClient, cache, now }),
+    scoutingOrchestrator: createScoutingOrchestrator({ client: riotApiClient, cache, now }),
     cache,
     now,
     logger: { unexpectedError: () => undefined },

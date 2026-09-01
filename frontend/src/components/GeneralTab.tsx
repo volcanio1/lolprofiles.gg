@@ -7,16 +7,14 @@
  * shared verbatim with `RunesTab`, so the two tabs cannot silently disagree on
  * which ten players are shown or in what order (Requirement 3.8/4.1).
  *
- * Layout (revised 2026-08-27): the champion column is the portrait, then the
- * champion's name with `Lv N` on a line under that name — the name comes from
- * `ChampionIcon` itself (it renders portrait + name), so this file must NOT add
- * a second name, which is how it ended up duplicated once already. The player
- * name + full tag is its own headerless column, set apart to the right. A long
- * player name wraps within its column, and every row is a fixed 3rem tall so one
- * wrapped name doesn't leave its row taller than the rest.
- * Spells and runes share one unlabelled column; the damage cell carries a bar
- * scaled to the match's highest damage; each row ends with a colour-coded
- * performance rating. Header and cell alignment match per column.
+ * Layout: champion portrait + name (+ `Lv N`), then the player's name/tag in its
+ * own headerless column; both names are single-line and ellipsised so a long one
+ * never widens its column or changes row height. Spells and runes share one
+ * unlabelled column; the damage cell carries a bar scaled to the match's highest
+ * damage; each row ends with a colour-coded performance Score.
+ *
+ * The nine columns are sized to fit the Detail_Panel drawer without a horizontal
+ * scroll — Vision score and Gold were dropped to make room (2026-08-28).
  */
 
 import type { MatchParticipant } from '../api/types';

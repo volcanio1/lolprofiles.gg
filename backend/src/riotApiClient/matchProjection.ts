@@ -35,6 +35,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 const PARTICIPANT_KEYS = [
   'puuid',
   'championName',
+  'championId',
   'teamPosition',
   'role',
   'teamId',

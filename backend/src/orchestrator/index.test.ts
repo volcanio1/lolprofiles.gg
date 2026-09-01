@@ -183,6 +183,11 @@ function makeFakes(script: ClientScript = {}): Fakes {
     getActiveGameByPuuid: () => Promise.reject(new Error('getActiveGameByPuuid not exercised by the lookup path')),
     getAccountByPuuid: () => Promise.reject(new Error('getAccountByPuuid not exercised by the lookup path')),
     getChampionMastery: () => Promise.reject(new Error('getChampionMastery not exercised by the lookup path')),
+    getClashPlayersByPuuid: () => Promise.reject(new Error('getClashPlayersByPuuid not exercised by the lookup path')),
+    getClashTeam: () => Promise.reject(new Error('getClashTeam not exercised by the lookup path')),
+    getClashTournamentsByTeam: () =>
+      Promise.reject(new Error('getClashTournamentsByTeam not exercised by the lookup path')),
+    getChampionMasteryTop: () => Promise.reject(new Error('getChampionMasteryTop not exercised by the lookup path')),
   };
 
   return { client, calls, callsAt: (stage) => calls.filter((call) => call.stage === stage) };

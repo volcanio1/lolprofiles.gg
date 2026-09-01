@@ -36,6 +36,18 @@ function fakeClient(respond: (puuid: string) => Promise<RiotApiResult<AccountReg
     getChampionMastery: () => {
       throw new Error('not used by RegionResolver');
     },
+    getClashPlayersByPuuid: () => {
+      throw new Error('not used by RegionResolver');
+    },
+    getClashTeam: () => {
+      throw new Error('not used by RegionResolver');
+    },
+    getClashTournamentsByTeam: () => {
+      throw new Error('not used by RegionResolver');
+    },
+    getChampionMasteryTop: () => {
+      throw new Error('not used by RegionResolver');
+    },
   };
 }
 

@@ -123,6 +123,10 @@ function runLookupWith(script: ClientScript, cache: InMemoryCacheStore, now: () 
     getActiveGameByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
     getAccountByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
     getChampionMastery: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getClashPlayersByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getClashTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getClashTournamentsByTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
+    getChampionMasteryTop: () => Promise.reject(new Error('not exercised by the lookup path')),
   };
 
   const orchestrator = createLookupOrchestrator({
@@ -465,6 +469,10 @@ describe('Lookup Orchestrator match-history properties', () => {
           getActiveGameByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
           getAccountByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
           getChampionMastery: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getClashPlayersByPuuid: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getClashTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getClashTournamentsByTeam: () => Promise.reject(new Error('not exercised by the lookup path')),
+          getChampionMasteryTop: () => Promise.reject(new Error('not exercised by the lookup path')),
         };
 
         const orchestrator = createLookupOrchestrator({

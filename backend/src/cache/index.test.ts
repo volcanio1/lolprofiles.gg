@@ -11,6 +11,7 @@ const ONE_HOUR_MS = 3_600_000;
 const TEN_MINUTES_MS = 600_000;
 const TWENTY_FOUR_HOURS_MS = 86_400_000;
 const THIRTY_SECONDS_MS = 30_000;
+const FIVE_MINUTES_MS = 300_000;
 
 /** Fake clock: tests never rely on wall-clock time. */
 function fakeClock(start = 1_000_000) {
@@ -37,6 +38,9 @@ describe('TTL_BY_ENDPOINT', () => {
       activeGame: THIRTY_SECONDS_MS,
       championMastery: ONE_HOUR_MS,
       tournamentSchedule: ONE_HOUR_MS,
+      clashPlayers: FIVE_MINUTES_MS,
+      clashTeam: FIVE_MINUTES_MS,
+      championMasteryTop: ONE_HOUR_MS,
     });
   });
 });

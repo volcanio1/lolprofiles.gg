@@ -49,6 +49,10 @@ import { createNoopMatchStore, MongoMatchStore, type MatchStore } from './db/mat
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createLiveGameOrchestrator } from './liveGame/orchestrator';
+import { createScoutingOrchestrator } from './clashScouting/orchestrator';
+import { createTournamentRefresher } from './clashScouting/tournamentRefresher';
+import { createHttpClashTournamentSource } from './clashScouting/tournamentSourceHttp';
+import { PLATFORM_TO_REGION, type PlatformRoutingValue } from './region';
 import { createRateLimitManager } from './rateLimit';
 import { createRiotApiClient, type RiotHttpTransport } from './riotApiClient';
 
@@ -109,6 +113,26 @@ async function main(): Promise<void> {
 
   const liveGameOrchestrator = createLiveGameOrchestrator({ client: riotApiClient, cache, now });
 
+  const scoutingOrchestrator = createScoutingOrchestrator({ client: riotApiClient, cache, now });
+
+  // clash-scouting Requirement 4.1/4.2: the ONLY caller of the 10/min
+  // tournaments endpoint, on a background timer — never on a request path
+  // (`scoutingOrchestrator` above is built with no `ClashTournamentSource`
+  // reference at all). A cold cache or a slow first refresh degrades every
+  // report to `tournament: null` (Requirement 4.4) rather than blocking it.
+  const clashTournamentSource = createHttpClashTournamentSource({
+    fetch: transport,
+    apiKey: config.riotApiKey,
+    rateLimitManager,
+  });
+  const tournamentRefresher = createTournamentRefresher({
+    source: clashTournamentSource,
+    cache,
+    platforms: Object.keys(PLATFORM_TO_REGION) as PlatformRoutingValue[],
+    now,
+  });
+  tournamentRefresher.start();
+
   const staticDir =
     config.frontendDistPath === undefined
       ? undefined
@@ -120,6 +144,7 @@ async function main(): Promise<void> {
     orchestrator,
     buildPathOrchestrator,
     liveGameOrchestrator,
+    scoutingOrchestrator,
     cache,
     now,
     allowedOrigins: config.allowedOrigins,
@@ -138,6 +163,7 @@ async function main(): Promise<void> {
 
   // specs/database/ Requirement 1.6: close the client on shutdown.
   const shutdown = () => {
+    tournamentRefresher.stop();
     server.close(() => {
       void databaseClient.close().finally(() => process.exit(0));
     });

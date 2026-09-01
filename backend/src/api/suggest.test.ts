@@ -10,6 +10,7 @@ import {
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
+import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createInMemoryCacheStore } from '../cache';
 import { createApiRouter, type ApiLogger } from './index';
 import { clampLimit, MAX_SUGGESTIONS } from './suggest';
@@ -35,6 +36,10 @@ const stubLiveGameOrchestrator: LiveGameOrchestrator = {
   getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
 };
 
+const stubScoutingOrchestrator: ScoutingOrchestrator = {
+  scout: () => Promise.resolve({ kind: 'not_registered' }),
+};
+
 interface Harness {
   app: Express;
   suggestErrors: unknown[];
@@ -55,6 +60,7 @@ function makeHarness(lookedUpPlayerStore?: LookedUpPlayerStore): Harness {
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
+      scoutingOrchestrator: stubScoutingOrchestrator,
       cache: createInMemoryCacheStore({ now: () => NOW }),
       now: () => NOW,
       logger,

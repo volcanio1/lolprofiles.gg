@@ -43,7 +43,7 @@ Backend API (Express + TypeScript)
    │            └─ Rate Limit Manager ... one instance, per routing value
    └─ Insight Engine .... pure function over assembled data (no I/O)
    ▼
-Riot Games APIs — Account-V1, Summoner-V4, League-V4, Match-V5, Spectator-V5, Champion-Mastery-V4
+Riot Games APIs — Account-V1, Summoner-V4, League-V4, Match-V5, Spectator-V5, Champion-Mastery-V4, Clash-V1
 ```
 
 Four decisions worth calling out:
@@ -274,6 +274,51 @@ Reports the game a player is **in right now**. `gameName`/`tagLine` are validate
 
 **A failed enrichment call degrades one field, never the card or the lobby** — a card always renders, with the failed field absent. Bot participants get a card with every enrichment field absent and no call issued. The frontend polls this endpoint no more often than **every 30 seconds** while the lobby is on screen, ticks the game clock locally between polls, and switches to a game-ended state when a lobby it was showing returns `not_in_game`.
 
+### `GET /api/clash/scout`
+
+```
+GET /api/clash/scout?gameName=Faker&tagLine=KR1&teamId=optional
+```
+
+Scouts a Clash team by naming **any player on it** — `gameName`/`tagLine` are validated through the same Riot ID Validator every other route uses; no region is supplied, same platform-discovery as every other route. Riot publishes no bracket data, so there is no "who do we play next" lookup: a captain names an opponent seen in champion select or the post-game lobby. `teamId` is optional and only meaningful when the named player holds more than one active registration.
+
+`200` for all three outcomes — **none of them is an error**:
+
+```jsonc
+// not registered for an active Clash tournament
+{ "kind": "not_registered" }
+
+// registered to more than one team, and no teamId was supplied
+{ "kind": "multiple_teams", "teams": [ { "id": "...", "name": "...", "abbreviation": "...", "tier": 1, "iconId": 1 } ] }
+
+// a scouting report
+{ "kind": "report",
+  "report": {
+    "team": { "id": "...", "name": "...", "abbreviation": "...", "tier": 1, "iconId": 1, "captainPuuid": "..." },
+    "tournament": { "id": 500, "nameKey": "...", "nameKeySecondary": "..." },  // null if the schedule was absent or stale
+    "roster": [
+      { "puuid": "...", "declaredPosition": "JUNGLE", "isCaptain": true,
+        "riotId": { "gameName": "...", "tagLine": "KR1" },       // null if the Account-V1 call failed
+        "rankedEntries": [ { "tier": "GOLD", "division": "II", "winRatePercent": 60, "leaguePoints": 40 } ],
+        // rankedEntries is [] for a successful "unranked", null if the League-V4 call failed
+        "championPool": [ { "championId": 64, "masteryPoints": 180000, "masteryLevel": 7 } ],  // null if the mastery call failed
+        "recentForm": [ { "matchId": "...", "championId": 64, "role": "JUNGLE", "win": true } ],  // bounded at 10 matches; individually-failed retrievals excluded
+        "observedRole": "JUNGLE" }  // null when recentForm is empty
+      // ... up to 4 more, in Clash's roster order
+    ],
+    "insights": {
+      "banRecommendations": [ { "championId": 64, "puuid": "...", "masteryPoints": 180000, "recentGames": 4, "recentWins": 3 } ],  // at most 5, strictly ordered
+      "positionMismatches": [ { "puuid": "...", "declaredPosition": "TOP", "observedRole": "JUNGLE" } ],  // never for an unselected/fill declaration or an empty recentForm
+      "stackCohesion": 3  // roster members who share at least one recent match, of up to 5
+    }
+  }
+}
+```
+
+**The tournaments endpoint (Clash-V1, granted 10 requests/minute — three orders of magnitude below every other endpoint this app touches) is never called on this or any other request path.** A background Tournament Refresher fetches it on a 5-minute timer per platform and writes it into a `tournamentSchedule` cache entry; the route only ever *reads* that entry, and a miss or stale entry degrades `tournament` to `null` rather than blocking the report. This is enforced structurally, not just by convention: the Scouting Orchestrator is constructed with no reference to the tournaments-endpoint client at all, so a request-path call to it is a compile error.
+
+**A failed roster-enrichment call degrades one field, never the card or the report.** Recent-match retrieval is bounded to 10 matches per member (55 Match-V5 calls worst case for a five-member roster) and match details are shared cache with the rest of the site — a five-stack that queues together is cheaper to scout than five strangers, because their overlapping games are fetched once between them.
+
 ### `GET /api/players/suggest`
 
 ```
@@ -375,6 +420,10 @@ A resolved platform is cached for 24 hours (the `accountRegion` cache endpoint) 
 | Match-V5 timeline slice | Indefinite | One player's reconstructed build path (~2 KB); the match is immutable. Safe only because it's kilobytes — the raw 0.3–1 MB timeline it's derived from has **no** cache entry type and is discarded after parsing |
 | Spectator-V5 active game | **30 seconds** | The live game changes by the second; the TTL matches the poll floor so a poll is never answered entirely from cache. A `not_found` ("not in a game") is **never cached** — caching it would delay noticing a game starting by up to a full TTL |
 | Champion-Mastery-V4 (by-champion) | 1 hour | Mastery moves a few thousand points per game — invisible at the 10k / 200k insight thresholds over an hour. Account-V1 (by-puuid) and League-V4 enrichment reuse the `account` / `league` entries above; the live feature does **not** shorten them to the 30s active-game cadence |
+| Clash-V1 players-by-puuid | 5 minutes | Registrations change when a player joins or leaves a team — plausible during a tournament window, not by the second |
+| Clash-V1 teams | 5 minutes | Rosters are fixed once a bracket starts; 5 minutes covers the registration period without serving a stale roster into a match |
+| Clash-V1 tournaments | 1 hour, written **only** by the background Tournament Refresher, never on a request path | Riot schedules Clash cups weeks ahead; the endpoint's 10/min limit makes anything shorter unwise |
+| Champion-Mastery-V4 (top-by-puuid) | 1 hour | Shares the live-game mastery retention; a separate cache entry from the by-champion row above since the query shape (top-N vs. one champion) differs |
 
 Cache keys are length-prefixed per segment so concatenation is injective — `{"a:b": "c"}` and `{"a": "b:c"}` can't collide.
 

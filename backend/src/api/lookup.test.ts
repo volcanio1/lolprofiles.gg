@@ -57,6 +57,7 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
       liveGameOrchestrator: {
         getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
       },
+      scoutingOrchestrator: { scout: () => Promise.resolve({ kind: 'not_registered' }) },
       cache: createInMemoryCacheStore({ now }),
       now,
       logger,

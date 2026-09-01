@@ -1830,11 +1830,11 @@ figure {
   border-left-color: var(--loss);
 }
 
-/* Rows are given real height and per-cell breathing room: this table carries
-   eleven columns of dense figures, and tight padding turns it into a wall. */
+/* Padding is kept modest so the nine columns fit the drawer without a
+   horizontal scroll; row height (below) carries the vertical breathing room. */
 .scoreboard-table th,
 .scoreboard-table td {
-  padding: 0.55rem 0.7rem;
+  padding: 0.5rem 0.4rem;
   text-align: left;
   vertical-align: middle;
 }
@@ -1924,9 +1924,10 @@ figure {
 
 .sb-champ .champion-icon-name {
   min-width: 0;
-  font-size: 0.78rem;
+  max-width: 4.5rem;
+  font-size: 0.72rem;
   line-height: 1.15;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .sb-champ .sb-champion-icon {
@@ -1943,12 +1944,11 @@ figure {
   line-height: 1.2;
 }
 
-/* Keep a wrapped champion name from changing the row's vertical rhythm. */
+/* One line, ellipsised — a long champion name never changes the row's height
+   or widens the column past `max-width`. */
 .sb-champ .champion-icon-name {
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+  text-overflow: ellipsis;
 }
 
 /* The level is positioned independently, so it never participates in label sizing. */
@@ -1961,9 +1961,9 @@ figure {
    width and lets the column absorb the table's slack, so the identity gets the
    leftover space rather than the numeric columns stretching. */
 .sb-player {
-  width: 13rem;
-  max-width: 13rem;
-  padding-left: 1rem;
+  width: 10rem;
+  max-width: 10rem;
+  padding-left: 0.7rem;
 }
 
 th[scope='row'].sb-player {
@@ -1981,7 +1981,7 @@ th[scope='row'].sb-player {
   gap: 0.25rem;
   line-height: 1.2;
   min-width: 0;
-  max-width: 12rem;
+  max-width: 9rem;
 }
 
 .sb-name {
@@ -2035,7 +2035,7 @@ th[scope='row'].sb-player {
 
 /* --- damage: value with a bar scaled to the match's top damage --- */
 .sb-damage {
-  min-width: 5.25rem;
+  min-width: 4rem;
 }
 
 .sb-damage-value {
@@ -2063,7 +2063,7 @@ th[scope='row'].sb-player {
 
 /* --- performance rating: red (bad) / grey (decent) / gold + glow (great) --- */
 .sb-rating-cell {
-  min-width: 3.2rem;
+  min-width: 2.6rem;
 }
 
 .sb-rating {
@@ -2589,4 +2589,252 @@ th[scope='row'].sb-player {
   background: var(--gold);
   color: #16130f;
   border-color: var(--gold);
+}
+
+/* ---------------------------------------------------------- clash scouting */
+
+.clash-scouting {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.clash-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.clash-team-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--gold);
+}
+
+.clash-team-abbr,
+.clash-team-tier {
+  font-size: 0.78rem;
+  color: var(--dim);
+}
+
+.clash-tournament {
+  font-size: 0.78rem;
+  color: var(--dim);
+  margin-left: auto;
+}
+
+.clash-insights {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 700px) {
+  .clash-insights {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.clash-insight-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.8rem;
+}
+
+.clash-insight-title {
+  font-family: var(--font-display);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--dim);
+  margin: 0 0 0.5rem;
+}
+
+.clash-ban-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clash-ban-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.clash-ban-record {
+  font-size: 0.75rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.clash-cohesion {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 0;
+}
+
+.roster-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+@media (min-width: 700px) {
+  .roster-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.roster-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.8rem;
+}
+
+.roster-card-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.roster-card-name {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.roster-card-captain {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 0.6rem;
+  font-family: var(--font-display);
+}
+
+.roster-card-position {
+  font-size: 0.72rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: var(--track);
+}
+
+.roster-card-mismatch {
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+.roster-card-rank {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-card-rank-none {
+  color: var(--dim);
+}
+
+.roster-card-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.roster-card-pool-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.roster-card-pool-points {
+  font-size: 0.7rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-card-form {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.roster-card-form-pip {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+/* Win = gold, never green/red (design system rule). Loss stays the neutral dot above. */
+.roster-card-form-pip--win {
+  background: var(--gold);
+}
+
+.clash-team-picker {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.clash-team-picker-prompt {
+  color: var(--dim);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.clash-team-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.clash-team-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.clash-team-picker-option:hover {
+  border-color: var(--gold-dim);
+}
+
+.clash-team-picker-name {
+  font-size: 0.9rem;
+}
+
+.clash-team-picker-abbr {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--dim);
 }

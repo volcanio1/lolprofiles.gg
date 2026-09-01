@@ -16,6 +16,7 @@ import type { ProfileReport } from '../orchestrator';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
+import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { REFRESH_COOLDOWN_MS, SNAPSHOT_MAX_AGE_MS } from './cachedReport';
 import { createApiRouter, type ApiLogger } from './index';
 
@@ -36,6 +37,10 @@ const stubBuildPathOrchestrator: BuildPathOrchestrator = {
 
 const stubLiveGameOrchestrator: LiveGameOrchestrator = {
   getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
+};
+
+const stubScoutingOrchestrator: ScoutingOrchestrator = {
+  scout: () => Promise.resolve({ kind: 'not_registered' }),
 };
 
 function report(overrides: Partial<ProfileReport> = {}): ProfileReport {
@@ -65,6 +70,7 @@ function makeHarness(stores: {
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
+      scoutingOrchestrator: stubScoutingOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger,

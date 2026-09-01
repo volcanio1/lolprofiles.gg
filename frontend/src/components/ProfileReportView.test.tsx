@@ -401,11 +401,12 @@ describe('Recent matches — queue-type filter', () => {
   });
 });
 
-describe('Recent matches / Live game tabs', () => {
+describe('Recent matches / Live game / Clash tabs', () => {
   it('defaults to the Recent matches tab', () => {
     render(<ProfileReportView report={report()} />);
     expect(screen.getByTestId('main-tab-recent')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('main-tab-live')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('main-tab-clash')).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByTestId('recent-matches-queue-filter')).toBeInTheDocument();
   });
 
@@ -416,6 +417,14 @@ describe('Recent matches / Live game tabs', () => {
     // the recent-matches queue filter is replaced by the live panel
     expect(screen.queryByTestId('recent-matches-queue-filter')).not.toBeInTheDocument();
     expect(screen.getByText(/checking for a live game/i)).toBeInTheDocument();
+  });
+
+  it('switches to the Clash scouting panel when the Clash tab is clicked', () => {
+    render(<ProfileReportView report={report()} />);
+    fireEvent.click(screen.getByTestId('main-tab-clash'));
+    expect(screen.getByTestId('main-tab-clash')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByTestId('recent-matches-queue-filter')).not.toBeInTheDocument();
+    expect(screen.getByText(/checking for an active clash registration/i)).toBeInTheDocument();
   });
 });
 

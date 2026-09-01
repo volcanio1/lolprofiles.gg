@@ -60,6 +60,7 @@ import {
 } from '../domain/queueFilters';
 import { platformLabel } from '../domain/regions';
 import { ChampionPreferences } from './ChampionPreferences';
+import { ClashScoutingPanel } from './ClashScoutingPanel';
 import { GamemodeFilter } from './GamemodeFilter';
 import { LiveGamePanel } from './LiveGamePanel';
 import { PremadesPanel } from './PremadesPanel';
@@ -153,7 +154,7 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
   const sidebarPremades = report.premadesByQueue[sidebarQueueFilter];
   const standingQueue = standingQueueFor(sidebarQueueFilter, report.stats.rankedByQueue);
 
-  const [mainTab, setMainTab] = useState<'recent' | 'live'>('recent');
+  const [mainTab, setMainTab] = useState<'recent' | 'live' | 'clash'>('recent');
   const liveRiotId = useMemo(
     () => ({ gameName: report.riotId.gameName, tagLine: report.riotId.tagLine }),
     [report.riotId.gameName, report.riotId.tagLine],
@@ -332,7 +333,12 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
         <div className="report-main">
           <section className="rsec" aria-label="Recent matches and live game">
             <div className="rsec-title-row">
-              <div className="queue-tabs" role="tablist" aria-label="Recent matches or live game" data-testid="main-tabs">
+              <div
+                className="queue-tabs"
+                role="tablist"
+                aria-label="Recent matches, live game, or Clash scouting"
+                data-testid="main-tabs"
+              >
                 <button
                   type="button"
                   role="tab"
@@ -352,6 +358,16 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
                   onClick={() => setMainTab('live')}
                 >
                   Live game
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mainTab === 'clash'}
+                  className={mainTab === 'clash' ? 'queue-tab queue-tab--active' : 'queue-tab'}
+                  data-testid="main-tab-clash"
+                  onClick={() => setMainTab('clash')}
+                >
+                  Clash
                 </button>
               </div>
               {mainTab === 'recent' ? (
@@ -377,6 +393,8 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
             </div>
             {mainTab === 'live' ? (
               <LiveGamePanel riotId={liveRiotId} />
+            ) : mainTab === 'clash' ? (
+              <ClashScoutingPanel riotId={liveRiotId} />
             ) : report.recentMatches.length === 0 ? (
               <p data-testid="no-recent-matches" className="empty-note">
                 No recent matches available.

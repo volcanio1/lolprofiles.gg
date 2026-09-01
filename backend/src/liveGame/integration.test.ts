@@ -20,6 +20,7 @@ import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createRateLimitManager } from '../rateLimit';
 import { createRiotApiClient, type RiotHttpResponse, type RiotHttpTransport } from '../riotApiClient';
 import { createLiveGameOrchestrator } from './orchestrator';
+import { createScoutingOrchestrator } from '../clashScouting/orchestrator';
 
 const API_KEY = 'RGAPI-livegame-integration-fake';
 const SEARCHER_PUUID = 'puuid-searcher';
@@ -148,6 +149,7 @@ function makeApp() {
       orchestrator: stubLookup,
       buildPathOrchestrator: stubBuildPath,
       liveGameOrchestrator: createLiveGameOrchestrator({ client: riotApiClient, cache, now }),
+      scoutingOrchestrator: createScoutingOrchestrator({ client: riotApiClient, cache, now }),
       cache,
       now,
       logger: { unexpectedError: () => undefined },

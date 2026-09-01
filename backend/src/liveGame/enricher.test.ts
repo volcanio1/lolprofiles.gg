@@ -38,6 +38,10 @@ function fakeClient(overrides: Overrides = {}): RiotApiClient {
       Promise.resolve(overrides.account?.(puuid) ?? ok({ puuid, gameName: `Name-${puuid}`, tagLine: 'NA1' })),
     getChampionMastery: (_platform, puuid, championId) =>
       Promise.resolve(overrides.mastery?.(puuid, championId) ?? ok({ championId, championLevel: 7, championPoints: 50_000 })),
+    getClashPlayersByPuuid: reject,
+    getClashTeam: reject,
+    getClashTournamentsByTeam: reject,
+    getChampionMasteryTop: reject,
   } as RiotApiClient;
 }
 

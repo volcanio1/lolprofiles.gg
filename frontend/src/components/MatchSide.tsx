@@ -173,13 +173,12 @@ export function MatchSide({
         <div
           className={`lp-score lp-score--${rating.tier}`}
           data-testid={`lp-score-${side}`}
-          title="LP Score — overall match performance, 0 to 100"
+          title="Score — overall match performance, 0 to 100"
         >
           <span className="lp-score-value">{rating.score}</span>
-          {/* Abbreviated to keep the block ~2.5rem wide in the band; the full
-              name and scale are in the `title`, and the expanded panel's
-              scoreboard heads the same figure with the same "LP". */}
-          <span className="lp-score-label">LP</span>
+          {/* The full scale is in the `title`; the expanded panel's scoreboard
+              heads the same figure under the same "Score". */}
+          <span className="lp-score-label">Score</span>
         </div>
       ) : null}
     </div>

@@ -72,6 +72,7 @@ import {
   type RateLimitManager,
 } from '../rateLimit';
 import type { TimelineEventDto } from '../insight/buildPath';
+import type { ClashPlayerDto, ClashTeamDto, ClashTournamentDto } from '../clashScouting/types';
 import type { CurrentGameInfo } from '../liveGame/types';
 import type { PlatformRoutingValue, RegionalRoutingValue } from '../region';
 import { projectMatchDto } from './matchProjection';
@@ -109,6 +110,14 @@ export const RIOT_METHODS = {
   accountByPuuid: 'accountByPuuid',
   /** live-game: Champion-Mastery-V4 by-puuid-by-champion. */
   championMastery: 'championMastery',
+  /** clash-scouting: Clash-V1 players-by-puuid. */
+  clashPlayers: 'clashPlayers',
+  /** clash-scouting: Clash-V1 teams. */
+  clashTeam: 'clashTeam',
+  /** clash-scouting: Clash-V1 tournaments-by-team (200/min — distinct from the 10/min tournaments endpoint on `ClashTournamentSource`). */
+  clashTournamentsByTeam: 'clashTournamentsByTeam',
+  /** clash-scouting: Champion-Mastery-V4 top-by-puuid. */
+  championMasteryTop: 'championMasteryTop',
 } as const;
 
 export type RiotMethod = (typeof RIOT_METHODS)[keyof typeof RIOT_METHODS];
@@ -171,6 +180,8 @@ export interface LeagueEntryDto {
 export interface MatchParticipantDto {
   puuid: string;
   championName: string;
+  /** clash-scouting Requirement 3.2: numeric champion id, joined against Champion-Mastery's `championId`. */
+  championId?: number;
   /** Riot's normalized lane assignment; preferred over `role` when present. */
   teamPosition?: string;
   role?: string;
@@ -344,6 +355,24 @@ export interface RiotApiClient {
     puuid: string,
     championId: number,
   ): Promise<RiotApiResult<ChampionMasteryDto>>;
+  /** clash-scouting Requirement 1.1. Clash-V1 players-by-puuid, platform routing. An empty array is a valid `ok` result — no registrations is a state, not an error. */
+  getClashPlayersByPuuid(
+    platform: PlatformRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<ClashPlayerDto[]>>;
+  /** clash-scouting Requirement 1.4. Clash-V1 teams, platform routing. A 404 means the referenced team id no longer exists. */
+  getClashTeam(platform: PlatformRoutingValue, teamId: string): Promise<RiotApiResult<ClashTeamDto>>;
+  /** clash-scouting Requirement 4.5. Clash-V1 tournaments-by-team (200/min) — NOT the 10/min tournaments endpoint, which lives only on `ClashTournamentSource`. */
+  getClashTournamentsByTeam(
+    platform: PlatformRoutingValue,
+    teamId: string,
+  ): Promise<RiotApiResult<ClashTournamentDto[]>>;
+  /** clash-scouting Requirement 2.3. Champion-Mastery-V4 top-by-puuid, platform routing. */
+  getChampionMasteryTop(
+    platform: PlatformRoutingValue,
+    puuid: string,
+    count: number,
+  ): Promise<RiotApiResult<ChampionMasteryDto[]>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +605,43 @@ class HttpRiotApiClient implements RiotApiClient {
       `${baseUrl(platform)}/lol/champion-mastery/v4/champion-masteries/by-puuid/` +
       `${encodeURIComponent(puuid)}/by-champion/${encodeURIComponent(String(championId))}`;
     return this.send<ChampionMasteryDto>(url, platform, RIOT_METHODS.championMastery);
+  }
+
+  /** clash-scouting Requirement 1.1. Platform routing. */
+  async getClashPlayersByPuuid(
+    platform: PlatformRoutingValue,
+    puuid: string,
+  ): Promise<RiotApiResult<ClashPlayerDto[]>> {
+    const url = `${baseUrl(platform)}/lol/clash/v1/players/by-puuid/${encodeURIComponent(puuid)}`;
+    return this.send<ClashPlayerDto[]>(url, platform, RIOT_METHODS.clashPlayers);
+  }
+
+  /** clash-scouting Requirement 1.4. Platform routing. */
+  async getClashTeam(platform: PlatformRoutingValue, teamId: string): Promise<RiotApiResult<ClashTeamDto>> {
+    const url = `${baseUrl(platform)}/lol/clash/v1/teams/${encodeURIComponent(teamId)}`;
+    return this.send<ClashTeamDto>(url, platform, RIOT_METHODS.clashTeam);
+  }
+
+  /** clash-scouting Requirement 4.5. Platform routing; 200/min, distinct from the 10/min tournaments endpoint. */
+  async getClashTournamentsByTeam(
+    platform: PlatformRoutingValue,
+    teamId: string,
+  ): Promise<RiotApiResult<ClashTournamentDto[]>> {
+    const url = `${baseUrl(platform)}/lol/clash/v1/tournaments/by-team/${encodeURIComponent(teamId)}`;
+    return this.send<ClashTournamentDto[]>(url, platform, RIOT_METHODS.clashTournamentsByTeam);
+  }
+
+  /** clash-scouting Requirement 2.3. Platform routing; `count` bounds the returned champion pool. */
+  async getChampionMasteryTop(
+    platform: PlatformRoutingValue,
+    puuid: string,
+    count: number,
+  ): Promise<RiotApiResult<ChampionMasteryDto[]>> {
+    const query = new URLSearchParams({ count: String(count) });
+    const url =
+      `${baseUrl(platform)}/lol/champion-mastery/v4/champion-masteries/by-puuid/` +
+      `${encodeURIComponent(puuid)}/top?${query.toString()}`;
+    return this.send<ChampionMasteryDto[]>(url, platform, RIOT_METHODS.championMasteryTop);
   }
 
   /**

@@ -26,6 +26,7 @@ function appWith(result: LiveGameResult) {
       orchestrator: stubLookup,
       buildPathOrchestrator: stubBuildPath,
       liveGameOrchestrator,
+      scoutingOrchestrator: { scout: () => Promise.resolve({ kind: 'not_registered' }) },
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

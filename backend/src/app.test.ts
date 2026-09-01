@@ -8,6 +8,7 @@ import { createInMemoryCacheStore } from './cache';
 import type { LookupOrchestrator } from './orchestrator';
 import type { BuildPathOrchestrator } from './orchestrator/buildPath';
 import type { LiveGameOrchestrator } from './liveGame/orchestrator';
+import type { ScoutingOrchestrator } from './clashScouting/orchestrator';
 
 /**
  * App-level assembly tests. The orchestrator is a stub and the cache is the real
@@ -27,6 +28,10 @@ const stubLiveGameOrchestrator: LiveGameOrchestrator = {
   getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
 };
 
+const stubScoutingOrchestrator: ScoutingOrchestrator = {
+  scout: () => Promise.resolve({ kind: 'not_registered' }),
+};
+
 function makeApp(overrides: { staticDir?: string } = {}) {
   const now = () => 1_000;
   return createApp({
@@ -34,6 +39,7 @@ function makeApp(overrides: { staticDir?: string } = {}) {
     orchestrator: stubOrchestrator,
     buildPathOrchestrator: stubBuildPathOrchestrator,
     liveGameOrchestrator: stubLiveGameOrchestrator,
+    scoutingOrchestrator: stubScoutingOrchestrator,
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },

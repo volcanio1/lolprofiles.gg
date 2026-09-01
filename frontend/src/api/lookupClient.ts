@@ -50,6 +50,9 @@ import type {
   BuildPathEntry,
   BuildPathResponse,
   CachedReportResponse,
+  ClashScoutingReport,
+  ClashScoutResponse,
+  ClashTeamSummary,
   ErrorCode,
   LiveGameLobby,
   LiveGameResponse,
@@ -593,6 +596,109 @@ export async function fetchLiveGame(
 
     if (response.ok) {
       const narrowed = parseFailed ? null : readLiveGameResponse(parsed);
+      return narrowed ?? { kind: 'error', error: synthesizedError('RIOT_UNAVAILABLE') };
+    }
+
+    return {
+      kind: 'error',
+      error: parseFailed
+        ? synthesizedError(errorCodeForStatus(response.status))
+        : readErrorPayload(parsed, response.status),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// clash-scouting: GET /api/clash/scout
+// ---------------------------------------------------------------------------
+
+export type ClashScoutOutcome = ClashScoutResponse | { kind: 'error'; error: ApiErrorPayload };
+
+function isClashTeamSummary(raw: unknown): raw is ClashTeamSummary {
+  if (raw === null || typeof raw !== 'object') {
+    return false;
+  }
+  const team = raw as Record<string, unknown>;
+  return typeof team.id === 'string' && typeof team.name === 'string';
+}
+
+/** Narrows an untrusted 200 body to a `ClashScoutResponse`, or `null` when it is not one. */
+export function readClashScoutResponse(body: unknown): ClashScoutResponse | null {
+  if (body === null || typeof body !== 'object') {
+    return null;
+  }
+  const candidate = body as Record<string, unknown>;
+  if (candidate.kind === 'not_registered') {
+    return { kind: 'not_registered' };
+  }
+  if (candidate.kind === 'multiple_teams') {
+    return Array.isArray(candidate.teams) && candidate.teams.every(isClashTeamSummary)
+      ? { kind: 'multiple_teams', teams: candidate.teams }
+      : null;
+  }
+  if (candidate.kind !== 'report' || candidate.report === null || typeof candidate.report !== 'object') {
+    return null;
+  }
+  const report = candidate.report as Record<string, unknown>;
+  if (
+    report.team === null ||
+    typeof report.team !== 'object' ||
+    !Array.isArray(report.roster) ||
+    report.insights === null ||
+    typeof report.insights !== 'object'
+  ) {
+    return null;
+  }
+  return { kind: 'report', report: report as unknown as ClashScoutingReport };
+}
+
+/**
+ * `GET /api/clash/scout`. Same contract as `fetchLiveGame`: never rejects,
+ * always settles. `not_registered` and `multiple_teams` are normal outcomes,
+ * not errors — all three success variants are HTTP 200.
+ */
+export async function fetchClashScout(
+  riotId: RiotIdParts,
+  teamId?: string,
+  options: LookupClientOptions = {},
+): Promise<ClashScoutOutcome> {
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const params: Record<string, string> = { gameName: riotId.gameName, tagLine: riotId.tagLine };
+    if (teamId !== undefined && teamId.length > 0) {
+      params.teamId = teamId;
+    }
+    const url = `${baseUrl}/api/clash/scout?${new URLSearchParams(params).toString()}`;
+
+    let response: Response;
+    try {
+      response = await doFetch(url, { method: 'GET', signal: controller.signal });
+    } catch {
+      return { kind: 'error', error: synthesizedError(timedOut ? 'TIMEOUT' : 'NETWORK_ERROR') };
+    }
+
+    let parsed: unknown;
+    let parseFailed = false;
+    try {
+      parsed = await response.json();
+    } catch {
+      parseFailed = true;
+    }
+
+    if (response.ok) {
+      const narrowed = parseFailed ? null : readClashScoutResponse(parsed);
       return narrowed ?? { kind: 'error', error: synthesizedError('RIOT_UNAVAILABLE') };
     }
 

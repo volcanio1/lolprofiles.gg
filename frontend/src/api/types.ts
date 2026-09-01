@@ -401,3 +401,91 @@ export interface LiveGameLobby {
 export type LiveGameResponse =
   | { kind: 'in_game'; lobby: LiveGameLobby }
   | { kind: 'not_in_game' };
+
+// ---------------------------------------------------------------------------
+// clash-scouting: GET /api/clash/scout
+// ---------------------------------------------------------------------------
+
+export type ClashDeclaredPosition = 'UNSELECTED' | 'FILL' | 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY';
+
+export interface ClashTeamSummary {
+  id: string;
+  name: string;
+  abbreviation: string;
+  tier: number;
+  iconId: number;
+}
+
+/** One of a roster member's recent matches, trimmed to what scouting shows. */
+export interface ClashRecentFormEntry {
+  matchId: string;
+  championId: number;
+  /** Raw `TOP`/`JUNGLE`/`MIDDLE`/`BOTTOM`/`UTILITY`, or `''`. */
+  role: string;
+  win: boolean;
+}
+
+export interface ClashChampionPoolEntry {
+  championId: number;
+  masteryPoints: number;
+  masteryLevel: number;
+}
+
+export interface ClashRosterCard {
+  puuid: string;
+  declaredPosition: ClashDeclaredPosition;
+  isCaptain: boolean;
+  /** `null` when the Account-V1 call failed. */
+  riotId: RiotIdParts | null;
+  /** `null` when the League-V4 call failed; `[]` is a successful "unranked". */
+  rankedEntries: readonly RankedQueueStanding[] | null;
+  /** `null` when the Champion-Mastery call failed. */
+  championPool: readonly ClashChampionPoolEntry[] | null;
+  recentForm: readonly ClashRecentFormEntry[];
+  /** `null` when `recentForm` is empty. */
+  observedRole: string | null;
+}
+
+export interface ClashBanRecommendation {
+  championId: number;
+  /** The roster member this champion is most associated with. */
+  puuid: string;
+  masteryPoints: number;
+  recentGames: number;
+  recentWins: number;
+}
+
+export interface ClashPositionMismatch {
+  puuid: string;
+  declaredPosition: ClashDeclaredPosition;
+  observedRole: string;
+}
+
+export interface ClashScoutingInsights {
+  /** At most 5, strictly ordered by the backend. */
+  banRecommendations: readonly ClashBanRecommendation[];
+  positionMismatches: readonly ClashPositionMismatch[];
+  /** 0..5 — how many roster members appear together in some recent match. */
+  stackCohesion: number;
+}
+
+export interface ClashScoutingReport {
+  team: {
+    id: string;
+    name: string;
+    abbreviation: string;
+    tier: number;
+    iconId: number;
+    captainPuuid: string;
+  };
+  /** `null` when the tournament schedule was absent or stale. */
+  tournament: { id: number; nameKey: string; nameKeySecondary: string } | null;
+  roster: readonly ClashRosterCard[];
+  insights: ClashScoutingInsights;
+}
+
+/** The body of `GET /api/clash/scout`. All three variants are HTTP 200. */
+export type ClashScoutResponse =
+  | { kind: 'report'; report: ClashScoutingReport }
+  | { kind: 'multiple_teams'; teams: readonly ClashTeamSummary[] }
+  | { kind: 'not_registered' };

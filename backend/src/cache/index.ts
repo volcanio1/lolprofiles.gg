@@ -56,7 +56,10 @@ export type CacheEndpoint =
   | 'timelineSlice'
   | 'activeGame'
   | 'championMastery'
-  | 'tournamentSchedule';
+  | 'tournamentSchedule'
+  | 'clashPlayers'
+  | 'clashTeam'
+  | 'championMasteryTop';
 
 export interface CacheKey {
   endpoint: CacheEndpoint;
@@ -106,6 +109,8 @@ export interface CacheStore {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const TEN_MINUTES_MS = 10 * 60 * 1000;
+/** clash-scouting Requirements 5.2/5.3: registrations/rosters churn on tournament-day timescales, not by the second. */
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
 /** live-game Requirement 6.2: bounds how stale a displayed lobby can be, and matches the poll floor. */
 const THIRTY_SECONDS_MS = 30 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -138,6 +143,16 @@ export const TTL_BY_ENDPOINT: Readonly<Record<CacheEndpoint, number | 'infinite'
   // the tournaments endpoint's 10/min limit makes anything shorter unwise. Written
   // only by the background Tournament Refresher, never on a request path.
   tournamentSchedule: ONE_HOUR_MS,
+  // clash-scouting Requirement 5.2: a registration changes when a player joins
+  // or leaves a team, plausible during a tournament window but not by the second.
+  clashPlayers: FIVE_MINUTES_MS,
+  // clash-scouting Requirement 5.3: rosters are fixed once a bracket starts; 5
+  // minutes covers the registration period without serving a stale roster.
+  clashTeam: FIVE_MINUTES_MS,
+  // clash-scouting design.md: shares the live-game `championMastery` retention,
+  // but keyed differently (top-N by puuid vs per-champion by puuid+championId),
+  // so it is its own endpoint entry rather than an alias.
+  championMasteryTop: ONE_HOUR_MS,
 };
 
 /**

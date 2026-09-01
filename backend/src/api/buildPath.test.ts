@@ -21,6 +21,7 @@ function appWith(getBuildPath: BuildPathOrchestrator['getBuildPath']) {
       orchestrator: stubLookup,
       buildPathOrchestrator: { getBuildPath: vi.fn(getBuildPath) },
       liveGameOrchestrator: { getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }) },
+      scoutingOrchestrator: { scout: () => Promise.resolve({ kind: 'not_registered' }) },
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

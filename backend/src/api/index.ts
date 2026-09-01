@@ -54,7 +54,9 @@ import type { MatchStore } from '../db/matchStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
+import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createBuildPathHandler } from './buildPath';
+import { createClashScoutingHandler } from './clashScouting';
 import { createLiveGameHandler } from './liveGame';
 import { createCorsMiddleware } from './cors';
 import { internalError, malformedRequestError } from './errors';
@@ -96,6 +98,11 @@ export {
   type StaticDataHandlerDependencies,
 } from './staticData';
 export { createLiveGameHandler, type LiveGameResponseBody, type LiveGameRouteDependencies } from './liveGame';
+export {
+  createClashScoutingHandler,
+  type ClashScoutResponseBody,
+  type ClashScoutingRouteDependencies,
+} from './clashScouting';
 
 /** Decision 1. */
 export const REQUEST_BODY_LIMIT = '16kb';
@@ -143,6 +150,8 @@ export interface ApiDependencies {
   buildPathOrchestrator: BuildPathOrchestrator;
   /** live-game: serves `GET /api/live-game`. */
   liveGameOrchestrator: LiveGameOrchestrator;
+  /** clash-scouting: serves `GET /api/clash/scout`. */
+  scoutingOrchestrator: ScoutingOrchestrator;
   cache: CacheStore;
   /**
    * Persistent_Store (specs/database/). Optional — omitted means the no-op
@@ -224,6 +233,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
     createStaticDataHandler({ dataDragonVersion: deps.dataDragonVersion }),
   );
   router.get('/live-game', createLiveGameHandler({ liveGameOrchestrator: deps.liveGameOrchestrator }));
+  router.get('/clash/scout', createClashScoutingHandler({ scoutingOrchestrator: deps.scoutingOrchestrator }));
   router.get(
     '/players/suggest',
     createSuggestHandler({

@@ -5,6 +5,7 @@ import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
+import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createApiRouter } from './index';
 import { parseAllowedOrigins } from './cors';
 
@@ -33,6 +34,10 @@ const stubLiveGameOrchestrator: LiveGameOrchestrator = {
   getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
 };
 
+const stubScoutingOrchestrator: ScoutingOrchestrator = {
+  scout: () => Promise.resolve({ kind: 'not_registered' }),
+};
+
 function makeApp(allowedOrigins?: readonly string[]) {
   const now = () => 1_000;
   const app = express();
@@ -43,6 +48,7 @@ function makeApp(allowedOrigins?: readonly string[]) {
       orchestrator: stubOrchestrator,
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
+      scoutingOrchestrator: stubScoutingOrchestrator,
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },
