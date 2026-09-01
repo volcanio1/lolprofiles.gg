@@ -62,4 +62,27 @@ describe('Tooltip', () => {
     expect(screen.queryByTestId('tooltip-anchor')).not.toBeInTheDocument();
     expect(screen.getByText('bare')).toBeInTheDocument();
   });
+
+  it('renders `body` in place of `description`, when given', () => {
+    render(
+      <Tooltip
+        title="Custom"
+        body={
+          <span style={{ color: 'red' }} data-testid="custom-line">
+            custom content
+          </span>
+        }
+      >
+        <span>icon</span>
+      </Tooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByTestId('tooltip-anchor'));
+
+    const bubble = screen.getByRole('tooltip');
+    expect(bubble).toHaveTextContent('Custom');
+    const line = screen.getByTestId('custom-line');
+    expect(line).toHaveTextContent('custom content');
+    expect(line).toHaveStyle({ color: 'rgb(255, 0, 0)' });
+    expect(bubble.querySelector('.tooltip-stats')).toBeNull();
+  });
 });

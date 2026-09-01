@@ -236,7 +236,7 @@ export function ProfileReportView({ report }: ProfileReportViewProps) {
             <h3 id="rank-history-heading" className="rsec-title">
               Ranked Solo/Duo history
             </h3>
-            <RankHistoryGraph history={report.rankHistory} />
+            <RankHistoryGraph history={report.rankHistory} recentMatches={report.recentMatches} />
           </section>
 
           {/* profile-sidebar Requirement 9.1/9.4: governs the two panels below. */}

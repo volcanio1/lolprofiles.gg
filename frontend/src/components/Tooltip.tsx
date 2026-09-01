@@ -33,6 +33,13 @@ import { StatIcon } from './StatIcon';
 export interface TooltipProps {
   title: string;
   description?: AssetDescription;
+  /**
+   * Full custom replacement for `description`'s auto-rendered stats/paragraphs
+   * (e.g. a line that needs its own color, like the rank-graph's tier-colored
+   * rank/LP line) — every other call site keeps using `description`. Ignored
+   * when `description` is also given; only one of the two applies.
+   */
+  body?: ReactNode;
   children: ReactNode;
   className?: string;
 }
@@ -40,7 +47,7 @@ export interface TooltipProps {
 const GAP = 8;
 const EDGE = 8;
 
-export function Tooltip({ title, description, children, className }: TooltipProps) {
+export function Tooltip({ title, description, body, children, className }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -117,28 +124,34 @@ export function Tooltip({ title, description, children, className }: TooltipProp
               }
             >
               <strong className="tooltip-title">{title}</strong>
-              {stats.length > 0 ? (
-                <span className="tooltip-stats">
-                  {stats.map((line, index) => (
-                    <span className="tooltip-stat-row" key={index}>
-                      <span className="tooltip-stat-icon-slot">
-                        <StatIcon stat={line.stat} className="tooltip-stat-icon" />
-                      </span>
-                      {line.amount ? <span className="tooltip-stat-amount">{line.amount}</span> : null}
-                      <span className="tooltip-stat-name">{line.stat}</span>
+              {body !== undefined ? (
+                <span className="tooltip-body">{body}</span>
+              ) : (
+                <>
+                  {stats.length > 0 ? (
+                    <span className="tooltip-stats">
+                      {stats.map((line, index) => (
+                        <span className="tooltip-stat-row" key={index}>
+                          <span className="tooltip-stat-icon-slot">
+                            <StatIcon stat={line.stat} className="tooltip-stat-icon" />
+                          </span>
+                          {line.amount ? <span className="tooltip-stat-amount">{line.amount}</span> : null}
+                          <span className="tooltip-stat-name">{line.stat}</span>
+                        </span>
+                      ))}
                     </span>
-                  ))}
-                </span>
-              ) : null}
-              {paragraphs.length > 0 ? (
-                <span className="tooltip-body">
-                  {paragraphs.map((paragraph, index) => (
-                    <span className="tooltip-para" key={index}>
-                      {paragraph}
+                  ) : null}
+                  {paragraphs.length > 0 ? (
+                    <span className="tooltip-body">
+                      {paragraphs.map((paragraph, index) => (
+                        <span className="tooltip-para" key={index}>
+                          {paragraph}
+                        </span>
+                      ))}
                     </span>
-                  ))}
-                </span>
-              ) : null}
+                  ) : null}
+                </>
+              )}
             </span>,
             document.body,
           )

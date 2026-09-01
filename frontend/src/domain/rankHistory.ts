@@ -15,7 +15,7 @@
  * that matters is that a genuine climb always produces a higher number.
  */
 
-import type { RankSnapshot } from '../api/types';
+import type { RankSnapshot, RecentMatchSummary } from '../api/types';
 
 const TIER_RANK: Readonly<Record<string, number>> = {
   IRON: 0,
@@ -33,6 +33,25 @@ const TIER_RANK: Readonly<Record<string, number>> = {
 const DIVISION_RANK: Readonly<Record<string, number>> = { IV: 0, III: 1, II: 2, I: 3 };
 
 const APEX_FLOOR = 7 * 400;
+
+/** Riot's own per-tier ladder colors, for the rank-graph tooltip's rank/LP line. */
+const TIER_COLOR: Readonly<Record<string, string>> = {
+  IRON: '#5b5148',
+  BRONZE: '#8c5a34',
+  SILVER: '#94a3b0',
+  GOLD: '#e8b54a',
+  PLATINUM: '#4fd1c5',
+  EMERALD: '#2fbf71',
+  DIAMOND: '#5aa9e6',
+  MASTER: '#b072e0',
+  GRANDMASTER: '#e0546b',
+  CHALLENGER: '#f2e6a3',
+};
+
+/** The tier's ladder color, or the neutral `--dim` token for an unranked/unknown tier. */
+export function rankColor(tier: string): string {
+  return TIER_COLOR[tier.toUpperCase()] ?? 'var(--dim)';
+}
 
 export function rankOrdinal(snapshot: Pick<RankSnapshot, 'tier' | 'division' | 'leaguePoints'>): number {
   const tier = TIER_RANK[snapshot.tier.toUpperCase()] ?? 0;
@@ -53,4 +72,29 @@ export function rankLabel(snapshot: Pick<RankSnapshot, 'tier' | 'division' | 'le
   const isApex = (TIER_RANK[snapshot.tier.toUpperCase()] ?? 0) >= TIER_RANK.MASTER;
   const division = isApex || !snapshot.division ? '' : ` ${snapshot.division}`;
   return `${tierName}${division} ${snapshot.leaguePoints} LP`;
+}
+
+/**
+ * Rank-graph hover tooltip: how many Ranked Solo/Duo games from `recentMatches`
+ * ended strictly after `previousObservedAt` and at or before `observedAt` — an
+ * approximation bounded by however far back `recentMatches` reaches (the
+ * report's transport cap), the same class of approximation `insight/lpDelta.ts`
+ * already accepts for LP deltas: a real count when the gap fits inside that
+ * window, an undercount for an older or wider gap. `undefined` in, `undefined`
+ * out — the graph's first point has no previous snapshot to count from.
+ */
+export function gamesSincePreviousSnapshot(
+  recentMatches: readonly Pick<RecentMatchSummary, 'queueType' | 'startTimestamp'>[],
+  previousObservedAt: number | undefined,
+  observedAt: number,
+): number | undefined {
+  if (previousObservedAt === undefined) {
+    return undefined;
+  }
+  return recentMatches.filter(
+    (match) =>
+      match.queueType === 'ranked solo/duo' &&
+      match.startTimestamp > previousObservedAt &&
+      match.startTimestamp <= observedAt,
+  ).length;
 }

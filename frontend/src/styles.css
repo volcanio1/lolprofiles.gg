@@ -820,12 +820,47 @@ figure {
   gap: 0.4rem;
 }
 
+.rank-graph-svg-wrap {
+  position: relative;
+}
+
 .rank-graph-svg {
   width: 100%;
   height: 96px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  display: block;
+}
+
+/* Invisible HTML overlay carrying the hover tooltip — see RankHistoryGraph.tsx's
+   header for why this can't just wrap the SVG `<circle>` elements directly. */
+.rank-graph-hit-layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* One full-height band per snapshot, edges at the midpoints to its neighbors —
+   hovering anywhere in the band (not just the dot) shows that snapshot. */
+.rank-graph-hit-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.rank-graph-hit-target {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Overrides `.tooltip-anchor`'s default `inline-flex` (content-sized) so this
+   instance fills its band instead of shrinking to the hit-target span's size. */
+.tooltip-anchor.rank-graph-hit-anchor {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .rank-graph-line {
