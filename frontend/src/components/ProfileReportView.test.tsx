@@ -340,6 +340,7 @@ describe('Recent matches — champion, outcome, K/D/A, CS, vision, and the lane 
           build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
           participants: [],
           queueType: 'ranked solo/duo',
+          lpDelta: null,
         },
       ],
     });
@@ -408,6 +409,7 @@ describe('Recent matches — queue-type filter', () => {
       build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
       participants: [],
       queueType,
+      lpDelta: null,
     };
   }
 
@@ -484,6 +486,7 @@ describe('Recent matches — load more', () => {
       build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
       participants: [],
       queueType,
+      lpDelta: null,
     };
   }
 
@@ -555,6 +558,7 @@ describe('player-insights — Fun Facts v2 / Performance Feedback sections', () 
       build: { items: [0, 0, 0, 0, 0, 0], trinket: 3340 },
       participants: [],
       queueType: 'ranked solo/duo',
+      lpDelta: null,
     };
   }
 
@@ -682,6 +686,7 @@ describe('Requirement 5.2/5.3 — degraded rendering with no Static Data Provide
               build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
               participants: [],
               queueType: 'ranked solo/duo',
+              lpDelta: null,
             },
           ],
         })}

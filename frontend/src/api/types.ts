@@ -210,6 +210,12 @@ export interface RecentMatchSummary {
   participants: MatchParticipant[];
   /** `match-detail-tabs` Requirement 1.6/6.4. */
   queueType: string;
+  /**
+   * LP gained (positive) or lost (negative) in this match, for a ranked
+   * solo/duo or ranked flex game only. `null` when not computable (any other
+   * queue, or the checkpoint data around this match was ambiguous/absent).
+   */
+  lpDelta: number | null;
 }
 
 /**

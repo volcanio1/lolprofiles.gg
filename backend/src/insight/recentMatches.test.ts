@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { IncludedMatch } from './stats';
-import { computeRecentMatches, RECENT_MATCH_TRANSPORT_LIMIT } from './recentMatches';
+import { applyLpDeltas, computeRecentMatches, RECENT_MATCH_TRANSPORT_LIMIT } from './recentMatches';
 
 const BASE_TS = 1_700_000_000_000;
 
@@ -89,5 +89,37 @@ describe('computeRecentMatches', () => {
     computeRecentMatches(matches);
 
     expect(matches).toEqual(copy);
+  });
+
+  it('defaults lpDelta to null', () => {
+    const [entry] = computeRecentMatches([match()]);
+    expect(entry.lpDelta).toBeNull();
+  });
+});
+
+describe('applyLpDeltas', () => {
+  it('fills in lpDelta for a matchId the map carries, leaving others null', () => {
+    const summaries = computeRecentMatches([
+      match({ matchId: 'a' }),
+      match({ matchId: 'b', startTimestamp: BASE_TS + 1 }),
+    ]);
+    const withDeltas = applyLpDeltas(summaries, new Map([['a', 18]]));
+
+    expect(withDeltas.find((s) => s.matchId === 'a')?.lpDelta).toBe(18);
+    expect(withDeltas.find((s) => s.matchId === 'b')?.lpDelta).toBeNull();
+  });
+
+  it('does not mutate its input', () => {
+    const summaries = computeRecentMatches([match({ matchId: 'a' })]);
+    const copy = summaries.map((s) => ({ ...s }));
+
+    applyLpDeltas(summaries, new Map([['a', 18]]));
+
+    expect(summaries).toEqual(copy);
+  });
+
+  it('returns a plain copy when the deltas map is empty', () => {
+    const summaries = computeRecentMatches([match({ matchId: 'a' })]);
+    expect(applyLpDeltas(summaries, new Map())).toEqual(summaries);
   });
 });

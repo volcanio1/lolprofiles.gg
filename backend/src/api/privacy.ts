@@ -78,6 +78,7 @@
 import type { RequestHandler } from 'express';
 import type { CacheStore } from '../cache';
 import { createNoopRankHistoryStore, type RankHistoryStore } from '../db/rankHistoryStore';
+import { createNoopRankCheckpointStore, type RankCheckpointStore } from '../db/rankCheckpointStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import { createNoopMatchStore, type MatchStore } from '../db/matchStore';
@@ -93,6 +94,8 @@ export interface PrivacyRouteDependencies {
    * which is also the runtime state when `MONGODB_URI` is unset.
    */
   rankHistoryStore?: RankHistoryStore;
+  /** recent-matches-lp-delta: cleared alongside the other stores. */
+  rankCheckpointStore?: RankCheckpointStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
   /** autofill-search Requirement 8.7. Cleared alongside the other two collections. */
   profileSnapshotStore?: ProfileSnapshotStore;
@@ -112,6 +115,7 @@ export interface DeletionConfirmation {
  */
 export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): RequestHandler {
   const rankHistoryStore = deps.rankHistoryStore ?? createNoopRankHistoryStore();
+  const rankCheckpointStore = deps.rankCheckpointStore ?? createNoopRankCheckpointStore();
   const lookedUpPlayerStore = deps.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
   const profileSnapshotStore = deps.profileSnapshotStore ?? createNoopProfileSnapshotStore();
   const matchStore = deps.matchStore ?? createNoopMatchStore();
@@ -134,14 +138,21 @@ export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): Requ
       // specs/database/ Requirement 5.1: the Persistent_Store is cleared too, and
       // 5.3: best-effort — a store failure must not fail a request whose cache
       // eviction succeeded (decision 4).
-      const [cacheResult, snapshotsRemoved, playerRemoved, reportSnapshotRemoved, storedMatchesRemoved] =
-        await Promise.all([
-          deps.cache.deleteByPuuid(puuid),
-          rankHistoryStore.deleteByPuuid(puuid).catch(() => 0),
-          lookedUpPlayerStore.deleteByPuuid(puuid).catch(() => 0),
-          profileSnapshotStore.deleteByPuuid(puuid).catch(() => 0),
-          matchStore.deleteByPuuid(puuid).catch(() => 0),
-        ]);
+      const [
+        cacheResult,
+        snapshotsRemoved,
+        checkpointsRemoved,
+        playerRemoved,
+        reportSnapshotRemoved,
+        storedMatchesRemoved,
+      ] = await Promise.all([
+        deps.cache.deleteByPuuid(puuid),
+        rankHistoryStore.deleteByPuuid(puuid).catch(() => 0),
+        rankCheckpointStore.deleteByPuuid(puuid).catch(() => 0),
+        lookedUpPlayerStore.deleteByPuuid(puuid).catch(() => 0),
+        profileSnapshotStore.deleteByPuuid(puuid).catch(() => 0),
+        matchStore.deleteByPuuid(puuid).catch(() => 0),
+      ]);
 
       // Requirements 12.5/12.6 + specs/database/ 5.4: confirmation either way,
       // never an error; `found` reflects removal from ANY store (decision 1).
@@ -149,6 +160,7 @@ export function createPrivacyDeleteHandler(deps: PrivacyRouteDependencies): Requ
         found:
           cacheResult.found ||
           snapshotsRemoved > 0 ||
+          checkpointsRemoved > 0 ||
           playerRemoved > 0 ||
           reportSnapshotRemoved > 0 ||
           storedMatchesRemoved > 0,

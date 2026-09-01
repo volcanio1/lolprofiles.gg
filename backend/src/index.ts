@@ -36,6 +36,11 @@ import {
   type RankHistoryStore,
 } from './db/rankHistoryStore';
 import {
+  createNoopRankCheckpointStore,
+  MongoRankCheckpointStore,
+  type RankCheckpointStore,
+} from './db/rankCheckpointStore';
+import {
   createNoopLookedUpPlayerStore,
   MongoLookedUpPlayerStore,
   type LookedUpPlayerStore,
@@ -73,6 +78,9 @@ async function main(): Promise<void> {
   const rankHistoryStore: RankHistoryStore = databaseClient.enabled
     ? new MongoRankHistoryStore(databaseClient.db())
     : createNoopRankHistoryStore();
+  const rankCheckpointStore: RankCheckpointStore = databaseClient.enabled
+    ? new MongoRankCheckpointStore(databaseClient.db())
+    : createNoopRankCheckpointStore();
   const lookedUpPlayerStore: LookedUpPlayerStore = databaseClient.enabled
     ? new MongoLookedUpPlayerStore(databaseClient.db())
     : createNoopLookedUpPlayerStore();
@@ -104,6 +112,7 @@ async function main(): Promise<void> {
     now,
     matchHistoryCount: config.matchHistoryCount,
     rankHistoryStore,
+    rankCheckpointStore,
     lookedUpPlayerStore,
     profileSnapshotStore,
     matchStore,
@@ -151,6 +160,7 @@ async function main(): Promise<void> {
     dataDragonVersion: config.dataDragonVersion,
     staticDir,
     rankHistoryStore,
+    rankCheckpointStore,
     lookedUpPlayerStore,
     profileSnapshotStore,
     matchStore,

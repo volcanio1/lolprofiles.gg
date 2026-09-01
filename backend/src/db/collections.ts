@@ -6,6 +6,13 @@
 
 export const DATABASE_NAME = 'lolprofiles';
 export const RANK_SNAPSHOTS_COLLECTION = 'rank_snapshots';
+/**
+ * recent-matches-lp-delta: a rank observation recorded on EVERY fresh lookup
+ * (no once-per-day dedup, unlike `rank_snapshots`), for every ranked queue the
+ * player has an entry in. Used only to bracket an individual ranked match's LP
+ * gain/loss between two checkpoints — see `insight/lpDelta.ts`.
+ */
+export const RANK_CHECKPOINTS_COLLECTION = 'rank_checkpoints';
 export const LOOKED_UP_PLAYERS_COLLECTION = 'looked_up_players';
 
 /**

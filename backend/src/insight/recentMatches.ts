@@ -58,6 +58,16 @@ export interface RecentMatchSummary {
    * this is the first consumer to carry it through to the transport shape.
    */
   queueType: string;
+  /**
+   * LP gained (positive) or lost (negative) in this match, for a ranked
+   * solo/duo or ranked flex game only. `null` when not computable — no other
+   * queue type, no checkpoint data, or the checkpoints bracketing this match
+   * also bracket another ranked match of the same queue (ambiguous — see
+   * `insight/lpDelta.ts`'s decision 1). Applied by the caller after this
+   * function runs (`applyLpDeltas`), not computed here — this module never
+   * gains a dependency on rank-checkpoint data.
+   */
+  lpDelta: number | null;
 }
 
 /**
@@ -92,6 +102,7 @@ export function computeRecentMatches(
     build: match.build ?? EMPTY_ITEM_BUILD,
     participants: match.participants ?? [],
     queueType: match.queueType,
+    lpDelta: null,
   }));
 
   // Requirement 11.4/11.5: no lane means no Enemy_Laner (ever `null`, not merely
@@ -115,9 +126,30 @@ export function computeRecentMatches(
     build: match.build,
     participants: match.participants,
     queueType: match.queueType,
+    lpDelta: null,
   }));
 
   return [...laned, ...laneless]
     .sort((a, b) => b.startTimestamp - a.startTimestamp)
     .slice(0, RECENT_MATCH_TRANSPORT_LIMIT);
+}
+
+/**
+ * Fills in `lpDelta` for whichever entries `deltas` has a value for (keyed by
+ * `matchId`, from `insight/lpDelta.ts#computeLpDeltas`). Does not mutate
+ * `summaries` — kept as a separate pass, after `computeRecentMatches`, so this
+ * module stays free of any dependency on rank-checkpoint data; the caller
+ * (`orchestrator/index.ts`) is the one place that has both.
+ */
+export function applyLpDeltas(
+  summaries: readonly RecentMatchSummary[],
+  deltas: ReadonlyMap<string, number>,
+): RecentMatchSummary[] {
+  if (deltas.size === 0) {
+    return [...summaries];
+  }
+  return summaries.map((summary) => {
+    const delta = deltas.get(summary.matchId);
+    return delta === undefined ? summary : { ...summary, lpDelta: delta };
+  });
 }

@@ -1207,6 +1207,20 @@ figure {
   font-variant-numeric: tabular-nums;
 }
 
+.match-lp-delta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* gold=win, never green/red (this project's palette rule) */
+.match-lp-delta--gain {
+  color: var(--gold);
+}
+
+.match-lp-delta--loss {
+  color: var(--loss);
+}
+
 .match-date {
   color: var(--loss);
   margin-left: auto;

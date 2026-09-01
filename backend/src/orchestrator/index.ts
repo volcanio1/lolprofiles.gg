@@ -189,7 +189,8 @@ import {
   type CacheKey,
   type CacheStore,
 } from '../cache';
-import { computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
+import { applyLpDeltas, computeRecentMatches, type RecentMatchSummary } from '../insight/recentMatches';
+import { computeLpDeltas } from '../insight/lpDelta';
 import { computeFunFactsV2, type FunFactV2 } from '../insight/funFactsV2';
 import {
   computeChampionMastery,
@@ -221,6 +222,7 @@ import {
   type RegionalRoutingValue,
 } from '../region';
 import { createNoopRankHistoryStore, type RankHistoryStore, type RankSnapshot } from '../db/rankHistoryStore';
+import { createNoopRankCheckpointStore, type RankCheckpointStore } from '../db/rankCheckpointStore';
 import { createNoopLookedUpPlayerStore, type LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import { createNoopProfileSnapshotStore, type ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import { createNoopMatchStore, type MatchStore, type StoredMatch } from '../db/matchStore';
@@ -538,6 +540,13 @@ export interface LookupOrchestratorOptions {
    * or fail a lookup (Requirement 4).
    */
   rankHistoryStore?: RankHistoryStore;
+  /**
+   * recent-matches-lp-delta: recorded on EVERY fresh lookup (no dedup), for
+   * every ranked queue the player has an entry in — see
+   * `db/rankCheckpointStore.ts`'s header for why this is a separate store
+   * from `rankHistoryStore`. Omitted ⇒ the no-op store.
+   */
+  rankCheckpointStore?: RankCheckpointStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
   /**
    * autofill-search Requirement 8: the full `ProfileReport` is saved here on
@@ -623,6 +632,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
   private readonly discoveryRegion: RegionalRoutingValue;
   private readonly regionResolver: RegionResolver;
   private readonly rankHistoryStore: RankHistoryStore;
+  private readonly rankCheckpointStore: RankCheckpointStore;
   private readonly lookedUpPlayerStore: LookedUpPlayerStore;
   private readonly profileSnapshotStore: ProfileSnapshotStore;
   private readonly matchStore: MatchStore;
@@ -638,6 +648,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     this.matchHistoryCount = options.matchHistoryCount ?? MATCH_HISTORY_COUNT;
     this.matchDetailConcurrency = Math.max(1, options.matchDetailConcurrency ?? MATCH_DETAIL_CONCURRENCY);
     this.rankHistoryStore = options.rankHistoryStore ?? createNoopRankHistoryStore();
+    this.rankCheckpointStore = options.rankCheckpointStore ?? createNoopRankCheckpointStore();
     this.lookedUpPlayerStore = options.lookedUpPlayerStore ?? createNoopLookedUpPlayerStore();
     this.profileSnapshotStore = options.profileSnapshotStore ?? createNoopProfileSnapshotStore();
     this.matchStore = options.matchStore ?? createNoopMatchStore();
@@ -852,9 +863,11 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
 
   /**
    * specs/database/ Requirement 2/3/4. Records a rank snapshot (Ranked Solo/Duo
-   * only) and remembers the player, as unawaited side effects of a successful
-   * lookup. Never awaited on the request path (4.1); a store rejection is logged
-   * and swallowed, never propagated (4.2); issues no Riot call (4.5).
+   * only), a rank checkpoint (EVERY ranked queue present — recent-matches-lp-delta,
+   * see `db/rankCheckpointStore.ts`), and remembers the player, as unawaited
+   * side effects of a successful lookup. Never awaited on the request path
+   * (4.1); a store rejection is logged and swallowed, never propagated (4.2);
+   * issues no Riot call (4.5).
    */
   private recordLookupSideEffects(report: ProfileReport): void {
     const observedAt = this.now();
@@ -871,6 +884,25 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       }
     };
 
+    // recent-matches-lp-delta: unlike `rankHistoryStore` (solo/duo only, once
+    // per UTC day), a checkpoint is written for EVERY ranked queue the player
+    // has a real entry in, on EVERY fresh lookup — see
+    // `db/rankCheckpointStore.ts`'s header for why.
+    const checkpointWrites = Object.entries(report.stats.rankedByQueue)
+      .filter((entry): entry is [string, Exclude<(typeof entry)[1], 'Unranked'>] => entry[1] !== 'Unranked')
+      .map(([queueType, standing]) =>
+        guard(() =>
+          this.rankCheckpointStore.record({
+            puuid: report.puuid,
+            queueType,
+            tier: standing.tier,
+            division: standing.division,
+            leaguePoints: standing.leaguePoints,
+            observedAt,
+          }),
+        ),
+      );
+
     void Promise.allSettled([
       solo !== undefined && solo !== 'Unranked'
         ? guard(() =>
@@ -884,6 +916,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
             }),
           )
         : Promise.resolve(), // Requirement 2.4: unranked ⇒ no snapshot
+      ...checkpointWrites,
       guard(() =>
         this.lookedUpPlayerStore.remember({
           puuid: report.puuid,
@@ -1292,6 +1325,14 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       .history(puuid, SOLO_QUEUE_TYPE)
       .catch(() => [] as RankSnapshot[]);
 
+    // recent-matches-lp-delta: supplementary in the exact same sense — a slow
+    // or failing checkpoint read must never stall or fail the lookup, and an
+    // empty result just means every match's `lpDelta` stays `null` (the
+    // default `computeRecentMatches` already sets).
+    const rankCheckpoints = await this.rankCheckpointStore.historyAll(puuid).catch(() => []);
+    const lpDeltas = computeLpDeltas(matches, rankCheckpoints);
+    const recentMatches = applyLpDeltas(computeRecentMatches(matches, lanelessMatches), lpDeltas);
+
     return {
       riotId: canonicalRiotId(ctx),
       puuid,
@@ -1309,7 +1350,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       limitedDataNotice: isLimitedData(matches), // Requirements 3.4 / 7.5
       performanceFeedback: computePerformanceFeedback(recentRankedWindowOf(matches), earlyGame), // player-insights Requirements 6-12, 15-16
       averageMatchDurationMinutes: averageMatchDurationMinutesOf(matches), // Requirement 7.3
-      recentMatches: computeRecentMatches(matches, lanelessMatches),
+      recentMatches,
       lastUpdated: lastUpdatedOf(ages), // Requirements 11.4 / 11.5
       partialDataWarning,
     };

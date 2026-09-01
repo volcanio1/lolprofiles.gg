@@ -22,6 +22,7 @@ import {
 } from './collections';
 import { ensureIndexes } from './client';
 import { MongoRankHistoryStore, type RankSnapshot } from './rankHistoryStore';
+import { MongoRankCheckpointStore, type RankCheckpoint } from './rankCheckpointStore';
 import { MongoLookedUpPlayerStore, type LookedUpPlayer } from './lookedUpPlayerStore';
 import { MongoProfileSnapshotStore } from './profileSnapshotStore';
 import { MongoMatchStore, type StoredMatch } from './matchStore';
@@ -31,6 +32,18 @@ const DAY_MS = 86_400_000;
 const BASE = Date.UTC(2026, 7, 28, 12, 0, 0);
 
 function snap(overrides: Partial<RankSnapshot> = {}): RankSnapshot {
+  return {
+    puuid: 'p1',
+    queueType: 'RANKED_SOLO_5x5',
+    tier: 'GOLD',
+    division: 'II',
+    leaguePoints: 40,
+    observedAt: BASE,
+    ...overrides,
+  };
+}
+
+function checkpoint(overrides: Partial<RankCheckpoint> = {}): RankCheckpoint {
   return {
     puuid: 'p1',
     queueType: 'RANKED_SOLO_5x5',
@@ -108,6 +121,28 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
 
     expect(await store.deleteByPuuid(puuid)).toBe(2);
     expect(await store.history(puuid, 'RANKED_SOLO_5x5')).toEqual([]);
+  });
+
+  it('rank checkpoints have no dedup — multiple same-day records all persist, oldest first', async () => {
+    const store = new MongoRankCheckpointStore(db);
+    const puuid = `checkpoint-${Date.now()}`;
+
+    await store.record(checkpoint({ puuid, leaguePoints: 40, observedAt: BASE }));
+    await store.record(checkpoint({ puuid, leaguePoints: 58, observedAt: BASE + 3_600_000 }));
+
+    const history = await store.historyAll(puuid);
+    expect(history.map((c) => c.leaguePoints)).toEqual([40, 58]);
+  });
+
+  it('rank checkpoint deleteByPuuid clears every checkpoint across queues for the player', async () => {
+    const store = new MongoRankCheckpointStore(db);
+    const puuid = `checkpoint-del-${Date.now()}`;
+
+    await store.record(checkpoint({ puuid, observedAt: BASE }));
+    await store.record(checkpoint({ puuid, queueType: 'RANKED_FLEX_SR', observedAt: BASE }));
+
+    expect(await store.deleteByPuuid(puuid)).toBe(2);
+    expect(await store.historyAll(puuid)).toEqual([]);
   });
 
   it('remember upserts by puuid and the prefix scan returns recency order', async () => {

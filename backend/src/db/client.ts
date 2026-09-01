@@ -30,12 +30,14 @@ import {
   MATCH_DETAILS_COLLECTION,
   PROFILE_REPORT_TTL_SECONDS,
   PROFILE_REPORTS_COLLECTION,
+  RANK_CHECKPOINTS_COLLECTION,
   RANK_SNAPSHOTS_COLLECTION,
 } from './collections';
 
 export {
   DATABASE_NAME,
   RANK_SNAPSHOTS_COLLECTION,
+  RANK_CHECKPOINTS_COLLECTION,
   LOOKED_UP_PLAYERS_COLLECTION,
   PROFILE_REPORTS_COLLECTION,
   MATCH_DETAILS_COLLECTION,
@@ -98,6 +100,11 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { key: { puuid: 1, queueType: 1, snapshotDay: 1 }, unique: true, name: 'uniq_puuid_queue_day' },
     // Serves `history()` in sorted order and the `deleteByPuuid` sweep.
     { key: { puuid: 1, queueType: 1, observedAt: 1 }, name: 'puuid_queue_observedAt' },
+  ]);
+  await db.collection(RANK_CHECKPOINTS_COLLECTION).createIndexes([
+    // No uniqueness constraint — every fresh lookup inserts a new row. Serves
+    // `historyAll()`'s sorted read and the `deleteByPuuid` sweep.
+    { key: { puuid: 1, observedAt: 1 }, name: 'puuid_observedAt' },
   ]);
   await db
     .collection(LOOKED_UP_PLAYERS_COLLECTION)

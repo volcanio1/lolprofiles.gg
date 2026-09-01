@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { MatchParticipant, RecentMatchSummary } from '../api/types';
-import { formatMatchDuration, matchQueueTypeLabel, MatchRow } from './MatchRow';
+import { formatLpDelta, formatMatchDuration, matchQueueTypeLabel, MatchRow } from './MatchRow';
 
 const RID = { gameName: 'Tester', tagLine: 'NA1' };
 
@@ -71,6 +71,7 @@ function match(overrides: Partial<RecentMatchSummary> = {}): RecentMatchSummary 
     build: { items: [1001, 3006, 0, 0, 0, 0], trinket: 3340 },
     participants: [],
     queueType: 'ranked solo/duo',
+    lpDelta: null,
     ...overrides,
   };
 }
@@ -103,6 +104,26 @@ describe('MatchRow — Requirement 1.6: duration and queue type', () => {
 
     expect(screen.getByTestId('recent-match-NA1_1-duration')).toHaveTextContent('32:07');
     expect(screen.getByTestId('recent-match-NA1_1-queue-type')).toHaveTextContent('Ranked Flex');
+  });
+});
+
+describe('formatLpDelta', () => {
+  it('prefixes a gain with +, and shows a loss with a bare minus sign', () => {
+    expect(formatLpDelta(18)).toBe('+18 LP');
+    expect(formatLpDelta(-18)).toBe('-18 LP');
+    expect(formatLpDelta(0)).toBe('0 LP');
+  });
+});
+
+describe('MatchRow — LP delta next to the queue type', () => {
+  it('shows the LP delta next to the queue type when present', () => {
+    render(<MatchRow riotId={RID} match={match({ queueType: 'ranked solo/duo', lpDelta: 18 })} />);
+    expect(screen.getByTestId('recent-match-NA1_1-lp-delta')).toHaveTextContent('+18 LP');
+  });
+
+  it('renders nothing when lpDelta is null', () => {
+    render(<MatchRow riotId={RID} match={match({ queueType: 'ranked solo/duo', lpDelta: null })} />);
+    expect(screen.queryByTestId('recent-match-NA1_1-lp-delta')).not.toBeInTheDocument();
   });
 });
 

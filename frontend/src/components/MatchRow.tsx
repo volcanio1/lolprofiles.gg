@@ -36,6 +36,11 @@ export function matchQueueTypeLabel(queueType: string): string {
   return QUEUE_TYPE_LABELS[queueType] ?? queueType;
 }
 
+/** `18` -> `"+18 LP"`, `-18` -> `"-18 LP"`. */
+export function formatLpDelta(lpDelta: number): string {
+  return `${lpDelta > 0 ? '+' : ''}${lpDelta} LP`;
+}
+
 /** Requirement 1.6. `mm:ss`, e.g. `32:07`. Negative or non-finite durations read as `0:00`. */
 export function formatMatchDuration(durationSeconds: number): string {
   const total = Number.isFinite(durationSeconds) && durationSeconds > 0 ? Math.floor(durationSeconds) : 0;
@@ -112,6 +117,14 @@ export function MatchRow({ match, riotId }: MatchRowProps) {
         <span className="match-queue-type" data-testid={`recent-match-${match.matchId}-queue-type`}>
           {matchQueueTypeLabel(match.queueType)}
         </span>
+        {match.lpDelta !== null ? (
+          <span
+            className={`match-lp-delta ${match.lpDelta >= 0 ? 'match-lp-delta--gain' : 'match-lp-delta--loss'}`}
+            data-testid={`recent-match-${match.matchId}-lp-delta`}
+          >
+            {formatLpDelta(match.lpDelta)}
+          </span>
+        ) : null}
         <span className="match-date">{formatMatchDate(match.startTimestamp)}</span>
         <button
           type="button"

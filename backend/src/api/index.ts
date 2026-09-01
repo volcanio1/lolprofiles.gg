@@ -48,6 +48,7 @@
 import express, { Router, type ErrorRequestHandler } from 'express';
 import type { CacheStore } from '../cache';
 import type { RankHistoryStore } from '../db/rankHistoryStore';
+import type { RankCheckpointStore } from '../db/rankCheckpointStore';
 import type { LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import type { ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import type { MatchStore } from '../db/matchStore';
@@ -160,6 +161,8 @@ export interface ApiDependencies {
    * `autofill-search` will add a read route over `lookedUpPlayerStore`.
    */
   rankHistoryStore?: RankHistoryStore;
+  /** recent-matches-lp-delta: cleared alongside the other Persistent_Store collections. */
+  rankCheckpointStore?: RankCheckpointStore;
   lookedUpPlayerStore?: LookedUpPlayerStore;
   /** autofill-search Requirements 8-10: serves `GET /api/players/report` and is cleared by `POST /api/privacy/delete`. */
   profileSnapshotStore?: ProfileSnapshotStore;
@@ -223,6 +226,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
       cache: deps.cache,
       now,
       rankHistoryStore: deps.rankHistoryStore,
+      rankCheckpointStore: deps.rankCheckpointStore,
       lookedUpPlayerStore: deps.lookedUpPlayerStore,
       profileSnapshotStore: deps.profileSnapshotStore,
       matchStore: deps.matchStore,

@@ -54,6 +54,7 @@ interface Harness {
 
 interface HarnessStores {
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
+  rankCheckpointStore?: import('../db/rankCheckpointStore').RankCheckpointStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
   profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
   matchStore?: import('../db/matchStore').MatchStore;
@@ -82,6 +83,7 @@ function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
       logger,
       dataDragonVersion: '16.17.1',
       rankHistoryStore: stores.rankHistoryStore,
+      rankCheckpointStore: stores.rankCheckpointStore,
       lookedUpPlayerStore: stores.lookedUpPlayerStore,
       profileSnapshotStore: stores.profileSnapshotStore,
       matchStore: stores.matchStore,
@@ -352,6 +354,21 @@ describe('POST /api/privacy/delete — Persistent_Store (specs/database/ Require
     expect(response.body.found).toBe(true);
     expect(await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5')).toEqual([]);
     expect(await lookedUpPlayerStore.searchByNamePrefix('subject', 10)).toEqual([]);
+  });
+
+  it('clears rank checkpoints too, across every queue (recent-matches-lp-delta)', async () => {
+    const { createInMemoryRankCheckpointStore } = await import('../db/rankCheckpointStore');
+    const rankCheckpointStore = createInMemoryRankCheckpointStore();
+    await rankCheckpointStore.record({ puuid: PUUID, queueType: 'RANKED_SOLO_5x5', tier: 'GOLD', division: 'II', leaguePoints: 40, observedAt: NOW });
+    await rankCheckpointStore.record({ puuid: PUUID, queueType: 'RANKED_FLEX_SR', tier: 'GOLD', division: 'II', leaguePoints: 10, observedAt: NOW });
+
+    // Cache is empty — the only data for this PUUID lives in the Persistent_Store.
+    const harness = makeHarness(undefined, { rankCheckpointStore });
+    const response = await request(harness.app).post('/api/privacy/delete').send({ puuid: PUUID });
+
+    expect(response.status).toBe(200);
+    expect(response.body.found).toBe(true);
+    expect(await rankCheckpointStore.historyAll(PUUID)).toEqual([]);
   });
 
   it('still succeeds when a Persistent_Store deletion throws, as long as the cache half worked', async () => {

@@ -91,6 +91,7 @@ function match(overrides: Partial<RecentMatchSummary> = {}): RecentMatchSummary 
     build: { items: [0, 0, 0, 0, 0, 0], trinket: 0 },
     participants: tenParticipants(),
     queueType: 'ranked solo/duo',
+    lpDelta: null,
     ...overrides,
   };
 }

@@ -15,6 +15,7 @@ import {
   type LookedUpPlayerStore,
 } from '../db/lookedUpPlayerStore';
 import { createInMemoryProfileSnapshotStore } from '../db/profileSnapshotStore';
+import { createInMemoryRankCheckpointStore } from '../db/rankCheckpointStore';
 import { createInMemoryMatchStore, type MatchStore, type StoredMatch } from '../db/matchStore';
 import type { PlatformRoutingValue } from '../region';
 import type {
@@ -240,6 +241,7 @@ interface HarnessOptions extends ClientScript {
   matchDetailConcurrency?: number;
   matchHistoryCount?: number;
   rankHistoryStore?: import('../db/rankHistoryStore').RankHistoryStore;
+  rankCheckpointStore?: import('../db/rankCheckpointStore').RankCheckpointStore;
   lookedUpPlayerStore?: import('../db/lookedUpPlayerStore').LookedUpPlayerStore;
   profileSnapshotStore?: import('../db/profileSnapshotStore').ProfileSnapshotStore;
   matchStore?: import('../db/matchStore').MatchStore;
@@ -260,6 +262,7 @@ function makeHarness(options: HarnessOptions = {}) {
     matchDetailConcurrency: options.matchDetailConcurrency,
     matchHistoryCount: options.matchHistoryCount,
     rankHistoryStore: options.rankHistoryStore,
+    rankCheckpointStore: options.rankCheckpointStore,
     lookedUpPlayerStore: options.lookedUpPlayerStore,
     profileSnapshotStore: options.profileSnapshotStore,
     matchStore: options.matchStore,
@@ -841,6 +844,59 @@ describe('runLookup — report contents', () => {
     ]);
   });
 
+  it('populates lpDelta on a Recent Matches entry end to end, bracketing one ranked solo/duo match between two pre-seeded checkpoints', async () => {
+    const matchId = 'i1';
+    const matchStart = 1_700_000_000_000;
+    const matchDuration = 1_800; // ends at matchStart + 1_800_000
+    function rankedMatch(): MatchDto {
+      return {
+        metadata: { matchId, participants: [PUUID, 'other-1'] },
+        info: {
+          queueId: 420, // ranked solo/duo
+          gameStartTimestamp: matchStart,
+          gameDuration: matchDuration,
+          participants: [
+            { puuid: PUUID, championName: 'Ahri', teamPosition: 'MIDDLE', win: true, kills: 6, deaths: 2, assists: 8, visionScore: 20 },
+            { puuid: 'other-1', championName: 'Garen', teamPosition: 'TOP', win: false, kills: 1, deaths: 9, assists: 2, visionScore: 5 },
+          ],
+        },
+      };
+    }
+
+    const rankCheckpointStore = createInMemoryRankCheckpointStore();
+    await rankCheckpointStore.record({
+      puuid: PUUID,
+      queueType: 'RANKED_SOLO_5x5',
+      tier: 'PLATINUM',
+      division: 'IV',
+      leaguePoints: 33,
+      observedAt: matchStart, // before the match ends
+    });
+    await rankCheckpointStore.record({
+      puuid: PUUID,
+      queueType: 'RANKED_SOLO_5x5',
+      tier: 'PLATINUM',
+      division: 'IV',
+      leaguePoints: 51,
+      observedAt: matchStart + matchDuration * 1_000 + 3_600_000, // well after the match ends
+    });
+
+    const harness = makeHarness({
+      matchIds: { kind: 'ok', data: [matchId] },
+      matchDetail: () => ({ kind: 'ok', data: rankedMatch() }),
+      rankCheckpointStore,
+    });
+
+    const result = await run(harness.orchestrator);
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') {
+      return;
+    }
+
+    const entry = result.report.recentMatches.find((m) => m.matchId === matchId);
+    expect(entry?.lpDelta).toBe(18); // 51 - 33, same tier/division
+  });
+
   it('renders an empty ranked entry list as a valid unranked state (Requirements 2.8, 6.1)', async () => {
     const harness = makeHarness({ league: { kind: 'ok', data: [] } });
 
@@ -1246,6 +1302,42 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
       },
     ]);
     expect(harness.storeWriteFailures).toEqual([]);
+  });
+
+  it('records a rank checkpoint for every ranked queue present, unlike the once-per-day rank snapshot (recent-matches-lp-delta)', async () => {
+    const rankCheckpointStore = createInMemoryRankCheckpointStore();
+    const now = () => 1_726_000_000_000;
+    const harness = makeHarness({
+      now,
+      rankCheckpointStore,
+      league: { kind: 'ok', data: [leagueEntry(), leagueEntry({ queueType: 'RANKED_FLEX_SR', leaguePoints: 12 })] },
+    });
+
+    const result = await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(result.kind).toBe('success');
+    const checkpoints = await rankCheckpointStore.historyAll(PUUID);
+    expect(checkpoints).toEqual([
+      { puuid: PUUID, queueType: 'RANKED_SOLO_5x5', tier: 'PLATINUM', division: 'IV', leaguePoints: 51, observedAt: now() },
+      { puuid: PUUID, queueType: 'RANKED_FLEX_SR', tier: 'PLATINUM', division: 'IV', leaguePoints: 12, observedAt: now() },
+    ]);
+    expect(harness.storeWriteFailures).toEqual([]);
+  });
+
+  it('records a second checkpoint on a second fresh lookup the same day, unlike rank history (recent-matches-lp-delta)', async () => {
+    const rankCheckpointStore = createInMemoryRankCheckpointStore();
+    const rankHistoryStore = createInMemoryRankHistoryStore();
+    const now = () => 1_726_000_000_000;
+    const harness = makeHarness({ now, rankCheckpointStore, rankHistoryStore });
+
+    await run(harness.orchestrator);
+    await flushMicrotasks();
+    await run(harness.orchestrator);
+    await flushMicrotasks();
+
+    expect(await rankCheckpointStore.historyAll(PUUID)).toHaveLength(2);
+    expect(await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5')).toHaveLength(1);
   });
 
   it('saves the full report snapshot on a fresh success (autofill-search Requirement 8.1)', async () => {
