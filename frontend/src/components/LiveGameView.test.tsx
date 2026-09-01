@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import type { LiveGameLobby, LiveParticipantCard } from '../api/types';
@@ -15,7 +16,11 @@ const CHAMPION_JSON = {
 
 function renderView(ui: ReactElement) {
   const provider = createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }));
-  return render(<StaticDataContext.Provider value={provider}>{ui}</StaticDataContext.Provider>);
+  return render(
+    <MemoryRouter>
+      <StaticDataContext.Provider value={provider}>{ui}</StaticDataContext.Provider>
+    </MemoryRouter>,
+  );
 }
 
 function card(over: Partial<LiveParticipantCard> = {}): LiveParticipantCard {
@@ -57,6 +62,20 @@ describe('LiveGameView', () => {
     expect(within(screen.getByTestId('team-200')).getAllByTestId('participant-card')).toHaveLength(1);
   });
 
+  it("links a resolved participant's name to their profile", () => {
+    renderView(
+      <LiveGameView
+        lobby={lobby({ participants: [card({ puuid: 'a', riotId: { gameName: 'Locked', tagLine: 'NA1' } })] })}
+      />,
+    );
+    expect(screen.getByTestId('player-link')).toHaveAttribute('href', '/profile?riotId=Locked%23NA1');
+  });
+
+  it('does not link a bot or an unresolved participant', () => {
+    renderView(<LiveGameView lobby={lobby({ participants: [card({ puuid: 'bot', isBot: true, riotId: null })] })} />);
+    expect(screen.queryByTestId('player-link')).toBeNull();
+  });
+
   it('renders Pre-Game rather than a clock for a zero start timestamp (Requirement 4.2)', () => {
     renderView(<LiveGameView lobby={lobby({ gameStartTime: 0 })} />);
     expect(screen.getByTestId('game-clock')).toHaveTextContent(/champion select/i);
@@ -66,11 +85,13 @@ describe('LiveGameView', () => {
     const { rerender } = renderView(<LiveGameView lobby={lobby()} />);
     expect(screen.queryByTestId('rank-spread')).toBeNull();
     rerender(
-      <StaticDataContext.Provider
-        value={createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }))}
-      >
-        <LiveGameView lobby={lobby({ insights: { offChampion: [], oneTricks: [], rankSpread: { highest: 'DIAMOND', lowest: 'SILVER' } } })} />
-      </StaticDataContext.Provider>,
+      <MemoryRouter>
+        <StaticDataContext.Provider
+          value={createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }))}
+        >
+          <LiveGameView lobby={lobby({ insights: { offChampion: [], oneTricks: [], rankSpread: { highest: 'DIAMOND', lowest: 'SILVER' } } })} />
+        </StaticDataContext.Provider>
+      </MemoryRouter>,
     );
     expect(screen.getByTestId('rank-spread')).toHaveTextContent('Silver – Diamond');
   });

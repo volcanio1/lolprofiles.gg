@@ -6,6 +6,7 @@
  */
 
 import type { PremadeEntry } from '../api/types';
+import { PlayerLink } from './PlayerLink';
 
 export interface PremadesPanelProps {
   premades: readonly PremadeEntry[];
@@ -35,8 +36,10 @@ export function PremadesPanel({ premades }: PremadesPanelProps) {
         {premades.map((entry) => (
           <tr key={`${entry.gameName}#${entry.tagLine}`} data-testid={`premade-${entry.gameName}`}>
             <th scope="row" className="premade-name">
-              {entry.gameName}
-              <span className="premade-tag">#{entry.tagLine}</span>
+              <PlayerLink gameName={entry.gameName} tagLine={entry.tagLine}>
+                {entry.gameName}
+                <span className="premade-tag">#{entry.tagLine}</span>
+              </PlayerLink>
             </th>
             <td>{entry.gamesPlayed}</td>
             <td className="premade-wr">{entry.winRatePercent}%</td>

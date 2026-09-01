@@ -15,6 +15,7 @@ import type { LiveParticipantCard, LobbyInsights } from '../api/types';
 import { useStaticData } from '../staticData';
 import { formatMasteryPoints, formatRank, rankedEntryForGame } from '../domain/liveGame';
 import { CdnImage } from './CdnImage';
+import { PlayerLink } from './PlayerLink';
 import { RankIcon } from './RankIcon';
 import { RuneIcon } from './RuneIcon';
 import { SummonerSpellIcon } from './SummonerSpellIcon';
@@ -69,7 +70,13 @@ export function ParticipantCard({ card, gameQueueId, insights }: ParticipantCard
 
       <div className="live-card-identity">
         <span className="live-card-name" title={name}>
-          {name}
+          {!card.isBot && card.riotId !== null ? (
+            <PlayerLink gameName={card.riotId.gameName} tagLine={card.riotId.tagLine}>
+              {name}
+            </PlayerLink>
+          ) : (
+            name
+          )}
         </span>
         <span className="live-card-rank">
           {rankedEntry !== undefined ? (

@@ -129,6 +129,28 @@ figure {
   color: var(--gold);
 }
 
+/* Player tags linking to a profile — inherits the surrounding text's size and
+   color everywhere it's used (scoreboard, match row, live game, premades,
+   Clash roster), with an underline + gold shift on hover as the only tell
+   that it's clickable. */
+.player-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.player-link:hover,
+.player-link:focus-visible {
+  color: var(--gold);
+  text-decoration: underline;
+}
+
+.sb-name-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 /* The gold tick: rendered as a ::before dash on section labels. */
 .page-title {
   font-family: var(--font-display);

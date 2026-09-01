@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render as rtlRender, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { MatchParticipant, RecentMatchSummary } from '../api/types';
 import { DetailPanel } from './DetailPanel';
 
 const RID = { gameName: 'Tester', tagLine: 'NA1' };
+
+/** `GeneralTab`'s scoreboard now links each player's tag to their profile, which needs a Router context. */
+function render(ui: ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 /**
  * `match-detail-tabs` task 6.5 — Requirements 2.3, 2.4, 2.6, 2.7, 3.1, 3.7, 3.8,

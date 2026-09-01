@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { ChampionSummary, PremadeEntry, RolePerformanceEntry } from '../api/types';
 import { ChampionPreferences } from './ChampionPreferences';
@@ -62,12 +63,20 @@ const premade = (gameName: string, over: Partial<PremadeEntry> = {}): PremadeEnt
 
 describe('PremadesPanel', () => {
   it('renders one row per recurring teammate with games and win rate', () => {
-    render(<PremadesPanel premades={[premade('DuoBuddy'), premade('Trio', { gamesPlayed: 2, winRatePercent: 100 })]} />);
+    render(
+      <MemoryRouter>
+        <PremadesPanel premades={[premade('DuoBuddy'), premade('Trio', { gamesPlayed: 2, winRatePercent: 100 })]} />
+      </MemoryRouter>,
+    );
     expect(screen.getByTestId('premade-DuoBuddy')).toHaveTextContent('DuoBuddy');
     expect(screen.getByTestId('premade-DuoBuddy')).toHaveTextContent('#EUW');
     expect(screen.getByTestId('premade-DuoBuddy')).toHaveTextContent('5');
     expect(screen.getByTestId('premade-DuoBuddy')).toHaveTextContent('60%');
     expect(screen.getByTestId('premade-Trio')).toHaveTextContent('100%');
+    expect(screen.getByTestId('premade-DuoBuddy').querySelector('[data-testid="player-link"]')).toHaveAttribute(
+      'href',
+      '/profile?riotId=DuoBuddy%23EUW',
+    );
   });
 
   it('shows the empty note when there are no recurring teammates', () => {

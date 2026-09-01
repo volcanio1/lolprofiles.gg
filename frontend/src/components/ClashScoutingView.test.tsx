@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import type { ClashRosterCard, ClashScoutingReport } from '../api/types';
@@ -15,7 +16,11 @@ const CHAMPION_JSON = {
 
 function renderView(ui: ReactElement) {
   const provider = createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }));
-  return render(<StaticDataContext.Provider value={provider}>{ui}</StaticDataContext.Provider>);
+  return render(
+    <MemoryRouter>
+      <StaticDataContext.Provider value={provider}>{ui}</StaticDataContext.Provider>
+    </MemoryRouter>,
+  );
 }
 
 function rosterCard(over: Partial<ClashRosterCard> = {}): ClashRosterCard {
@@ -52,6 +57,11 @@ describe('ClashScoutingView', () => {
     expect(screen.getAllByTestId('roster-card')).toHaveLength(2);
   });
 
+  it("links each roster member's tag to their own profile", () => {
+    renderView(<ClashScoutingView report={report({ roster: [rosterCard({ puuid: 'a', riotId: { gameName: 'Scoutee', tagLine: 'NA1' } })] })} />);
+    expect(screen.getByTestId('player-link')).toHaveAttribute('href', '/profile?riotId=Scoutee%23NA1');
+  });
+
   it('shows the captain badge only on the captain', () => {
     renderView(
       <ClashScoutingView
@@ -67,13 +77,15 @@ describe('ClashScoutingView', () => {
     const { rerender } = renderView(<ClashScoutingView report={report({ tournament: null })} />);
     expect(screen.queryByTestId('clash-tournament')).toBeNull();
     rerender(
-      <StaticDataContext.Provider
-        value={createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }))}
-      >
-        <ClashScoutingView
-          report={report({ tournament: { id: 1, nameKey: 'clash_theme', nameKeySecondary: 'clash_theme_secondary' } })}
-        />
-      </StaticDataContext.Provider>,
+      <MemoryRouter>
+        <StaticDataContext.Provider
+          value={createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }))}
+        >
+          <ClashScoutingView
+            report={report({ tournament: { id: 1, nameKey: 'clash_theme', nameKeySecondary: 'clash_theme_secondary' } })}
+          />
+        </StaticDataContext.Provider>
+      </MemoryRouter>,
     );
     expect(screen.getByTestId('clash-tournament')).toHaveTextContent('clash_theme');
   });

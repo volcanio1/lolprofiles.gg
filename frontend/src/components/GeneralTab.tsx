@@ -22,6 +22,7 @@ import { computeMatchRating } from '../domain/matchRating';
 import { groupParticipantsByTeam, participantKey } from '../domain/participantOrder';
 import { ChampionIcon } from './ChampionIcon';
 import { ItemBuildRow } from './ItemBuildRow';
+import { PlayerLink } from './PlayerLink';
 import { RuneIcon } from './RuneIcon';
 import { RuneTreeIcon } from './RuneTreeIcon';
 import { SummonerSpellIcon } from './SummonerSpellIcon';
@@ -81,8 +82,10 @@ function ScoreboardRow({
         title={`${participant.riotIdGameName}#${participant.riotIdTagline}`}
       >
         <span className="sb-name-line">
-          <span className="sb-name">{participant.riotIdGameName}</span>
-          <span className="sb-tag">#{participant.riotIdTagline}</span>
+          <PlayerLink gameName={participant.riotIdGameName} tagLine={participant.riotIdTagline} className="sb-name-link">
+            <span className="sb-name">{participant.riotIdGameName}</span>
+            <span className="sb-tag">#{participant.riotIdTagline}</span>
+          </PlayerLink>
           {participant.isAnalyzedPlayer ? <span className="you-badge">You</span> : null}
         </span>
       </th>

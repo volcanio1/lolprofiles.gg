@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
 import type { MatchParticipant } from '../api/types';
@@ -64,13 +65,13 @@ describe('formatCompactNumber', () => {
 
 describe('GeneralTab', () => {
   it('renders ten player rows split into two team tables', () => {
-    render(<GeneralTab participants={tenParticipants()} durationSeconds={1800} />);
+    render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
     const rows = screen.getAllByRole('row').filter((row) => row.querySelector('th[scope="row"]'));
     expect(rows).toHaveLength(10);
   });
 
   it('shows the full name and tag, and the level with its label', () => {
-    render(<GeneralTab participants={tenParticipants()} durationSeconds={1800} />);
+    render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
     const analyzed = screen.getByTestId(/scoreboard-row-100-Blue2/);
     expect(within(analyzed).getByText('Blue2')).toBeInTheDocument();
     expect(within(analyzed).getByText('#T2')).toBeInTheDocument();
@@ -78,8 +79,16 @@ describe('GeneralTab', () => {
     expect(within(analyzed).getByText('You')).toBeInTheDocument();
   });
 
+  it("links every player's tag to their own profile", () => {
+    render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
+    const links = screen.getAllByTestId('player-link');
+    expect(links).toHaveLength(10);
+    expect(within(links[0]).getByText('Blue0')).toBeInTheDocument();
+    expect(links[0]).toHaveAttribute('href', '/profile?riotId=Blue0%23T0');
+  });
+
   it('gives every body row the same column count as the header', () => {
-    render(<GeneralTab participants={tenParticipants()} durationSeconds={1800} />);
+    render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
     const table = screen.getAllByRole('table')[0];
     const headerCells = within(table).getAllByRole('columnheader');
     const firstBodyRow = within(table).getAllByRole('row').find((r) => r.querySelector('th[scope="row"]'))!;
@@ -89,7 +98,7 @@ describe('GeneralTab', () => {
   });
 
   it('does not label the spells/runes column', () => {
-    render(<GeneralTab participants={tenParticipants()} durationSeconds={1800} />);
+    render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
     expect(screen.queryByRole('columnheader', { name: 'Setup' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('columnheader', { name: /spells and runes/i }).length).toBeGreaterThan(0);
   });
@@ -100,7 +109,7 @@ describe('GeneralTab', () => {
     players[0] = participant({ ...players[0], kills: 15, deaths: 1, assists: 10, cs: 300, visionScore: 30, damageToChampions: 45000, goldEarned: 20000, killParticipationPercent: 75, turretKills: 4, dragonKills: 2, win: true });
     players[5] = participant({ ...players[5], kills: 0, deaths: 13, assists: 0, cs: 60, visionScore: 5, damageToChampions: 3000, goldEarned: 5000, killParticipationPercent: 10, win: false });
 
-    const { container } = render(<GeneralTab participants={players} durationSeconds={1800} />);
+    const { container } = render(<MemoryRouter><GeneralTab participants={players} durationSeconds={1800} /></MemoryRouter>);
 
     const great = container.querySelector('.sb-rating--great');
     const bad = container.querySelector('.sb-rating--bad');
@@ -110,7 +119,7 @@ describe('GeneralTab', () => {
   });
 
   it('scales each damage bar to the match-wide top damage', () => {
-    const { container } = render(<GeneralTab participants={tenParticipants()} durationSeconds={1800} />);
+    const { container } = render(<MemoryRouter><GeneralTab participants={tenParticipants()} durationSeconds={1800} /></MemoryRouter>);
     const fills = [...container.querySelectorAll('.sb-damage-bar-fill')] as HTMLElement[];
     // Red4 has the highest damage (5*5000=25000) -> 100%
     expect(fills.some((f) => f.style.width === '100%')).toBe(true);

@@ -15,6 +15,7 @@ import { declaredPositionLabel, observedRoleLabel } from '../domain/clashScoutin
 import { formatMasteryPoints } from '../domain/liveGame';
 import { useStaticData } from '../staticData';
 import { ChampionIcon } from './ChampionIcon';
+import { PlayerLink } from './PlayerLink';
 import { RankIcon } from './RankIcon';
 
 export interface RosterMemberCardProps {
@@ -30,7 +31,13 @@ export function RosterMemberCard({ card, isMismatched }: RosterMemberCardProps) 
     <div className="roster-card" data-testid="roster-card" data-puuid={card.puuid}>
       <div className="roster-card-identity">
         <span className="roster-card-name">
-          {name}
+          {card.riotId !== null ? (
+            <PlayerLink gameName={card.riotId.gameName} tagLine={card.riotId.tagLine}>
+              {name}
+            </PlayerLink>
+          ) : (
+            name
+          )}
           {card.isCaptain ? (
             <span className="roster-card-captain" data-testid="captain-badge">
               C

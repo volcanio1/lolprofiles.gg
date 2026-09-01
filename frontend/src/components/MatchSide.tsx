@@ -51,6 +51,7 @@ import type { ItemBuild, RunePage } from '../api/types';
 import type { MatchRating } from '../domain/matchRating';
 import { ChampionIcon } from './ChampionIcon';
 import { ItemBuildRow } from './ItemBuildRow';
+import { PlayerLink } from './PlayerLink';
 import { RuneIcon } from './RuneIcon';
 import { RuneTreeIcon } from './RuneTreeIcon';
 import { SummonerSpellIcon } from './SummonerSpellIcon';
@@ -142,8 +143,17 @@ export function MatchSide({
       <div className="match-side-figures">
         {riotIdGameName.length > 0 ? (
           <p className="match-side-name">
-            {riotIdGameName}
-            <span className="match-side-tagline">#{riotIdTagline}</span>
+            {side === 'opponent' ? (
+              <PlayerLink gameName={riotIdGameName} tagLine={riotIdTagline}>
+                {riotIdGameName}
+                <span className="match-side-tagline">#{riotIdTagline}</span>
+              </PlayerLink>
+            ) : (
+              <>
+                {riotIdGameName}
+                <span className="match-side-tagline">#{riotIdTagline}</span>
+              </>
+            )}
           </p>
         ) : null}
         {/* Abbreviated terms: this grid sits between the portrait and the build

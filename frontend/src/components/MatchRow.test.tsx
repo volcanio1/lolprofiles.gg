@@ -1,9 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render as rtlRender, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { MatchParticipant, RecentMatchSummary } from '../api/types';
 import { formatMatchDuration, matchQueueTypeLabel, MatchRow } from './MatchRow';
 
 const RID = { gameName: 'Tester', tagLine: 'NA1' };
+
+/** `MatchRow`'s opponent name now links to their profile, which needs a Router context. */
+function render(ui: ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 /**
  * `match-detail-tabs` task 5.2 — Requirements 1.2, 1.3, 1.6, 1.7.
@@ -194,6 +201,12 @@ describe('MatchRow — mirrored sides read spells and runes from the marked part
     expect(screen.getByTestId('match-side-player')).toHaveTextContent('#Smile');
     expect(screen.getByTestId('match-side-opponent')).toHaveTextContent('RivalName');
     expect(screen.getByTestId('match-side-opponent')).toHaveTextContent('#EUW');
+
+    // The opponent's tag links to their profile; the analyzed player's own tag
+    // (already the page being viewed) does not.
+    expect(within(screen.getByTestId('match-side-player')).queryByTestId('player-link')).toBeNull();
+    const opponentLink = within(screen.getByTestId('match-side-opponent')).getByTestId('player-link');
+    expect(opponentLink).toHaveAttribute('href', '/profile?riotId=RivalName%23EUW');
   });
 
   it('shows an LP Score for both laners, computed from their own participant records', () => {
