@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { SupportBanner } from '../components/SupportBanner';
 import {
   advertisingPermitted,
   approvedAdvertisingAgreement,
@@ -72,8 +73,16 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
         </aside>
       ) : null}
 
-      {/* Requirement 12.1 */}
       <footer className="site-foot">
+        {/*
+          First-party donation link, not an advertisement: Requirement 12.2 bans
+          third-party ads, sponsored content and paid promotion, none of which a
+          request for hosting money from our own visitors is. It stays outside the
+          `advertisingPolicy` gate above so that gate keeps a single meaning.
+        */}
+        <SupportBanner />
+
+        {/* Requirement 12.1 */}
         <p data-testid="riot-attribution" className="attribution">
           {RIOT_ATTRIBUTION_TEXT}
         </p>

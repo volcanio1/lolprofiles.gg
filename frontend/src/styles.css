@@ -1613,6 +1613,77 @@ figure {
   max-width: 62ch;
 }
 
+/*
+ * Support banner — first-party donation strip, sitting in the footer above the
+ * attribution. Deliberately quiet: one hairline box, the gold tick on the label
+ * and a ghost button, so it reads as part of the footer rather than as a pitch.
+ * It is NOT the ad slot below; see SupportBanner.tsx.
+ */
+.support-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.8rem 1.1rem;
+  margin-bottom: 1.1rem;
+}
+
+.support-banner-text {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem 0.9rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* The gold tick, same dash that opens every section label. */
+.support-banner-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  flex: none;
+}
+
+.support-banner-title::before {
+  content: '';
+  width: 1.4rem;
+  height: 3px;
+  background: var(--gold);
+  flex: none;
+}
+
+.support-banner-copy {
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+
+/* `.btn-ghost`'s hover rule is `:hover:enabled`, which never matches an anchor,
+   so the link restates it. Slightly tighter than a form button: this sits in
+   the footer and should not out-weigh the content above it. */
+.support-banner-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 1.1rem;
+  text-decoration: none;
+  flex: none;
+}
+
+.support-banner-link:hover,
+.support-banner-link:focus-visible {
+  border-color: var(--gold);
+  background: rgba(232, 181, 74, 0.08);
+}
+
 .ad-slot {
   border: 1px dashed var(--line);
   border-radius: var(--radius);

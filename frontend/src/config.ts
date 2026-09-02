@@ -39,3 +39,46 @@ function readApiBaseUrl(rawValue: string | undefined): string {
 }
 
 export const apiBaseUrl: string = readApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+
+/**
+ * ---------------------------------------------------------------------------
+ * DONATION LINK
+ * ---------------------------------------------------------------------------
+ *
+ * Target of the "Support us" banner in the site footer (`SupportBanner`). This
+ * is a first-party donation link, NOT advertising: Requirement 12.2 prohibits
+ * third-party advertisements, sponsored content and paid promotion alongside
+ * Riot data, and asking our own visitors to chip in for hosting is none of
+ * those. The ad slot remains gated behind `advertisingPolicy`.
+ *
+ * Overridable with `VITE_DONATE_URL` so the destination can change (or move to
+ * a different platform) without a code change. Setting it to an empty string
+ * removes the banner entirely — `SupportBanner` renders nothing without a URL.
+ *
+ * Only `http(s)` URLs are accepted. An environment variable is build-time
+ * input, but it is still input, and a `javascript:` href in a link we render
+ * ourselves is not a hole worth leaving open for the sake of two fewer lines.
+ */
+
+const DEFAULT_DONATE_URL = 'https://ko-fi.com/lolprofiles';
+
+function readDonateUrl(rawValue: string | undefined): string {
+  const candidate = typeof rawValue === 'string' ? rawValue.trim() : undefined;
+
+  // Unset falls back to the default; explicitly blank turns the banner off.
+  if (candidate === undefined) {
+    return DEFAULT_DONATE_URL;
+  }
+  if (candidate.length === 0) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? candidate : '';
+  } catch {
+    return '';
+  }
+}
+
+export const donateUrl: string = readDonateUrl(import.meta.env.VITE_DONATE_URL);
