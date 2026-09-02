@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   createInMemoryRankHistoryStore,
   createNoopRankHistoryStore,
-  snapshotDayOf,
+  shouldRecordSnapshot,
+  MIN_GAMES_BETWEEN_SNAPSHOTS,
   type RankSnapshot,
 } from './rankHistoryStore';
 
@@ -17,46 +18,84 @@ function snap(overrides: Partial<RankSnapshot> = {}): RankSnapshot {
     tier: 'GOLD',
     division: 'II',
     leaguePoints: 47,
+    gamesPlayed: 100,
     observedAt: BASE,
     ...overrides,
   };
 }
 
-describe('snapshotDayOf', () => {
-  it('is the UTC calendar date, regardless of time of day', () => {
-    expect(snapshotDayOf(Date.UTC(2026, 7, 28, 0, 0, 0))).toBe('2026-08-28');
-    expect(snapshotDayOf(Date.UTC(2026, 7, 28, 23, 59, 59))).toBe('2026-08-28');
+describe('shouldRecordSnapshot — Requirement 2.2', () => {
+  it('records when there is no prior snapshot', () => {
+    expect(shouldRecordSnapshot(undefined, snap())).toBe(true);
   });
 
-  it('rolls at UTC midnight, not local midnight', () => {
-    expect(snapshotDayOf(Date.UTC(2026, 7, 28, 23, 59, 59, 999))).toBe('2026-08-28');
-    expect(snapshotDayOf(Date.UTC(2026, 7, 29, 0, 0, 0, 0))).toBe('2026-08-29');
+  it('skips when fewer than MIN_GAMES_BETWEEN_SNAPSHOTS games have been played since', () => {
+    const previous = snap({ gamesPlayed: 100 });
+    for (let delta = 0; delta < MIN_GAMES_BETWEEN_SNAPSHOTS; delta += 1) {
+      expect(shouldRecordSnapshot(previous, snap({ gamesPlayed: 100 + delta, leaguePoints: 60 }))).toBe(false);
+    }
+  });
+
+  it('records once exactly MIN_GAMES_BETWEEN_SNAPSHOTS games have been played since', () => {
+    const previous = snap({ gamesPlayed: 100 });
+    expect(
+      shouldRecordSnapshot(previous, snap({ gamesPlayed: 100 + MIN_GAMES_BETWEEN_SNAPSHOTS })),
+    ).toBe(true);
+  });
+
+  it('records on a tier change even within MIN_GAMES_BETWEEN_SNAPSHOTS games', () => {
+    const previous = snap({ tier: 'GOLD', division: 'I', gamesPlayed: 100 });
+    expect(shouldRecordSnapshot(previous, snap({ tier: 'PLATINUM', division: 'IV', gamesPlayed: 101 }))).toBe(true);
+  });
+
+  it('records on a division change even within MIN_GAMES_BETWEEN_SNAPSHOTS games', () => {
+    const previous = snap({ tier: 'GOLD', division: 'III', gamesPlayed: 100 });
+    expect(shouldRecordSnapshot(previous, snap({ tier: 'GOLD', division: 'II', gamesPlayed: 101 }))).toBe(true);
+  });
+
+  it('records when the game count went backwards (a season / MMR reset)', () => {
+    const previous = snap({ gamesPlayed: 300 });
+    expect(shouldRecordSnapshot(previous, snap({ gamesPlayed: 2, tier: 'SILVER', division: 'IV' }))).toBe(true);
+    // Even with the tier unchanged, a lower count means the old baseline is stale.
+    expect(shouldRecordSnapshot(snap({ gamesPlayed: 300 }), snap({ gamesPlayed: 1 }))).toBe(true);
   });
 });
 
 describe('InMemoryRankHistoryStore.record — Requirement 2.2', () => {
-  it('keeps the first observation of a UTC day and ignores a later same-day one', async () => {
+  it('keeps the first snapshot and ignores a later one under 3 games newer', async () => {
     const store = createInMemoryRankHistoryStore();
 
-    await store.record(snap({ leaguePoints: 47, observedAt: BASE }));
-    await store.record(snap({ leaguePoints: 99, tier: 'PLATINUM', observedAt: BASE + 3_600_000 }));
+    await store.record(snap({ leaguePoints: 47, gamesPlayed: 100, observedAt: BASE }));
+    await store.record(snap({ leaguePoints: 99, gamesPlayed: 102, observedAt: BASE + 3_600_000 }));
 
     const history = await store.history('puuid-1', 'RANKED_SOLO_5x5');
     expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({ leaguePoints: 47, tier: 'GOLD', observedAt: BASE });
+    expect(history[0]).toMatchObject({ leaguePoints: 47, observedAt: BASE });
   });
 
-  it('records a second snapshot on the next UTC day', async () => {
+  it('records a second snapshot once 3+ games have been played, same day', async () => {
     const store = createInMemoryRankHistoryStore();
 
-    await store.record(snap({ observedAt: BASE }));
-    await store.record(snap({ observedAt: BASE + DAY_MS, leaguePoints: 62 }));
+    await store.record(snap({ gamesPlayed: 100, observedAt: BASE }));
+    await store.record(snap({ gamesPlayed: 103, leaguePoints: 62, observedAt: BASE + 3_600_000 }));
 
     const history = await store.history('puuid-1', 'RANKED_SOLO_5x5');
     expect(history.map((s) => s.leaguePoints)).toEqual([47, 62]);
   });
 
-  it('deduplicates per queue independently', async () => {
+  it('records a promotion immediately, regardless of games played since', async () => {
+    const store = createInMemoryRankHistoryStore();
+
+    await store.record(snap({ tier: 'GOLD', division: 'I', gamesPlayed: 100, observedAt: BASE }));
+    await store.record(
+      snap({ tier: 'PLATINUM', division: 'IV', leaguePoints: 12, gamesPlayed: 101, observedAt: BASE + 3_600_000 }),
+    );
+
+    const history = await store.history('puuid-1', 'RANKED_SOLO_5x5');
+    expect(history.map((s) => s.tier)).toEqual(['GOLD', 'PLATINUM']);
+  });
+
+  it('tracks each queue independently', async () => {
     const store = createInMemoryRankHistoryStore();
 
     await store.record(snap({ queueType: 'RANKED_SOLO_5x5', observedAt: BASE }));
@@ -66,7 +105,7 @@ describe('InMemoryRankHistoryStore.record — Requirement 2.2', () => {
     expect(await store.history('puuid-1', 'RANKED_FLEX_SR')).toHaveLength(1);
   });
 
-  it('deduplicates per PUUID independently', async () => {
+  it('tracks each PUUID independently', async () => {
     const store = createInMemoryRankHistoryStore();
 
     await store.record(snap({ puuid: 'puuid-1', observedAt: BASE }));
@@ -81,9 +120,9 @@ describe('InMemoryRankHistoryStore.history — Requirement 2.5', () => {
   it('returns snapshots oldest first even when recorded out of order', async () => {
     const store = createInMemoryRankHistoryStore();
 
-    await store.record(snap({ observedAt: BASE + 2 * DAY_MS, leaguePoints: 3 }));
-    await store.record(snap({ observedAt: BASE, leaguePoints: 1 }));
-    await store.record(snap({ observedAt: BASE + DAY_MS, leaguePoints: 2 }));
+    await store.record(snap({ observedAt: BASE + 2 * DAY_MS, leaguePoints: 3, gamesPlayed: 120 }));
+    await store.record(snap({ observedAt: BASE, leaguePoints: 1, gamesPlayed: 100 }));
+    await store.record(snap({ observedAt: BASE + DAY_MS, leaguePoints: 2, gamesPlayed: 110 }));
 
     const history = await store.history('puuid-1', 'RANKED_SOLO_5x5');
     expect(history.map((s) => s.leaguePoints)).toEqual([1, 2, 3]);
@@ -113,8 +152,8 @@ describe('InMemoryRankHistoryStore.deleteByPuuid — Requirement 5.1', () => {
   it('removes every snapshot for the PUUID across days and queues, and returns the count', async () => {
     const store = createInMemoryRankHistoryStore();
 
-    await store.record(snap({ observedAt: BASE }));
-    await store.record(snap({ observedAt: BASE + DAY_MS }));
+    await store.record(snap({ observedAt: BASE, gamesPlayed: 100 }));
+    await store.record(snap({ observedAt: BASE + DAY_MS, gamesPlayed: 110 }));
     await store.record(snap({ queueType: 'RANKED_FLEX_SR', observedAt: BASE }));
     await store.record(snap({ puuid: 'other', observedAt: BASE }));
 

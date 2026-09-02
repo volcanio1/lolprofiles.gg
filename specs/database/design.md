@@ -29,8 +29,8 @@ The `profile-sidebar` design listed three storage options (extend the in-memory 
 
 | Limit | Reality for this workload |
 |---|---|
-| **512 MB storage** | A Rank_Snapshot document is ~130 bytes with the index. Requirement 2.2 caps it at one per player per queue per day. At an implausibly steady 500 distinct ranked players looked up *every* day, that is ~500 × 2 queues × 365 ≈ 365 k documents/year ≈ **~50 MB/year**, before any pruning. Looked_Up_Player documents are one per unique player ever searched — thousands, low single-digit MB. Years of runway. |
-| **~100 ops/sec cluster-wide** | Each lookup issues at most two upserts (Requirement 6.3). Hitting the ceiling needs ~50 lookups/sec sustained — far beyond this site, and the writes are off the request path anyway so a throttled write just fails silently and retries next lookup. |
+| **512 MB storage** | A Rank_Snapshot document is ~130 bytes with the index. Requirement 2.2 keeps one only every ~3 ranked games (or on a rank change) per player per queue — strictly fewer than the old one-per-day cap for anyone playing under ~3 ranked games/day, and at most a handful per day for a heavy grinder. At an implausibly steady 500 distinct active ranked players each generating, say, 3 kept snapshots/day, that is ~500 × 3 × 365 ≈ 550 k documents/year ≈ **~70 MB/year**, before any pruning. Looked_Up_Player documents are one per unique player ever searched — thousands, low single-digit MB. Years of runway. |
+| **~100 ops/sec cluster-wide** | Each lookup issues a handful of small operations (Requirement 6.3): one indexed read + at most one insert for the rank snapshot, one upsert each for the checkpoint and remembered-player hooks. Hitting the ceiling needs tens of lookups/sec sustained — far beyond this site, and the writes are off the request path anyway so a throttled write just fails silently and retries next lookup. |
 | **No automated backups** | Accepted. Rank_History and Looked_Up_Player are both *derived*: a total loss makes the graph younger and the autocomplete forgetful, the same failure mode `profile-sidebar` Requirement 10.4 already tolerates. Nothing here is a system of record. |
 | **Deprovision after 60 days idle** | Not a concern for a deployed, trafficked site. Worth knowing for a long pause. |
 | **IP allow-list** | Render's egress IPs are not static on lower tiers, so the Atlas project allows `0.0.0.0/0` and relies on SCRAM + TLS. Documented in the README setup steps. |
@@ -60,9 +60,10 @@ backend/src/index.ts  (composition root)
        │
        │  on a `kind: 'success'` result with a real (non-fallback) report:
        ▼
-   void this.recordLookupSideEffects(report, observedAt)   NEW — unawaited, self-contained
+   void this.recordLookupSideEffects(report, soloGamesPlayed)   NEW — unawaited, self-contained
        ├─ if report.stats.rankedByQueue['RANKED_SOLO_5x5']:
-       │     rankHistoryStore.record({ puuid, queueType, tier, division, leaguePoints, observedAt })
+       │     rankHistoryStore.record({ puuid, queueType, tier, division, leaguePoints, gamesPlayed, observedAt })
+       │       └─ kept only if no prior snapshot, rank changed, count fell, or ≥3 games since (shouldRecordSnapshot)
        └─ lookedUpPlayerStore.remember({ puuid, gameName, tagLine, profileIconId, region, lastLookedUpAt: observedAt })
 
 backend/src/app.ts  (privacy route)
@@ -90,15 +91,18 @@ export interface RankSnapshot {
   tier: string;               // e.g. 'GOLD'
   division: string;           // e.g. 'II' ('' for apex tiers, matching LeagueEntry)
   leaguePoints: number;
+  gamesPlayed: number;        // League-V4 wins + losses for this queue at observation time
   observedAt: number;         // epoch ms, from the injected clock
 }
 
 export interface RankHistoryStore {
   /**
-   * Requirement 2.1-2.4. Records a snapshot unless one already exists for this
-   * (puuid, queueType) on the same UTC day. Never throws for a duplicate — a
-   * duplicate is the expected outcome of a second same-day lookup. Resolves
-   * whether or not a row was written.
+   * Requirement 2.1-2.4. Keeps `snapshot` only when `shouldRecordSnapshot`
+   * agrees with the latest kept snapshot for this (puuid, queueType): no prior
+   * one, a tier/division change, a lower `gamesPlayed` (reset), or a
+   * `gamesPlayed` delta ≥ MIN_GAMES_BETWEEN_SNAPSHOTS. Otherwise a no-op — a
+   * lookup landing between data points is the expected case. Never throws for
+   * the skipped case; resolves whether or not a row was written.
    */
   record(snapshot: RankSnapshot): Promise<void>;
 
@@ -154,20 +158,21 @@ Database name: `lolprofiles`. Two collections.
   "_id": ObjectId,
   "puuid": "…",
   "queueType": "RANKED_SOLO_5x5",
-  "snapshotDay": "2026-08-28",   // UTC YYYY-MM-DD of observedAt — the dedup key
   "tier": "GOLD",
   "division": "II",
   "leaguePoints": 47,
+  "gamesPlayed": 118,            // League-V4 wins + losses at observation time; diffed by shouldRecordSnapshot
   "observedAt": ISODate          // stored as a BSON date; mapped to/from epoch ms at the boundary
 }
 ```
 
 Indexes (created by `ensureIndexes()`):
 
-- `{ puuid: 1, queueType: 1, snapshotDay: 1 }`, **unique** — Requirement 6.2. The write is `updateOne(filter, { $setOnInsert: {...} }, { upsert: true })` on this exact key, so the database rejects the second same-day write with no read-then-write race and no error surfaced to the caller (`$setOnInsert` on a matched document is a no-op).
-- `{ puuid: 1, queueType: 1, observedAt: 1 }` — serves the `history()` read in sorted order and the `deleteByPuuid` sweep.
+- `{ puuid: 1, queueType: 1, observedAt: 1 }` — serves the `history()` read in sorted order, the `record()` "latest kept snapshot" read (index walked backwards), and the `deleteByPuuid` sweep.
 
-`snapshotDay` is a redundant projection of `observedAt`, stored explicitly because a unique index cannot be expressed over "the date part of a timestamp." It is computed once at the boundary: `new Date(observedAt).toISOString().slice(0, 10)`.
+There is **no unique index** (Requirement 6.2). The keep/skip rule (`shouldRecordSnapshot`) is a `gamesPlayed` delta against the latest kept snapshot plus a tier/division check — nothing a unique index can express — so `MongoRankHistoryStore.record` does a `findOne(..., { sort: { observedAt: -1 } })` then, if the rule agrees, an `insertOne`. The old `uniq_puuid_queue_day` index is dropped in `ensureIndexes` (best-effort; absent on a fresh database). Two genuinely concurrent fresh lookups of the same player can each insert a point; that is rare (a cached lookup records nothing) and harmless — the graph just gains one near-duplicate vertex.
+
+`gamesPlayed` is absent on documents written before this change; it reads back as `0`, which only ever makes the next lookup record a fresh baseline point.
 
 ### `looked_up_players`
 
@@ -198,7 +203,7 @@ const report = this.assembleReport({ … });
 this.recordLookupSideEffects(report);   // NOT awaited — Requirement 4.1
 return { kind: 'success', report };
 
-private recordLookupSideEffects(report: ProfileReport): void {
+private recordLookupSideEffects(report: ProfileReport, soloGamesPlayed: number): void {
   const observedAt = this.now();
   const solo = report.stats.rankedByQueue['RANKED_SOLO_5x5'];   // Requirement 2.1
 
@@ -210,6 +215,7 @@ private recordLookupSideEffects(report: ProfileReport): void {
           tier: solo.tier,
           division: solo.division,
           leaguePoints: solo.leaguePoints,
+          gamesPlayed: soloGamesPlayed,   // League-V4 wins + losses, read from the league entries
           observedAt,
         })
       : Promise.resolve(),
@@ -271,8 +277,8 @@ The `.catch(() => 0)` keeps a Persistent_Store outage from failing a request who
 
 ## Testing
 
-- **`InMemoryRankHistoryStore` / `InMemoryLookedUpPlayerStore`** — `Map`-backed, injected clock, model the same dedup and upsert semantics as the Mongo versions. Unit tests use these.
-- **Dedup (2.2):** two `record` calls same-day ⇒ one entry, first value retained; next UTC day ⇒ two entries.
+- **`InMemoryRankHistoryStore` / `InMemoryLookedUpPlayerStore`** — `Map`-backed, injected clock, model the same keep/skip and upsert semantics as the Mongo versions. Unit tests use these.
+- **Keep/skip (2.2):** `shouldRecordSnapshot` table (no prior ⇒ keep; <3 games newer ⇒ skip; ≥3 games newer ⇒ keep; tier/division change ⇒ keep regardless; lower `gamesPlayed` ⇒ keep); and the same through `InMemoryRankHistoryStore.record`.
 - **Unranked no-op (2.4):** a report with no `RANKED_SOLO_5x5` standing ⇒ `record` never called (asserted on a spy store).
 - **Upsert-not-fork (3.3):** two `remember` calls for one puuid with different names ⇒ one record, latest name.
 - **Ordering (2.5, 3.5):** `history` ascending by `observedAt`; `searchByNamePrefix` descending by `lastLookedUpAt`, prefix-anchored, case-insensitive, respects `limit`.

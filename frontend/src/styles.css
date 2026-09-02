@@ -27,6 +27,9 @@
   --dim: #9c9184;
   --loss: #6b655e;
   --error: #e06a4e;
+  /* LP loss only — a deliberate exception to the gold/grey palette rule
+     (user request, 2026-09-02); shares the palette's single red. */
+  --lp-loss: #e06a4e;
 
   --font-display: 'Chakra Petch', 'Arial Narrow', sans-serif;
   --font-body: 'IBM Plex Sans', 'Segoe UI', sans-serif;
@@ -1247,13 +1250,13 @@ figure {
   font-weight: 600;
 }
 
-/* gold=win, never green/red (this project's palette rule) */
+/* gold=win per the palette rule; LP loss is the one sanctioned red (user request) */
 .match-lp-delta--gain {
   color: var(--gold);
 }
 
 .match-lp-delta--loss {
-  color: var(--loss);
+  color: var(--lp-loss);
 }
 
 .match-date {

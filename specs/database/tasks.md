@@ -104,3 +104,13 @@ Redis is out of scope by decision — not mentioned again in this plan.
 - [ ] * 9.1 Property test for `RankHistoryStore` dedup: any interleaving of `record` calls across a set of days yields exactly one entry per distinct `(puuid, queueType, day)`, and `history` is always sorted
 - [ ] * 9.2 Property test for `searchByNamePrefix`: for random player sets and prefixes, every returned row's `gameNameLower` starts with the prefix, results are `lastLookedUpAt`-descending, and length ≤ `limit`
 - [ ] * 9.3 Implement the pruning sweep (retain most-recent 60 per `(puuid, queueType)`) as a capped delete after insert in `MongoRankHistoryStore.record`
+
+## Addendum (2026-09-02): games-based snapshot cadence (Requirement 2.2 revision)
+
+- [x] 10. Replace the one-per-UTC-day dedup with a games-since-last rule
+  - [x] 10.1 `RankSnapshot` gains `gamesPlayed` (League-V4 `wins + losses`). New exported `MIN_GAMES_BETWEEN_SNAPSHOTS = 3` and pure `shouldRecordSnapshot(previous, next)` (records when: no prior, tier/division change, lower count, or ≥3-game delta). `snapshotDayOf` / `dedupKey` removed.
+  - [x] 10.2 `InMemoryRankHistoryStore` now keeps a per-`(puuid, queueType)` append-only list and consults the last entry via `shouldRecordSnapshot`. `MongoRankHistoryStore.record` is a `findOne(sort observedAt:-1)` + conditional `insertOne` — no unique index. `ensureIndexes` drops `uniq_puuid_queue_day` (best-effort) and keeps only `puuid_queue_observedAt`.
+  - [x] 10.3 Orchestrator: `recordLookupSideEffects(report, soloGamesPlayed)` — count read from the league entries (`toLeagueEntries`), passed into the snapshot.
+  - [x] 10.4 Frontend: `RankSnapshot` type + graph axis label ("recorded over time"), empty-state copy, aria-label updated. `specs/profile-sidebar/` Requirement 10.2/10.5 revised.
+  - [x] 10.5 Tests: `shouldRecordSnapshot` table + `InMemoryRankHistoryStore` keep/skip cases; `mongo.integration.test.ts` rewritten to games-based; orchestrator snapshot-shape assertion gains `gamesPlayed`. Full backend (811 pass) + frontend (551 pass) suites green, tsc + eslint clean both sides.
+    - _Requirements: 2.2 (revised), 2.3, 6.1, 6.2, 6.3_

@@ -9,6 +9,7 @@ const snap = (tier: string, division: string, leaguePoints: number, observedAt: 
   tier,
   division,
   leaguePoints,
+  gamesPlayed: observedAt,
   observedAt,
 });
 
@@ -33,10 +34,10 @@ describe('RankHistoryGraph', () => {
     expect((polyline?.getAttribute('points') ?? '').trim().split(/\s+/)).toHaveLength(3);
   });
 
-  it('labels the axis "lookups over time", never "games played" (Requirement 10.5)', () => {
+  it('labels the axis neutrally ("recorded over time"), never "games played" (Requirement 10.5)', () => {
     render(<RankHistoryGraph history={[snap('GOLD', 'IV', 10, 1), snap('GOLD', 'II', 50, 2)]} />);
     const graph = screen.getByTestId('rank-history-graph');
-    expect(graph).toHaveTextContent('lookups over time');
+    expect(graph).toHaveTextContent('recorded over time');
     expect(graph).not.toHaveTextContent(/games played/i);
   });
 

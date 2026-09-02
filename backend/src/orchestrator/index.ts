@@ -856,7 +856,15 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
     // specs/database/ Requirement 4.1: unawaited. Only the fresh success path
     // records — never the Requirement 11.3 stale-cache fallback, which returns
     // `kind: 'success'` from `runLookup`, not from here.
-    this.recordLookupSideEffects(report);
+    //
+    // Requirement 2.2 + recent-matches-lp-delta: the rank snapshot's keep/skip
+    // decision and the checkpoints' bracket-completeness math both need
+    // League-V4's per-queue `wins`/`losses`, which `RankedQueueSummary` does not
+    // carry — so they are read straight from the league entries here.
+    const leagueRecordByQueue = new Map(
+      toLeagueEntries(league.value).map((e) => [e.queueType, { wins: e.wins, losses: e.losses }] as const),
+    );
+    this.recordLookupSideEffects(report, leagueRecordByQueue);
 
     return { kind: 'success', report };
   }
@@ -868,10 +876,21 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
    * side effects of a successful lookup. Never awaited on the request path
    * (4.1); a store rejection is logged and swallowed, never propagated (4.2);
    * issues no Riot call (4.5).
+   *
+   * `leagueRecordByQueue` maps each ranked queue type to the requester's
+   * League-V4 `wins`/`losses`: the snapshot's "only every few games" rule
+   * (Requirement 2.2) reads the solo entry, and each checkpoint stores its own
+   * queue's pair so `insight/lpDelta.ts` can later tell a complete bracket from
+   * one with missing games.
    */
-  private recordLookupSideEffects(report: ProfileReport): void {
+  private recordLookupSideEffects(
+    report: ProfileReport,
+    leagueRecordByQueue: ReadonlyMap<string, { wins: number; losses: number }>,
+  ): void {
     const observedAt = this.now();
     const solo = report.stats.rankedByQueue[SOLO_QUEUE_TYPE]; // Requirement 2.1
+    const soloRecord = leagueRecordByQueue.get(SOLO_QUEUE_TYPE);
+    const soloGamesPlayed = soloRecord === undefined ? 0 : soloRecord.wins + soloRecord.losses;
 
     // Requirement 4.2: a store method that throws *synchronously* (rather than
     // returning a rejected promise) must be caught too, or it escapes on the
@@ -884,24 +903,26 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
       }
     };
 
-    // recent-matches-lp-delta: unlike `rankHistoryStore` (solo/duo only, once
-    // per UTC day), a checkpoint is written for EVERY ranked queue the player
-    // has a real entry in, on EVERY fresh lookup — see
-    // `db/rankCheckpointStore.ts`'s header for why.
+    // recent-matches-lp-delta: unlike `rankHistoryStore` (solo/duo only, and only
+    // once the player has moved on a few games), a checkpoint is written for
+    // EVERY ranked queue the player has a real entry in, on EVERY fresh lookup —
+    // see `db/rankCheckpointStore.ts`'s header for why.
     const checkpointWrites = Object.entries(report.stats.rankedByQueue)
       .filter((entry): entry is [string, Exclude<(typeof entry)[1], 'Unranked'>] => entry[1] !== 'Unranked')
-      .map(([queueType, standing]) =>
-        guard(() =>
+      .map(([queueType, standing]) => {
+        const record = leagueRecordByQueue.get(queueType);
+        return guard(() =>
           this.rankCheckpointStore.record({
             puuid: report.puuid,
             queueType,
             tier: standing.tier,
             division: standing.division,
             leaguePoints: standing.leaguePoints,
+            ...(record !== undefined ? { wins: record.wins, losses: record.losses } : {}),
             observedAt,
           }),
-        ),
-      );
+        );
+      });
 
     void Promise.allSettled([
       solo !== undefined && solo !== 'Unranked'
@@ -912,6 +933,7 @@ class DefaultLookupOrchestrator implements LookupOrchestrator {
               tier: solo.tier,
               division: solo.division,
               leaguePoints: solo.leaguePoints,
+              gamesPlayed: soloGamesPlayed,
               observedAt,
             }),
           )

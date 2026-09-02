@@ -94,17 +94,28 @@ export function redactMongoUri(text: string): string {
  * startup. Exported so an integration test can provision a throwaway database.
  */
 export async function ensureIndexes(db: Db): Promise<void> {
+  // Requirement 6.2: the "record only every few games" rule (`shouldRecordSnapshot`)
+  // is a game-count diff against the latest kept snapshot, which no unique index
+  // can express — so the old `uniq_puuid_queue_day` is dropped here (best-effort;
+  // it is simply absent on a fresh database) and `MongoRankHistoryStore.record`
+  // does a read-then-insert instead.
+  await db
+    .collection(RANK_SNAPSHOTS_COLLECTION)
+    .dropIndex('uniq_puuid_queue_day')
+    .catch(() => undefined);
   await db.collection(RANK_SNAPSHOTS_COLLECTION).createIndexes([
-    // Requirement 6.2: the database, not application code, guarantees one
-    // snapshot per player per queue per UTC day.
-    { key: { puuid: 1, queueType: 1, snapshotDay: 1 }, unique: true, name: 'uniq_puuid_queue_day' },
-    // Serves `history()` in sorted order and the `deleteByPuuid` sweep.
+    // Serves `history()` in sorted order, the `record()` "latest snapshot"
+    // read (walked backwards), and the `deleteByPuuid` sweep.
     { key: { puuid: 1, queueType: 1, observedAt: 1 }, name: 'puuid_queue_observedAt' },
   ]);
   await db.collection(RANK_CHECKPOINTS_COLLECTION).createIndexes([
-    // No uniqueness constraint — every fresh lookup inserts a new row. Serves
-    // `historyAll()`'s sorted read and the `deleteByPuuid` sweep.
+    // No uniqueness constraint — `record` keeps a checkpoint whenever the game
+    // count moved (`shouldRecordCheckpoint`). Serves `historyAll()`'s sorted
+    // read and the `deleteByPuuid` sweep.
     { key: { puuid: 1, observedAt: 1 }, name: 'puuid_observedAt' },
+    // Serves `record`'s "latest checkpoint for this (puuid, queueType)" read,
+    // walked backwards.
+    { key: { puuid: 1, queueType: 1, observedAt: 1 }, name: 'puuid_queue_observedAt' },
   ]);
   await db
     .collection(LOOKED_UP_PLAYERS_COLLECTION)

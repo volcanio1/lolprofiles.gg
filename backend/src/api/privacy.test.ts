@@ -327,6 +327,7 @@ describe('POST /api/privacy/delete — Persistent_Store (specs/database/ Require
     tier: 'GOLD',
     division: 'II',
     leaguePoints: 40,
+    gamesPlayed: 120,
     observedAt: NOW,
   };
   const PLAYER = {

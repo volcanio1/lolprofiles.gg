@@ -29,6 +29,7 @@ import { MongoMatchStore, type StoredMatch } from './matchStore';
 
 const TEST_URI = process.env.MONGODB_TEST_URI;
 const DAY_MS = 86_400_000;
+const HOUR = 3_600_000;
 const BASE = Date.UTC(2026, 7, 28, 12, 0, 0);
 
 function snap(overrides: Partial<RankSnapshot> = {}): RankSnapshot {
@@ -38,6 +39,7 @@ function snap(overrides: Partial<RankSnapshot> = {}): RankSnapshot {
     tier: 'GOLD',
     division: 'II',
     leaguePoints: 40,
+    gamesPlayed: 0,
     observedAt: BASE,
     ...overrides,
   };
@@ -89,24 +91,24 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
     }
   });
 
-  it('the unique index makes a same-day re-record a silent no-op', async () => {
+  it('skips a re-record when the same rank has not moved 3 games on', async () => {
     const store = new MongoRankHistoryStore(db);
 
-    await store.record(snap({ leaguePoints: 40, observedAt: BASE }));
-    await store.record(snap({ leaguePoints: 99, tier: 'PLATINUM', observedAt: BASE + 3_600_000 }));
+    await store.record(snap({ leaguePoints: 40, gamesPlayed: 100, observedAt: BASE }));
+    await store.record(snap({ leaguePoints: 43, gamesPlayed: 102, observedAt: BASE + 3_600_000 }));
 
     const history = await store.history('p1', 'RANKED_SOLO_5x5');
     expect(history).toHaveLength(1);
-    expect(history[0]).toMatchObject({ leaguePoints: 40, tier: 'GOLD' });
+    expect(history[0]).toMatchObject({ leaguePoints: 40 });
   });
 
-  it('records once per UTC day and reads back oldest-first', async () => {
+  it('records again once 3+ games have been played and reads back oldest-first', async () => {
     const store = new MongoRankHistoryStore(db);
-    const puuid = `day-roll-${Date.now()}`;
+    const puuid = `games-${Date.now()}`;
 
-    await store.record(snap({ puuid, observedAt: BASE + 2 * DAY_MS, leaguePoints: 3 }));
-    await store.record(snap({ puuid, observedAt: BASE, leaguePoints: 1 }));
-    await store.record(snap({ puuid, observedAt: BASE + DAY_MS, leaguePoints: 2 }));
+    await store.record(snap({ puuid, observedAt: BASE, leaguePoints: 1, gamesPlayed: 10 }));
+    await store.record(snap({ puuid, observedAt: BASE + DAY_MS, leaguePoints: 2, gamesPlayed: 14 }));
+    await store.record(snap({ puuid, observedAt: BASE + 2 * DAY_MS, leaguePoints: 3, gamesPlayed: 19 }));
 
     const history = await store.history(puuid, 'RANKED_SOLO_5x5');
     expect(history.map((s) => s.leaguePoints)).toEqual([1, 2, 3]);
@@ -116,22 +118,25 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
     const store = new MongoRankHistoryStore(db);
     const puuid = `del-${Date.now()}`;
 
-    await store.record(snap({ puuid, observedAt: BASE }));
-    await store.record(snap({ puuid, observedAt: BASE + DAY_MS }));
+    await store.record(snap({ puuid, observedAt: BASE, gamesPlayed: 10 }));
+    await store.record(snap({ puuid, observedAt: BASE + DAY_MS, gamesPlayed: 20 }));
 
     expect(await store.deleteByPuuid(puuid)).toBe(2);
     expect(await store.history(puuid, 'RANKED_SOLO_5x5')).toEqual([]);
   });
 
-  it('rank checkpoints have no dedup — multiple same-day records all persist, oldest first', async () => {
+  it('rank checkpoints: keeps each game-count change, drops a same-count repeat, oldest first', async () => {
     const store = new MongoRankCheckpointStore(db);
     const puuid = `checkpoint-${Date.now()}`;
 
-    await store.record(checkpoint({ puuid, leaguePoints: 40, observedAt: BASE }));
-    await store.record(checkpoint({ puuid, leaguePoints: 58, observedAt: BASE + 3_600_000 }));
+    await store.record(checkpoint({ puuid, leaguePoints: 40, wins: 30, losses: 25, observedAt: BASE }));
+    await store.record(checkpoint({ puuid, leaguePoints: 55, wins: 30, losses: 25, observedAt: BASE + HOUR })); // dropped
+    await store.record(checkpoint({ puuid, leaguePoints: 58, wins: 31, losses: 25, observedAt: BASE + 2 * HOUR }));
 
     const history = await store.historyAll(puuid);
     expect(history.map((c) => c.leaguePoints)).toEqual([40, 58]);
+    expect(history[0]).toMatchObject({ wins: 30, losses: 25 });
+    expect(history[1]).toMatchObject({ wins: 31, losses: 25 });
   });
 
   it('rank checkpoint deleteByPuuid clears every checkpoint across queues for the player', async () => {

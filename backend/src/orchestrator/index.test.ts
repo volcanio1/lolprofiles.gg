@@ -1287,6 +1287,8 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
         tier: 'PLATINUM',
         division: 'IV',
         leaguePoints: 51,
+        // leagueEntry() default wins: 60 + losses: 40.
+        gamesPlayed: 100,
         observedAt: now(),
       },
     ]);
@@ -1304,7 +1306,7 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
     expect(harness.storeWriteFailures).toEqual([]);
   });
 
-  it('records a rank checkpoint for every ranked queue present, unlike the once-per-day rank snapshot (recent-matches-lp-delta)', async () => {
+  it('records a rank checkpoint for every ranked queue present, unlike the every-few-games rank snapshot (recent-matches-lp-delta)', async () => {
     const rankCheckpointStore = createInMemoryRankCheckpointStore();
     const now = () => 1_726_000_000_000;
     const harness = makeHarness({
@@ -1319,13 +1321,14 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
     expect(result.kind).toBe('success');
     const checkpoints = await rankCheckpointStore.historyAll(PUUID);
     expect(checkpoints).toEqual([
-      { puuid: PUUID, queueType: 'RANKED_SOLO_5x5', tier: 'PLATINUM', division: 'IV', leaguePoints: 51, observedAt: now() },
-      { puuid: PUUID, queueType: 'RANKED_FLEX_SR', tier: 'PLATINUM', division: 'IV', leaguePoints: 12, observedAt: now() },
+      // leagueEntry() defaults: wins 60, losses 40 — now carried onto the checkpoint.
+      { puuid: PUUID, queueType: 'RANKED_SOLO_5x5', tier: 'PLATINUM', division: 'IV', leaguePoints: 51, wins: 60, losses: 40, observedAt: now() },
+      { puuid: PUUID, queueType: 'RANKED_FLEX_SR', tier: 'PLATINUM', division: 'IV', leaguePoints: 12, wins: 60, losses: 40, observedAt: now() },
     ]);
     expect(harness.storeWriteFailures).toEqual([]);
   });
 
-  it('records a second checkpoint on a second fresh lookup the same day, unlike rank history (recent-matches-lp-delta)', async () => {
+  it('adds no second checkpoint when a repeat lookup shows no new games (recent-matches-lp-delta)', async () => {
     const rankCheckpointStore = createInMemoryRankCheckpointStore();
     const rankHistoryStore = createInMemoryRankHistoryStore();
     const now = () => 1_726_000_000_000;
@@ -1336,7 +1339,8 @@ describe('runLookup — Persistent_Store side effects (specs/database/ Requireme
     await run(harness.orchestrator);
     await flushMicrotasks();
 
-    expect(await rankCheckpointStore.historyAll(PUUID)).toHaveLength(2);
+    // leagueEntry() is unchanged between lookups -> same wins+losses -> dropped.
+    expect(await rankCheckpointStore.historyAll(PUUID)).toHaveLength(1);
     expect(await rankHistoryStore.history(PUUID, 'RANKED_SOLO_5x5')).toHaveLength(1);
   });
 

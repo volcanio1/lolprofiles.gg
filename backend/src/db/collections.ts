@@ -7,10 +7,13 @@
 export const DATABASE_NAME = 'lolprofiles';
 export const RANK_SNAPSHOTS_COLLECTION = 'rank_snapshots';
 /**
- * recent-matches-lp-delta: a rank observation recorded on EVERY fresh lookup
- * (no once-per-day dedup, unlike `rank_snapshots`), for every ranked queue the
- * player has an entry in. Used only to bracket an individual ranked match's LP
- * gain/loss between two checkpoints — see `insight/lpDelta.ts`.
+ * recent-matches-lp-delta: a rank observation recorded on a fresh lookup whenever
+ * the player's total game count moved since the last one (no once-per-day dedup,
+ * unlike `rank_snapshots`), for every ranked queue the player has an entry in —
+ * tier, division, LP, and (since 2026-09-02) League-V4's cumulative wins/losses.
+ * Used only to bracket an individual ranked match's LP gain/loss between two
+ * checkpoints, with the wins/losses difference telling a complete bracket from
+ * one with unseen games — see `insight/lpDelta.ts`.
  */
 export const RANK_CHECKPOINTS_COLLECTION = 'rank_checkpoints';
 export const LOOKED_UP_PLAYERS_COLLECTION = 'looked_up_players';

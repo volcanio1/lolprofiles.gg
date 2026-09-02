@@ -103,6 +103,8 @@ export interface RankSnapshot {
   tier: string;
   division: string;
   leaguePoints: number;
+  /** League-V4 `wins + losses` for this queue when the snapshot was taken. */
+  gamesPlayed: number;
   /** Epoch ms. */
   observedAt: number;
 }
@@ -213,7 +215,9 @@ export interface RecentMatchSummary {
   /**
    * LP gained (positive) or lost (negative) in this match, for a ranked
    * solo/duo or ranked flex game only. `null` when not computable (any other
-   * queue, or the checkpoint data around this match was ambiguous/absent).
+   * queue, a remake, LP decay, or the checkpoint data around this match was
+   * ambiguous/absent). A per-game approximation when several ranked games share
+   * a checkpoint bracket.
    */
   lpDelta: number | null;
 }

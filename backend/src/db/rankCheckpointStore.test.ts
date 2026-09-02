@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createInMemoryRankCheckpointStore, createNoopRankCheckpointStore, type RankCheckpoint } from './rankCheckpointStore';
+import {
+  checkpointGamesPlayed,
+  createInMemoryRankCheckpointStore,
+  createNoopRankCheckpointStore,
+  shouldRecordCheckpoint,
+  type RankCheckpoint,
+} from './rankCheckpointStore';
 
 const DAY_MS = 86_400_000;
 /** 2026-08-28T12:00:00.000Z */
@@ -17,8 +23,36 @@ function checkpoint(overrides: Partial<RankCheckpoint> = {}): RankCheckpoint {
   };
 }
 
-describe('InMemoryRankCheckpointStore.record — no dedup, unlike RankHistoryStore', () => {
-  it('records every call, even multiple within the same UTC day', async () => {
+describe('shouldRecordCheckpoint / checkpointGamesPlayed', () => {
+  it('checkpointGamesPlayed is wins + losses, or undefined when either is absent', () => {
+    expect(checkpointGamesPlayed(checkpoint({ wins: 30, losses: 20 }))).toBe(50);
+    expect(checkpointGamesPlayed(checkpoint({ wins: 30 }))).toBeUndefined();
+    expect(checkpointGamesPlayed(checkpoint())).toBeUndefined();
+  });
+
+  it('keeps the first checkpoint, and any later one where the game count moved', () => {
+    const first = checkpoint({ wins: 100, losses: 100 });
+    expect(shouldRecordCheckpoint(undefined, first)).toBe(true);
+    expect(shouldRecordCheckpoint(first, checkpoint({ wins: 101, losses: 100 }))).toBe(true);
+    expect(shouldRecordCheckpoint(first, checkpoint({ wins: 100, losses: 101 }))).toBe(true);
+    expect(shouldRecordCheckpoint(first, checkpoint({ wins: 2, losses: 3 }))).toBe(true); // reset
+  });
+
+  it('drops a later checkpoint with the same total game count', () => {
+    const first = checkpoint({ wins: 100, losses: 100, leaguePoints: 40 });
+    // Same games, just a later lookup with a different LP reading.
+    expect(shouldRecordCheckpoint(first, checkpoint({ wins: 100, losses: 100, leaguePoints: 40 }))).toBe(false);
+    expect(shouldRecordCheckpoint(first, checkpoint({ wins: 101, losses: 99, leaguePoints: 55 }))).toBe(false);
+  });
+
+  it('keeps a checkpoint when either side lacks game counts (cannot compare)', () => {
+    expect(shouldRecordCheckpoint(checkpoint(), checkpoint({ wins: 5, losses: 5 }))).toBe(true);
+    expect(shouldRecordCheckpoint(checkpoint({ wins: 5, losses: 5 }), checkpoint())).toBe(true);
+  });
+});
+
+describe('InMemoryRankCheckpointStore.record', () => {
+  it('records every call when checkpoints carry no game counts (nothing to compare)', async () => {
     const store = createInMemoryRankCheckpointStore();
 
     await store.record(checkpoint({ leaguePoints: 47, observedAt: BASE }));
@@ -27,6 +61,32 @@ describe('InMemoryRankCheckpointStore.record — no dedup, unlike RankHistorySto
 
     const history = await store.historyAll('puuid-1');
     expect(history.map((c) => c.leaguePoints)).toEqual([47, 62, 55]);
+  });
+
+  it('drops a repeat checkpoint with no new games, per queue', async () => {
+    const store = createInMemoryRankCheckpointStore();
+
+    await store.record(checkpoint({ wins: 60, losses: 40, leaguePoints: 47, observedAt: BASE }));
+    await store.record(checkpoint({ wins: 60, losses: 40, leaguePoints: 51, observedAt: BASE + 3_600_000 })); // dropped
+    await store.record(checkpoint({ wins: 61, losses: 40, leaguePoints: 71, observedAt: BASE + 7_200_000 })); // +1 game
+    // A different queue is tracked independently.
+    await store.record(
+      checkpoint({ queueType: 'RANKED_FLEX_SR', wins: 10, losses: 10, leaguePoints: 10, observedAt: BASE + 60_000 }),
+    );
+
+    const history = await store.historyAll('puuid-1');
+    expect(history.map((c) => c.leaguePoints)).toEqual([47, 10, 71]);
+  });
+
+  it('round-trips the optional League-V4 wins/losses when present', async () => {
+    const store = createInMemoryRankCheckpointStore();
+    await store.record(checkpoint({ wins: 120, losses: 98, observedAt: BASE }));
+    await store.record(checkpoint({ observedAt: BASE + 3_600_000 })); // none set
+
+    const [withCounts, without] = await store.historyAll('puuid-1');
+    expect(withCounts).toMatchObject({ wins: 120, losses: 98 });
+    expect(without.wins).toBeUndefined();
+    expect(without.losses).toBeUndefined();
   });
 });
 

@@ -5,9 +5,10 @@
  * codebase's dependency-free component style. One point per recorded
  * Rank_Snapshot (oldest → newest), plotted by `rankOrdinal`. Fewer than two
  * snapshots renders an explicit "history will build up" message rather than a
- * broken graph (Requirement 10.4). The horizontal axis is "lookups over time",
- * never "games played" (Requirement 10.5) — the system only observes a rank when
- * someone looks the player up.
+ * broken graph (Requirement 10.4). The horizontal axis is labelled neutrally
+ * ("recorded over time"), never "games played" (Requirement 10.5) — the system
+ * only observes a rank when someone looks the player up, and keeps a point once
+ * ~3 ranked games have passed since the last (`specs/database/` Requirement 2.2).
  *
  * User request (2026-09-01): hovering anywhere along the line — not just the
  * dot itself — shows the NEAREST snapshot's date, rank/LP (colored to that
@@ -67,7 +68,7 @@ export function RankHistoryGraph({ history, recentMatches = [] }: RankHistoryGra
   if (history.length < 2) {
     return (
       <p data-testid="rank-history-pending" className="empty-note">
-        Rank history will build up over future lookups.
+        Rank history builds up as this player plays more ranked games.
       </p>
     );
   }
@@ -93,7 +94,7 @@ export function RankHistoryGraph({ history, recentMatches = [] }: RankHistoryGra
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="rank-graph-svg"
           role="img"
-          aria-label={`Ranked Solo/Duo over ${String(history.length)} lookups, ending at ${last !== undefined ? rankLabel(last) : ''}`}
+          aria-label={`Ranked Solo/Duo over ${String(history.length)} recorded points, ending at ${last !== undefined ? rankLabel(last) : ''}`}
           preserveAspectRatio="none"
         >
           <polyline points={polyline} className="rank-graph-line" />
@@ -144,7 +145,7 @@ export function RankHistoryGraph({ history, recentMatches = [] }: RankHistoryGra
         </div>
       </div>
       <figcaption className="rank-graph-caption">
-        <span>lookups over time</span>
+        <span>recorded over time</span>
         <span className="rank-graph-current">{last !== undefined ? rankLabel(last) : ''}</span>
       </figcaption>
     </figure>

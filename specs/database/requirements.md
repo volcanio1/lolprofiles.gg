@@ -16,7 +16,7 @@ Three properties shape the work, and each is a place a naive implementation goes
 
 **The store is not on the critical path and must never join it.** A lookup's job is to return a Profile_Report. Recording a rank snapshot and remembering the player are side effects of a successful lookup, not steps in producing one. A slow, erroring, or unreachable database must degrade to "the graph is a little younger and the autocomplete is missing one name," never to a slow lookup or a failed one. This is enforced structurally: the write calls are not awaited on the request path.
 
-**The M0 tier has hard ceilings, and the design has to fit inside them rather than assume them away.** 512 MB of storage, roughly 100 operations per second cluster-wide, no automated backups, and deprovisioning after 60 days of total inactivity. The data model is chosen so that normal traffic stays orders of magnitude below every one of those limits, and the one that could bite — storage growth — has an explicit bound (one snapshot per player per queue per day) and a stated pruning story.
+**The M0 tier has hard ceilings, and the design has to fit inside them rather than assume them away.** 512 MB of storage, roughly 100 operations per second cluster-wide, no automated backups, and deprovisioning after 60 days of total inactivity. The data model is chosen so that normal traffic stays orders of magnitude below every one of those limits, and the one that could bite — storage growth — has an explicit bound (a new snapshot only every few ranked games, or on a rank change, per player per queue) and a stated pruning story.
 
 **A database that stores `gameName`, `tagLine`, `puuid`, and a rank history is squarely personal data, and the existing privacy-deletion route must reach it.** `POST /api/privacy/delete` today evicts a PUUID's cached data. The moment this store exists, "delete everything associated with this PUUID" has to include the snapshots and the remembered-player record, or the route silently stops doing what it claims.
 
@@ -31,7 +31,7 @@ Three properties shape the work, and each is a place a naive implementation goes
 - **Database_Client**: The single long-lived MongoDB driver connection (`MongoClient`) owned by the composition root, shared by every store implementation for the life of the process — mirroring how `backend/src/index.ts` already builds exactly one clock, one Cache_Store, and one Rate_Limit_Manager for the whole process.
 - **Rank_Snapshot**: One recorded observation of a player's ranked standing for one queue at one moment: `{ puuid, queueType, tier, division, leaguePoints, observedAt }`, captured during a Lookup_Session.
 - **Rank_History**: The ordered sequence of Rank_Snapshots the Persistent_Store holds for a given PUUID and queue, oldest first.
-- **Snapshot_Day**: The UTC calendar date of a Rank_Snapshot's `observedAt`, formatted `YYYY-MM-DD`. Used to enforce at-most-one snapshot per player per queue per day.
+- **Min_Games_Between_Snapshots**: The smallest increase in a player's ranked `gamesPlayed` (League-V4 `wins + losses`) that, on its own, makes a new Rank_Snapshot worth keeping — 3. A rank change or a game-count reset records regardless of this.
 - **RankHistoryStore**: The storage-agnostic interface for recording and reading Rank_Snapshots, defined in design.md.
 - **Looked_Up_Player**: This site's memory of one player it has successfully produced a report for: `{ puuid, gameName, tagLine, profileIconId, region, lastLookedUpAt }`.
 - **LookedUpPlayerStore**: The storage-agnostic interface for remembering Looked_Up_Players and querying them by name prefix, defined in design.md. Its query method is *specified here* but *consumed by* `specs/autofill-search/`.
@@ -61,8 +61,8 @@ Three properties shape the work, and each is a place a naive implementation goes
 #### Acceptance Criteria
 
 1. WHEN a Lookup_Session completes successfully AND the resulting report has a `rankedByQueue` entry for the Solo_Queue_Type, THE System SHALL record a Rank_Snapshot for that PUUID and queue via a Write_Hook.
-2. THE System SHALL record at most one Rank_Snapshot per PUUID per queue per Snapshot_Day; a second successful lookup of the same player on the same UTC day SHALL NOT add a second snapshot and SHALL NOT overwrite the first.
-3. A Rank_Snapshot SHALL carry `puuid`, `queueType`, `tier`, `division`, `leaguePoints`, and `observedAt` (the Lookup_Session's completion time, from the injected clock).
+2. THE System SHALL keep a new Rank_Snapshot only when, relative to the most recent Rank_Snapshot already kept for that PUUID and queue, ANY of the following holds: there is no prior snapshot; the `tier` or `division` differs; the `gamesPlayed` count is lower than the prior one (a season or MMR reset); or at least `Min_Games_Between_Snapshots` more ranked games have been played (`gamesPlayed` delta ≥ `Min_Games_Between_Snapshots`). Otherwise the lookup SHALL add no snapshot and SHALL NOT overwrite the previous one. `Min_Games_Between_Snapshots` is 3.
+3. A Rank_Snapshot SHALL carry `puuid`, `queueType`, `tier`, `division`, `leaguePoints`, `gamesPlayed` (the player's League-V4 `wins + losses` for that queue at observation time), and `observedAt` (the Lookup_Session's completion time, from the injected clock).
 4. WHEN the report has no `rankedByQueue` entry for the Solo_Queue_Type (an unranked player), THE System SHALL record no Rank_Snapshot for that lookup and SHALL treat this as a normal outcome, not an error.
 5. THE `RankHistoryStore` SHALL expose a read method returning a PUUID's Rank_History for a given queue, ordered oldest to newest by `observedAt`.
 6. THE recording path SHALL be storage-agnostic: the orchestrator SHALL depend only on the `RankHistoryStore` interface, never on the MongoDB driver directly.
@@ -111,9 +111,9 @@ Three properties shape the work, and each is a place a naive implementation goes
 
 #### Acceptance Criteria
 
-1. THE `rank_snapshots` collection SHALL be bounded in growth by Requirement 2.2 (one document per PUUID per queue per Snapshot_Day), and design.md SHALL state the resulting storage estimate against the 512 MB ceiling.
-2. THE System SHALL enforce Requirement 2.2 with a unique compound index on `(puuid, queueType, snapshotDay)`, so deduplication is guaranteed by the database rather than by a read-then-write race in application code.
-3. Each Write_Hook SHALL perform at most one database operation (an upsert), so a lookup costs at most two operations against the ~100 ops/sec cluster ceiling.
+1. THE `rank_snapshots` collection SHALL be bounded in growth by Requirement 2.2 (a new document only every `Min_Games_Between_Snapshots` ranked games, or on a rank change, per PUUID per queue), and design.md SHALL state the resulting storage estimate against the 512 MB ceiling.
+2. THE System SHALL apply Requirement 2.2 with a read-then-write in `RankHistoryStore.record` (read the latest kept snapshot for the `(puuid, queueType)`, decide, then insert), served by the `(puuid, queueType, observedAt)` index. There is NO unique index: the keep/skip rule is a `gamesPlayed` delta, which no index can express. design.md SHALL note that two genuinely concurrent fresh lookups of the same player can therefore each insert one point, and why that is acceptable (rare — a cached lookup records nothing — and it does not distort the graph).
+3. Each Write_Hook SHALL perform a small, bounded number of database operations: the rank-snapshot hook does one indexed read plus at most one insert; the checkpoint and remembered-player hooks do one upsert each. A lookup therefore costs a single-digit number of operations against the ~100 ops/sec cluster ceiling, all off the request path.
 4. design.md SHALL document a Rank_Snapshot pruning strategy (retain the most recent N per PUUID/queue, or snapshots newer than a cutoff) even if the implementation is deferred, so the storage bound has a stated escape valve.
 5. design.md SHALL note the M0 realities that affect operations: no automated backups (acceptable — the data is derived and its loss degrades gracefully), and deprovisioning after 60 days of inactivity (not a concern for a live site).
 
