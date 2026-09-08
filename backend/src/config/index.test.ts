@@ -94,4 +94,45 @@ describe('loadConfig', () => {
     });
     expect(cfg.mongodbUri).toBe('mongodb+srv://u:p@host/db');
   });
+
+  describe('crawler config (champion-build-stats-pipeline)', () => {
+    const base = { RIOT_API_KEY: 'k', DDRAGON_VERSION: '16.17.1' } as const;
+
+    it('is off with safe defaults when nothing is set', () => {
+      expect(loadConfig(base).crawler).toEqual({
+        enabled: false,
+        budgetFraction: 0.25,
+        rps: 0.8,
+        intervalMs: 300_000,
+        seedsPerCycle: 25,
+        matchesPerSeed: 20,
+      });
+    });
+
+    it('parses CRAWLER_ENABLED truthiness', () => {
+      expect(loadConfig({ ...base, CRAWLER_ENABLED: '1' }).crawler.enabled).toBe(true);
+      expect(loadConfig({ ...base, CRAWLER_ENABLED: 'TRUE' }).crawler.enabled).toBe(true);
+      expect(loadConfig({ ...base, CRAWLER_ENABLED: 'yes' }).crawler.enabled).toBe(true);
+      expect(loadConfig({ ...base, CRAWLER_ENABLED: '0' }).crawler.enabled).toBe(false);
+      expect(loadConfig({ ...base, CRAWLER_ENABLED: 'nope' }).crawler.enabled).toBe(false);
+    });
+
+    it('clamps CRAWL_BUDGET_FRACTION to (0, 1]', () => {
+      expect(loadConfig({ ...base, CRAWL_BUDGET_FRACTION: '0.5' }).crawler.budgetFraction).toBe(0.5);
+      expect(loadConfig({ ...base, CRAWL_BUDGET_FRACTION: '3' }).crawler.budgetFraction).toBe(1);
+    });
+
+    it('reads the numeric knobs and throws on garbage', () => {
+      const cfg = loadConfig({
+        ...base,
+        CRAWL_RPS: '2.5',
+        CRAWL_INTERVAL_MS: '60000',
+        CRAWL_SEEDS_PER_CYCLE: '5',
+        CRAWL_MATCHES_PER_SEED: '3',
+      });
+      expect(cfg.crawler).toMatchObject({ rps: 2.5, intervalMs: 60_000, seedsPerCycle: 5, matchesPerSeed: 3 });
+      expect(() => loadConfig({ ...base, CRAWL_SEEDS_PER_CYCLE: 'lots' })).toThrow(/CRAWL_SEEDS_PER_CYCLE/);
+      expect(() => loadConfig({ ...base, CRAWL_RPS: '-1' })).toThrow(/CRAWL_RPS/);
+    });
+  });
 });

@@ -140,7 +140,8 @@ needs no adapter.
   store is disabled or has never seen the champion (empty `meta` lists); a result
   with `popular: null` means the champion is known but the filter combo is thin
   (populated `meta` lists — filters still work).
-- **`MongoChampionStatsStore` is deferred to `champion-build-stats-pipeline`** —
+- **`MongoChampionStatsStore` — DONE** (`champion-build-stats-pipeline` task 11).
+  Originally deferred:
   it reads the crawled aggregate documents and its exact document shape is that
   spec's to fix. The interface + an in-memory fake (raw `ChampionAggregate` cells
   + real resolution) + a disabled no-op exist now; the composition root wires the

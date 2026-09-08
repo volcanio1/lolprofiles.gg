@@ -24,6 +24,12 @@
 
 import { MongoClient, type Db } from 'mongodb';
 import {
+  CHAMPION_BUILD_AGGREGATES_COLLECTION,
+  CRAWL_PROCESSED_COLLECTION,
+  CRAWL_SEEDS_COLLECTION,
+  PROCESSED_TTL_SECONDS,
+} from '../champions/pipeline/constants';
+import {
   DATABASE_NAME,
   LOOKED_UP_PLAYERS_COLLECTION,
   MATCH_DETAIL_TTL_SECONDS,
@@ -136,6 +142,29 @@ export async function ensureIndexes(db: Db): Promise<void> {
     { key: { storedAt: 1 }, name: 'ttl_storedAt', expireAfterSeconds: MATCH_DETAIL_TTL_SECONDS },
     // Requirement 6.1: serves privacy deletion; multikey over the participant array.
     { key: { 'match.metadata.participants': 1 }, name: 'participants' },
+  ]);
+  // champion-build-stats-pipeline. These run at every boot (even with the crawler
+  // disabled) so `MongoChampionStatsStore` can read from the first request —
+  // Requirement 10.1. `champion_build_totals` and `crawl_state` are `_id`-keyed
+  // (bucket|region|patch and the "singleton" doc), so they need no extra index.
+  await db.collection(CHAMPION_BUILD_AGGREGATES_COLLECTION).createIndexes([
+    // Serves `getBuildStats`'s "every doc for this champion at the latest patch" read.
+    { key: { championKey: 1, patch: 1 }, name: 'championKey_patch' },
+    // The aggregator's upsert key — one doc per (champion, role, bucket, region, patch).
+    {
+      key: { championKey: 1, role: 1, rankBucket: 1, region: 1, patch: 1 },
+      name: 'uniq_cell',
+      unique: true,
+    },
+  ]);
+  await db.collection(CRAWL_SEEDS_COLLECTION).createIndexes([
+    // Serves the staleness gate and the stable per-cycle seed scan.
+    { key: { refreshedAt: 1 }, name: 'refreshedAt' },
+  ]);
+  await db.collection(CRAWL_PROCESSED_COLLECTION).createIndexes([
+    // A bounded seen-set: a match id ages out well after it leaves any 20-deep
+    // recent-match list, so re-crawling it and re-aggregating (once) is fine.
+    { key: { processedAt: 1 }, name: 'ttl_processedAt', expireAfterSeconds: PROCESSED_TTL_SECONDS },
   ]);
 }
 

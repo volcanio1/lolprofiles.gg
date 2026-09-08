@@ -192,6 +192,39 @@ describe('URL construction and routing values', () => {
     );
   });
 
+  it('adds &queue= to the match-ids URL when a queue is given (champion-build-stats-pipeline)', async () => {
+    const harness = makeHarness({ responses: [jsonResponse(200, [])] });
+
+    await harness.client.getMatchIdsByPuuid('americas', 'p', 20, 420);
+
+    expect(harness.calls[0].url).toBe(
+      'https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/p/ids?count=20&queue=420',
+    );
+  });
+
+  it('builds the League-V4 apex URL on the platform routing value (champion-build-stats-pipeline)', async () => {
+    const harness = makeHarness({ responses: [jsonResponse(200, { tier: 'CHALLENGER', queue: 'RANKED_SOLO_5x5', entries: [] })] });
+
+    await harness.client.getLeagueApex('na1', 'challenger', 'RANKED_SOLO_5x5');
+
+    expect(harness.calls[0].url).toBe(
+      'https://na1.api.riotgames.com/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5',
+    );
+    expect(harness.reservations[0]).toEqual({ routingValue: 'na1', method: RIOT_METHODS.leagueApex });
+  });
+
+  it('builds the League-V4 paged-entries URL with the page query parameter (champion-build-stats-pipeline)', async () => {
+    const harness = makeHarness({ responses: [jsonResponse(200, [])] });
+
+    const result = await harness.client.getLeagueEntriesPage('euw1', 'RANKED_SOLO_5x5', 'EMERALD', 'II', 3);
+
+    expect(harness.calls[0].url).toBe(
+      'https://euw1.api.riotgames.com/lol/league/v4/entries/RANKED_SOLO_5x5/EMERALD/II?page=3',
+    );
+    expect(harness.reservations[0]).toEqual({ routingValue: 'euw1', method: RIOT_METHODS.leagueEntries });
+    expect(result).toEqual({ kind: 'ok', data: [] }); // empty tail past the last page
+  });
+
   it('builds the Match-V5 match-by-id URL on the regional routing value', async () => {
     const harness = makeHarness();
 

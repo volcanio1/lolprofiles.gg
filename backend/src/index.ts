@@ -51,7 +51,12 @@ import {
   type ProfileSnapshotStore,
 } from './db/profileSnapshotStore';
 import { createNoopMatchStore, MongoMatchStore, type MatchStore } from './db/matchStore';
-import { createNoopChampionStatsStore, type ChampionStatsStore } from './db/championStatsStore';
+import {
+  MongoChampionStatsStore,
+  createNoopChampionStatsStore,
+  type ChampionStatsStore,
+} from './db/championStatsStore';
+import { createCrawlWorker } from './champions/pipeline/crawlWorker';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createLiveGameOrchestrator } from './liveGame/orchestrator';
@@ -91,10 +96,14 @@ async function main(): Promise<void> {
   const matchStore: MatchStore = databaseClient.enabled
     ? new MongoMatchStore(databaseClient.db())
     : createNoopMatchStore();
-  // champion-build-stats: always the no-op until `champion-build-stats-pipeline`
-  // ships `MongoChampionStatsStore` and the crawler that fills its collection.
-  // The endpoint still answers — with the empty-state response (Requirement 14.1).
-  const championStatsStore: ChampionStatsStore = createNoopChampionStatsStore();
+  // champion-build-stats: the Mongo store reads the crawler's aggregate docs. It
+  // runs whenever the database is enabled — even with the crawler off, in which
+  // case it reads empty collections and returns `null`, so the endpoint/page
+  // behave exactly as they did with the no-op (champion-build-stats-pipeline
+  // Requirement 10.1).
+  const championStatsStore: ChampionStatsStore = databaseClient.enabled
+    ? new MongoChampionStatsStore(databaseClient.db())
+    : createNoopChampionStatsStore();
 
   if (databaseClient.enabled) {
     // eslint-disable-next-line no-console
@@ -147,6 +156,24 @@ async function main(): Promise<void> {
   });
   tournamentRefresher.start();
 
+  // champion-build-stats-pipeline: the offline crawler that fills the champion
+  // build-stats store. `start()` is inert unless `CRAWLER_ENABLED` is truthy AND
+  // the database is enabled. Never reachable from a request handler.
+  const crawlWorker = createCrawlWorker({
+    client: riotApiClient,
+    db: databaseClient.enabled ? databaseClient.db() : null,
+    config: {
+      enabled: config.crawler.enabled,
+      intervalMs: config.crawler.intervalMs,
+      budgetFraction: config.crawler.budgetFraction,
+      rps: config.crawler.rps,
+      seedsPerCycle: config.crawler.seedsPerCycle,
+      matchesPerSeed: config.crawler.matchesPerSeed,
+    },
+    now,
+  });
+  crawlWorker.start();
+
   const staticDir =
     config.frontendDistPath === undefined
       ? undefined
@@ -180,6 +207,7 @@ async function main(): Promise<void> {
   // specs/database/ Requirement 1.6: close the client on shutdown.
   const shutdown = () => {
     tournamentRefresher.stop();
+    crawlWorker.stop();
     server.close(() => {
       void databaseClient.close().finally(() => process.exit(0));
     });

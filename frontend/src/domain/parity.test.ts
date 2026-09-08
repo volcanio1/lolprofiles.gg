@@ -11,6 +11,7 @@ import {
   RANK_BUCKET_VALUES,
   ROLE_VALUES,
 } from './buildStatsConstants';
+import { maxOrderFromSkillOrder } from '../components/SkillOrderView';
 
 /**
  * Drift guard for the rules this workspace MIRRORS from the backend.
@@ -134,6 +135,23 @@ describe.skipIf(!backendAvailable)('parity with the authoritative backend rules'
       // The frontend's belt-and-braces DISPLAY_FLOOR must stay frontend-only — the
       // backend has BACKEND_DISPLAY_FLOOR, never a bare DISPLAY_FLOOR to mirror.
       expect(source).not.toMatch(/export const DISPLAY_FLOOR\b/);
+    },
+  );
+
+  it.skipIf(!existsSync(resolve(backendSrc, 'insight/skillOrder.ts')))(
+    'mirrors maxOrderFromSkillOrder (champion-build-stats-pipeline task 5) — table duplicated in backend skillOrder.test.ts',
+    () => {
+      // Keep in step with SKILL_ORDER_PARITY_CASES in backend/src/insight/skillOrder.test.ts.
+      const cases: { perLevel: number[]; maxOrder: string[] }[] = [
+        { perLevel: [1, 2, 1, 3, 1, 4, 1, 2, 1, 2, 4, 2, 2, 3, 3, 4, 3], maxOrder: ['Q', 'W'] },
+        { perLevel: [1, 2, 3, 4], maxOrder: [] },
+        { perLevel: [3, 3, 3, 3, 3, 1, 1, 1, 1, 1], maxOrder: ['E', 'Q'] },
+        { perLevel: [2, 2, 2, 2, 2], maxOrder: ['W'] },
+        { perLevel: [], maxOrder: [] },
+      ];
+      for (const { perLevel, maxOrder } of cases) {
+        expect(maxOrderFromSkillOrder(perLevel)).toEqual(maxOrder);
+      }
     },
   );
 

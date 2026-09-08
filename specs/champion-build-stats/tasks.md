@@ -100,7 +100,9 @@ Specified and fixed (no choice): `Min_Sample = 500`, `Core_Item_Count = 3`
     `null`), mirroring `MatchStore` / `LookedUpPlayerStore` / `ProfileSnapshotStore`
     (Interface + `InMemory…` + `createNoop…` + `Mongo…`).
     - _Requirements: 12.3_
-  - [x] 2.3 **Mongo impl deferred to `champion-build-stats-pipeline`** — leave
+  - [x] 2.3 ~~Mongo impl deferred~~ — **`MongoChampionStatsStore` now exists**
+    (`champion-build-stats-pipeline` task 11, 2026-09-08); it reads the crawler's
+    aggregate docs and feeds this file's pure `resolveBuilds`. Originally: leave
     `// TODO(champion-build-stats-pipeline): MongoChampionStatsStore` at the
     interface + a note in design.md's "Store" section. The composition root wires
     the **no-op** impl for now (task 4.2). This is the Requirement 14.1

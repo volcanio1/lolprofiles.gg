@@ -286,8 +286,11 @@ function opponentOf(rival: MatchParticipantDto | undefined, durationSeconds: num
 /**
  * `match-detail-tabs` Requirement 6.2. All zero/blank when `perks` is absent or
  * malformed — never throws, matching this module's existing contract.
+ *
+ * Exported for champion-build-stats-pipeline's extractor, which needs the same
+ * `RunePage` shape per crawled participant. No behaviour change.
  */
-function runePageOf(participant: MatchParticipantDto): RunePage {
+export function runePageOf(participant: MatchParticipantDto): RunePage {
   const perks = participant.perks;
   const styles = Array.isArray(perks?.styles) ? perks.styles : [];
   const primary = styles[0];

@@ -33,7 +33,19 @@
  *    with populated `meta` lists (the filters still work) and Not_Enough_Data copy.
  */
 
+import type { Db } from 'mongodb';
 import type { RunePage } from '../insight/stats';
+import {
+  CHAMPION_BUILD_AGGREGATES_COLLECTION,
+  CHAMPION_BUILD_TOTALS_COLLECTION,
+} from '../champions/pipeline/constants';
+import {
+  parseItemPath,
+  parseRunePage,
+  parseSkillOrder,
+  parseSpellPair,
+  parseStartingItems,
+} from '../champions/pipeline/serialize';
 import {
   BACKEND_DISPLAY_FLOOR,
   CORE_ITEM_COUNT,
@@ -105,8 +117,8 @@ export interface ChampionStatsResult {
   highestWinRate: ChampionBuild | null;
 }
 
-// TODO(champion-build-stats-pipeline): MongoChampionStatsStore — reads the
-// crawled aggregate documents; its document shape is that spec's to fix.
+// `MongoChampionStatsStore` (further down) reads the crawled aggregate documents;
+// `champion-build-stats-pipeline` owns their shape and the crawler that fills them.
 export interface ChampionStatsStore {
   /**
    * The build stats for `championKey` at `filters` (already clamped to known
@@ -322,6 +334,159 @@ function pickPatch(cells: readonly ChampionAggregate[]): string {
   return (
     cells.slice().sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt)[0]?.patch ?? ''
   );
+}
+
+// ---------------------------------------------------------------------------
+// MongoDB implementation (champion-build-stats-pipeline)
+// ---------------------------------------------------------------------------
+
+interface StoredItemPath {
+  games?: number;
+  wins?: number;
+  skills?: Record<string, number>;
+  runes?: Record<string, number>;
+  spells?: Record<string, number>;
+  starts?: Record<string, number>;
+}
+
+interface StoredAggregateDoc {
+  _id: string;
+  championKey: string;
+  role: string;
+  rankBucket: string;
+  region: string;
+  patch: string;
+  games?: number;
+  wins?: number;
+  lastUpdatedAt?: Date;
+  itemPaths?: Record<string, StoredItemPath>;
+}
+
+interface StoredTotalsDoc {
+  _id: string;
+  matches?: number;
+}
+
+/** `["16.9", "16.17"]` -> `"16.17"` — numeric major.minor, not string order. */
+function latestPatchOf(patches: readonly string[]): string | undefined {
+  return [...new Set(patches)].sort((a, b) => {
+    const [am = 0, an = 0] = a.split('.').map(Number);
+    const [bm = 0, bn = 0] = b.split('.').map(Number);
+    return bm - am || bn - an;
+  })[0];
+}
+
+function toCohort<T>(
+  map: Record<string, number> | undefined,
+  parse: (key: string) => T,
+): CohortEntry<T>[] {
+  return Object.entries(map ?? {}).map(([key, games]) => ({ value: parse(key), games }));
+}
+
+function toChampionAggregate(doc: StoredAggregateDoc): ChampionAggregate {
+  return {
+    championKey: doc.championKey,
+    role: doc.role as Role,
+    rank: doc.rankBucket as RankBucket,
+    region: doc.region,
+    patch: doc.patch,
+    lastUpdatedAt: doc.lastUpdatedAt instanceof Date ? doc.lastUpdatedAt.getTime() : 0,
+    games: doc.games ?? 0,
+    wins: doc.wins ?? 0,
+    pickRate: 0, // synthetic — `resolveBuilds` never reads it (overall.pickRate is computed from totals)
+    itemPaths: Object.entries(doc.itemPaths ?? {}).map(([key, path]) => ({
+      coreItems: parseItemPath(key),
+      games: path.games ?? 0,
+      wins: path.wins ?? 0,
+      skillOrders: toCohort(path.skills, (k) => parseSkillOrder(k) as ChampionSkillOrder),
+      runePages: toCohort(path.runes, parseRunePage),
+      spellPairs: toCohort(path.spells, parseSpellPair),
+      startingItems: toCohort(path.starts, parseStartingItems),
+    })),
+  };
+}
+
+const READ_TIMEOUT_MS = 500;
+
+/**
+ * Reads the crawler's aggregate documents and reuses the pure `resolveBuilds` —
+ * this class is only I/O around the shared core. Bounded to a few indexed reads
+ * with a hard `READ_TIMEOUT_MS`; a slow or failing Mongo resolves to `null`, and
+ * the endpoint already degrades `null` to a 200 empty-state.
+ */
+export class MongoChampionStatsStore implements ChampionStatsStore {
+  private readonly aggregates;
+  private readonly totals;
+
+  constructor(db: Db) {
+    this.aggregates = db.collection<StoredAggregateDoc>(CHAMPION_BUILD_AGGREGATES_COLLECTION);
+    this.totals = db.collection<StoredTotalsDoc>(CHAMPION_BUILD_TOTALS_COLLECTION);
+  }
+
+  async getBuildStats(
+    championKey: string,
+    filters: ChampionBuildFilters,
+  ): Promise<ChampionStatsResult | null> {
+    const run = async (): Promise<ChampionStatsResult | null> => {
+      const patchRows = await this.aggregates
+        .find({ championKey }, { projection: { patch: 1 } })
+        .toArray();
+      if (patchRows.length === 0) {
+        return null;
+      }
+      const latestPatch = latestPatchOf(patchRows.map((row) => row.patch));
+      if (latestPatch === undefined) {
+        return null;
+      }
+
+      const cells = (await this.aggregates.find({ championKey, patch: latestPatch }).toArray()).map(
+        toChampionAggregate,
+      );
+      const cell =
+        cells.find(
+          (c) => c.role === filters.role && c.rank === filters.rank && c.region === 'world',
+        ) ?? null;
+
+      const { popular, highestWinRate } = resolveBuilds(cell);
+
+      const totalsDoc = await this.totals.findOne({
+        _id: `${filters.rank}|world|${latestPatch}`,
+      });
+      const totalMatches = totalsDoc?.matches ?? 0;
+
+      const withGames = cells.filter((c) => c.games > 0);
+
+      return {
+        meta: {
+          patch: latestPatch,
+          lastUpdatedAt: Math.max(0, ...cells.map((c) => c.lastUpdatedAt)),
+          availableRoles: sortByReference(unique(withGames.map((c) => c.role)), ROLE_VALUES),
+          defaultRole: mostPlayedRole(cells),
+          availableRanks: sortByReference(unique(withGames.map((c) => c.rank)), RANK_BUCKET_VALUES),
+          defaultRank: DEFAULT_RANK,
+          availableRegions: ['world'],
+          overall: {
+            winRate: clamp01(cell && cell.games > 0 ? cell.wins / cell.games : 0),
+            pickRate: clamp01(cell && totalMatches > 0 ? cell.games / totalMatches : 0),
+            totalGames: cell?.games ?? 0,
+          },
+        },
+        popular,
+        highestWinRate,
+      };
+    };
+
+    try {
+      return await Promise.race([
+        run(),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), READ_TIMEOUT_MS).unref?.();
+        }),
+      ]);
+    } catch {
+      return null;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

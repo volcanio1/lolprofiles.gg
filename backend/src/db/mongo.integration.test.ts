@@ -20,6 +20,12 @@ import {
   PROFILE_REPORT_TTL_SECONDS,
   PROFILE_REPORTS_COLLECTION,
 } from './collections';
+import {
+  CHAMPION_BUILD_AGGREGATES_COLLECTION,
+  CRAWL_PROCESSED_COLLECTION,
+  CRAWL_SEEDS_COLLECTION,
+  PROCESSED_TTL_SECONDS,
+} from '../champions/pipeline/constants';
 import { ensureIndexes } from './client';
 import { MongoRankHistoryStore, type RankSnapshot } from './rankHistoryStore';
 import { MongoRankCheckpointStore, type RankCheckpoint } from './rankCheckpointStore';
@@ -223,6 +229,21 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
     const ttl = indexes.find((i) => i.name === 'ttl_storedAt');
     expect(ttl?.expireAfterSeconds).toBe(MATCH_DETAIL_TTL_SECONDS);
     expect(indexes.find((i) => i.name === 'participants')).toBeDefined();
+  });
+
+  it('provisions the champion-build-stats-pipeline indexes (specs/champion-build-stats-pipeline/)', async () => {
+    const agg = await db.collection(CHAMPION_BUILD_AGGREGATES_COLLECTION).indexes();
+    expect(agg.find((i) => i.name === 'championKey_patch')).toBeDefined();
+    const cell = agg.find((i) => i.name === 'uniq_cell');
+    expect(cell?.unique).toBe(true);
+
+    const seeds = await db.collection(CRAWL_SEEDS_COLLECTION).indexes();
+    expect(seeds.find((i) => i.name === 'refreshedAt')).toBeDefined();
+
+    const processed = await db.collection(CRAWL_PROCESSED_COLLECTION).indexes();
+    expect(processed.find((i) => i.name === 'ttl_processedAt')?.expireAfterSeconds).toBe(
+      PROCESSED_TTL_SECONDS,
+    );
   });
 
   it('the match store upserts by matchId, round-trips getMany, and evicts by participant', async () => {

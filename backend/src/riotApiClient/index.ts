@@ -118,6 +118,10 @@ export const RIOT_METHODS = {
   clashTournamentsByTeam: 'clashTournamentsByTeam',
   /** clash-scouting: Champion-Mastery-V4 top-by-puuid. */
   championMasteryTop: 'championMasteryTop',
+  /** champion-build-stats-pipeline: League-V4 apex lists (crawler seeder only). */
+  leagueApex: 'leagueApex',
+  /** champion-build-stats-pipeline: League-V4 paged entries (crawler seeder only). */
+  leagueEntries: 'leagueEntries',
 } as const;
 
 export type RiotMethod = (typeof RIOT_METHODS)[keyof typeof RIOT_METHODS];
@@ -160,6 +164,53 @@ export interface ChampionMasteryDto {
   championId: number;
   championLevel: number;
   championPoints: number;
+}
+
+/**
+ * champion-build-stats-pipeline: one entry of a League-V4 ladder — an apex list
+ * (`{challenger,grandmaster,master}leagues/by-queue`) or a page of
+ * `entries/{queue}/{tier}/{division}`. Carries `puuid`; `rank` (the division) is
+ * present on the paged form, absent on apex lists.
+ */
+export interface LeagueLadderEntryDto {
+  puuid: string;
+  leaguePoints: number;
+  wins: number;
+  losses: number;
+  rank?: string;
+}
+
+/** League-V4 apex list. */
+export interface LeagueListDto {
+  tier: string;
+  queue: string;
+  entries: LeagueLadderEntryDto[];
+}
+
+export type ApexTier = 'challenger' | 'grandmaster' | 'master';
+export type RankedQueueKey = 'RANKED_SOLO_5x5';
+
+/**
+ * champion-build-stats-pipeline: the League-V4 ladder-walk surface. Kept OFF
+ * `RiotApiClient` on purpose — it is consumed only by the crawler's Seeder,
+ * never on a request path, and adding it to the main interface would force every
+ * orchestrator test double to stub two more methods for no reason.
+ * `HttpRiotApiClient` implements both interfaces; `createRiotApiClient` returns
+ * the intersection.
+ */
+export interface LadderSource {
+  getLeagueApex(
+    platform: PlatformRoutingValue,
+    tier: ApexTier,
+    queue: RankedQueueKey,
+  ): Promise<RiotApiResult<LeagueListDto>>;
+  getLeagueEntriesPage(
+    platform: PlatformRoutingValue,
+    queue: RankedQueueKey,
+    tier: string,
+    division: 'I' | 'II' | 'III' | 'IV',
+    page: number,
+  ): Promise<RiotApiResult<LeagueLadderEntryDto[]>>;
 }
 
 /** League-V4. `rank` is Riot's field name for the division (e.g. `"IV"`). */
@@ -265,6 +316,12 @@ export interface MatchDto {
     /** Riot's numeric queue id; queue-type classification happens downstream. */
     queueId: number;
     gameMode?: string;
+    /**
+     * `"major.minor.patch.build"`, e.g. `"16.17.412.9999"`. champion-build-stats-
+     * pipeline derives the `"major.minor"` patch from it; optional because the
+     * many `matchDto()` test factories predate it and the projection stays total.
+     */
+    gameVersion?: string;
     /** Epoch ms. */
     gameStartTimestamp: number;
     /** Seconds. */
@@ -360,6 +417,8 @@ export interface RiotApiClient {
     region: RegionalRoutingValue,
     puuid: string,
     count: number,
+    /** champion-build-stats-pipeline: `?queue=` filter (e.g. 420 = Ranked Solo). */
+    queue?: number,
   ): Promise<RiotApiResult<string[]>>;
   getMatchById(region: RegionalRoutingValue, matchId: string): Promise<RiotApiResult<MatchDto>>;
   /**
@@ -520,7 +579,7 @@ type AttemptOutcome<T> =
   | { kind: 'aborted' }
   | { kind: 'failed' };
 
-class HttpRiotApiClient implements RiotApiClient {
+class HttpRiotApiClient implements RiotApiClient, LadderSource {
   private readonly transport: RiotHttpTransport;
   private readonly apiKey: string;
   private readonly rateLimitManager: RateLimitManager;
@@ -587,8 +646,12 @@ class HttpRiotApiClient implements RiotApiClient {
     region: RegionalRoutingValue,
     puuid: string,
     count: number,
+    queue?: number,
   ): Promise<RiotApiResult<string[]>> {
     const query = new URLSearchParams({ count: String(count) });
+    if (queue !== undefined) {
+      query.set('queue', String(queue));
+    }
     const url =
       `${baseUrl(region)}/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids` +
       `?${query.toString()}`;
@@ -683,6 +746,31 @@ class HttpRiotApiClient implements RiotApiClient {
       `${baseUrl(platform)}/lol/champion-mastery/v4/champion-masteries/by-puuid/` +
       `${encodeURIComponent(puuid)}/top?${query.toString()}`;
     return this.send<ChampionMasteryDto[]>(url, platform, RIOT_METHODS.championMasteryTop);
+  }
+
+  // --- LadderSource (champion-build-stats-pipeline; crawler seeder only) -------
+
+  async getLeagueApex(
+    platform: PlatformRoutingValue,
+    tier: ApexTier,
+    queue: RankedQueueKey,
+  ): Promise<RiotApiResult<LeagueListDto>> {
+    const url =
+      `${baseUrl(platform)}/lol/league/v4/${tier}leagues/by-queue/${encodeURIComponent(queue)}`;
+    return this.send<LeagueListDto>(url, platform, RIOT_METHODS.leagueApex);
+  }
+
+  async getLeagueEntriesPage(
+    platform: PlatformRoutingValue,
+    queue: RankedQueueKey,
+    tier: string,
+    division: 'I' | 'II' | 'III' | 'IV',
+    page: number,
+  ): Promise<RiotApiResult<LeagueLadderEntryDto[]>> {
+    const url =
+      `${baseUrl(platform)}/lol/league/v4/entries/${encodeURIComponent(queue)}/` +
+      `${encodeURIComponent(tier)}/${encodeURIComponent(division)}?page=${String(page)}`;
+    return this.send<LeagueLadderEntryDto[]>(url, platform, RIOT_METHODS.leagueEntries);
   }
 
   /**
@@ -816,6 +904,6 @@ class HttpRiotApiClient implements RiotApiClient {
   }
 }
 
-export function createRiotApiClient(options: RiotApiClientOptions): RiotApiClient {
+export function createRiotApiClient(options: RiotApiClientOptions): RiotApiClient & LadderSource {
   return new HttpRiotApiClient(options);
 }

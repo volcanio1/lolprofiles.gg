@@ -105,6 +105,13 @@ export interface PrivacyRouteDependencies {
   // `championStatsStore` holds only per-(champion, role, rank, region, patch)
   // aggregates with frequency counters — never a PUUID, name, or match id
   // (Requirement 12.1) — so there is nothing personal to erase.
+  //
+  // champion-build-stats-pipeline's `crawl_seeds` / `crawl_processed` DO hold
+  // PUUIDs, but they are ladder-public identifiers the crawler discovered from
+  // League-V4, not looked-up-user data — a privacy deletion of a player who was
+  // also on the ranked ladder does not touch them (they age out on their own
+  // TTL / next seed refresh). Stated here so a future reader does not assume the
+  // pipeline collections were missed.
 }
 
 /** design.md's declared confirmation body (decision 1). */

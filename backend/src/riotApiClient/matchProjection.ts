@@ -150,6 +150,9 @@ export function projectMatchDto(raw: unknown): MatchDto {
   if (info.gameMode !== undefined) {
     projectedInfo.gameMode = info.gameMode as string;
   }
+  if (typeof info.gameVersion === 'string') {
+    projectedInfo.gameVersion = info.gameVersion;
+  }
   return {
     metadata: {
       matchId: metadata.matchId as string,

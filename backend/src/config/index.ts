@@ -42,6 +42,26 @@ export interface AppConfig {
    * the driver validates its shape.
    */
   mongodbUri?: string;
+  /**
+   * champion-build-stats-pipeline: the offline crawler that fills the champion
+   * build-stats store. **Off by default** (`CRAWLER_ENABLED` unset) — a full pass
+   * is weeks on a dev key and shares the live Riot rate budget. These six knobs
+   * are the operator's dials; every other pipeline constant is a code change.
+   */
+  crawler: {
+    /** `CRAWLER_ENABLED` truthy (`1` / `true` / `yes`). Also needs `MONGODB_URI`. */
+    enabled: boolean;
+    /** `CRAWL_BUDGET_FRACTION` — share of `CRAWL_RPS` the crawler self-limits to. `(0, 1]`, default 0.25. */
+    budgetFraction: number;
+    /** `CRAWL_RPS` — conservative estimate of the app's sustained requests/sec budget. Default 0.8 (dev-key-safe). */
+    rps: number;
+    /** `CRAWL_INTERVAL_MS` — cycle cadence. Default 5 min. */
+    intervalMs: number;
+    /** `CRAWL_SEEDS_PER_CYCLE` — seed players crawled per cycle. Default 25. */
+    seedsPerCycle: number;
+    /** `CRAWL_MATCHES_PER_SEED` — recent ranked match ids fetched per seed. Default 20. */
+    matchesPerSeed: number;
+  };
 }
 
 /** Parses a positive-integer env var, or `undefined` when unset/blank. Throws on garbage. */
@@ -54,6 +74,27 @@ function readPositiveInt(raw: string | undefined, name: string): number | undefi
     throw new Error(`Invalid ${name} environment variable value: "${raw}". Expected a positive integer.`);
   }
   return value;
+}
+
+/** Truthy in the shell sense: `1` / `true` / `yes` (any case). Anything else is false. */
+function readBool(raw: string | undefined): boolean {
+  return ['1', 'true', 'yes'].includes((raw ?? '').trim().toLowerCase());
+}
+
+/** A positive float, clamped to `[min, max]`, or `fallback` when unset/blank. Throws on garbage. */
+function readFloat(
+  raw: string | undefined,
+  name: string,
+  { min, max, fallback }: { min: number; max: number; fallback: number },
+): number {
+  if (raw === undefined || raw.trim().length === 0) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Invalid ${name} environment variable value: "${raw}". Expected a positive number.`);
+  }
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
@@ -106,5 +147,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     frontendDistPath: frontendDist && frontendDist.length > 0 ? frontendDist : undefined,
     matchHistoryCount: readPositiveInt(env.MATCH_HISTORY_COUNT, 'MATCH_HISTORY_COUNT'),
     mongodbUri: mongodbUri && mongodbUri.length > 0 ? mongodbUri : undefined,
+    crawler: {
+      enabled: readBool(env.CRAWLER_ENABLED),
+      budgetFraction: readFloat(env.CRAWL_BUDGET_FRACTION, 'CRAWL_BUDGET_FRACTION', {
+        min: 0.001,
+        max: 1,
+        fallback: 0.25,
+      }),
+      rps: readFloat(env.CRAWL_RPS, 'CRAWL_RPS', { min: 0.01, max: 1000, fallback: 0.8 }),
+      intervalMs: readPositiveInt(env.CRAWL_INTERVAL_MS, 'CRAWL_INTERVAL_MS') ?? 5 * 60 * 1000,
+      seedsPerCycle: readPositiveInt(env.CRAWL_SEEDS_PER_CYCLE, 'CRAWL_SEEDS_PER_CYCLE') ?? 25,
+      matchesPerSeed: readPositiveInt(env.CRAWL_MATCHES_PER_SEED, 'CRAWL_MATCHES_PER_SEED') ?? 20,
+    },
   };
 }

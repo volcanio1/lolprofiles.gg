@@ -86,11 +86,12 @@ function rawMatch(queueId: number, participants: Record<string, unknown>[]): Rec
       gameMode: queueId === 450 ? 'ARAM' : 'CLASSIC',
       gameStartTimestamp: 1_726_000_000_000,
       gameDuration: 1_812,
+      // declared (champion-build-stats-pipeline) — kept
+      gameVersion: '14.18.1',
       participants,
       // NOT declared — must be dropped
       gameCreation: 1_725_999_999_000,
       gameEndTimestamp: 1_726_000_001_812,
-      gameVersion: '14.18.1',
       mapId: 11,
       platformId: 'NA1',
       teams: [
@@ -107,8 +108,9 @@ describe('projectMatchDto — drops undeclared fields (Requirement 2.1)', () => 
 
     expect(Object.keys(projected.metadata).sort()).toEqual(['matchId', 'participants']);
     expect(Object.keys(projected.info).sort()).toEqual(
-      ['gameDuration', 'gameMode', 'gameStartTimestamp', 'participants', 'queueId'].sort(),
+      ['gameDuration', 'gameMode', 'gameStartTimestamp', 'gameVersion', 'participants', 'queueId'].sort(),
     );
+    expect(projected.info.gameVersion).toBe('14.18.1');
     expect('teams' in projected.info).toBe(false);
     expect('gameCreation' in projected.info).toBe(false);
     expect('dataVersion' in projected.metadata).toBe(false);
