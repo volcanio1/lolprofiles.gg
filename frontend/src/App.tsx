@@ -1,5 +1,6 @@
 import { Analytics } from '@vercel/analytics/react';
 import { Route, Routes } from 'react-router-dom';
+import { ChampionBuildPage } from './pages/ChampionBuildPage';
 import { LiveGamePage } from './pages/LiveGamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfileReportPage } from './pages/ProfileReportPage';
@@ -23,6 +24,7 @@ export function App() {
         <Route path="/" element={<SearchPage />} />
         <Route path="/profile" element={<ProfileReportPage />} />
         <Route path="/live" element={<LiveGamePage />} />
+        <Route path="/champion/:championKey" element={<ChampionBuildPage />} />
         <Route path="/test" element={<TestIconsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

@@ -130,6 +130,22 @@ needs no adapter.
   under each `itemPaths` entry, not global).
 - Aggregates-only. Estimated ~60–250 MB depending on rank/region granularity —
   fits M0; the raw match corpus (3–4 GB+) does not and is never stored.
+- **Resolution is the store's, not the endpoint's** (implemented 2026-09-08,
+  task 2). `backend/src/db/championStatsStore.ts` owns the pick/gate/modal logic
+  as the pure `resolveBuilds(cell)` + the meta assembly; the handler only
+  serializes what the store returns. `popular` and `highestWinRate` are both
+  `null` below `BACKEND_DISPLAY_FLOOR` total games; a sub-section (skill order /
+  runes / spells / starting items) is `null` unless its modal cohort value holds
+  ≥ `MODAL_MIN_SHARE` of the item-path cohort. `getBuildStats` → `null` means the
+  store is disabled or has never seen the champion (empty `meta` lists); a result
+  with `popular: null` means the champion is known but the filter combo is thin
+  (populated `meta` lists — filters still work).
+- **`MongoChampionStatsStore` is deferred to `champion-build-stats-pipeline`** —
+  it reads the crawled aggregate documents and its exact document shape is that
+  spec's to fix. The interface + an in-memory fake (raw `ChampionAggregate` cells
+  + real resolution) + a disabled no-op exist now; the composition root wires the
+  no-op, so the endpoint returns the empty-state response until the pipeline
+  lands (Requirement 14.1).
 
 ### Pipeline (separate spec — `champion-build-stats-pipeline`)
 

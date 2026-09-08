@@ -307,6 +307,13 @@ export interface StaticDataProvider {
    * caller falls back to the raw identifier (Requirement 7.4).
    */
   championKeyForId(championId: number): string | null;
+  /**
+   * champion-build-stats Requirement 1: the whole `Champion_Key` → entry map for
+   * the pinned release, or `null` until the index is ready. The one accessor that
+   * returns a collection rather than resolving a single id — the search dropdown
+   * scans every display name for a prefix match, purely client-side.
+   */
+  championCatalog(): Readonly<Record<string, ChampionEntry>> | null;
   /** `0` is a REAL icon (verified 200), so only `null` means absent. */
   profileIconUrl(id: number | null): string | null;
   /** `0` is an EMPTY SLOT, never an item, so it resolves to `null`. */
@@ -733,6 +740,11 @@ export function createStaticDataProvider(
       }
       const key = (map as Record<string, unknown>)[idKey];
       return typeof key === 'string' && key.length > 0 ? key : null;
+    },
+
+    championCatalog(): Readonly<Record<string, ChampionEntry>> | null {
+      const catalog = usable?.champions;
+      return catalog !== undefined && catalog !== null && typeof catalog === 'object' ? catalog : null;
     },
 
     profileIconUrl(id: number | null): string | null {

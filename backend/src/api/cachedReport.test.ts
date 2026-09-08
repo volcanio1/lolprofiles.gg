@@ -19,6 +19,7 @@ import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { REFRESH_COOLDOWN_MS, SNAPSHOT_MAX_AGE_MS } from './cachedReport';
 import { createApiRouter, type ApiLogger } from './index';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Integration tests for `GET /api/players/report` (specs/autofill-search/ task 10.6).
@@ -71,6 +72,7 @@ function makeHarness(stores: {
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
       scoutingOrchestrator: stubScoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger,

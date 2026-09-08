@@ -8,6 +8,7 @@ import { createInMemoryCacheStore } from '../cache';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createApiRouter } from './index';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 const stubLookup: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
@@ -27,6 +28,7 @@ function appWith(result: ScoutingResult) {
       buildPathOrchestrator: stubBuildPath,
       liveGameOrchestrator: { getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }) },
       scoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },
@@ -103,6 +105,7 @@ describe('GET /api/clash/scout', () => {
             return Promise.resolve(REPORT);
           },
         },
+        championStatsStore: createNoopChampionStatsStore(),
         cache: createInMemoryCacheStore({ now: () => 1_000 }),
         now: () => 1_000,
         logger: { unexpectedError: () => undefined },

@@ -15,6 +15,7 @@ import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createApiRouter, type ApiLogger } from './index';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Task 15.4 — integration tests for `POST /api/privacy/delete`.
@@ -78,6 +79,7 @@ function makeHarness(cache?: CacheStore, stores: HarnessStores = {}): Harness {
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
       scoutingOrchestrator: stubScoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: store,
       now,
       logger,

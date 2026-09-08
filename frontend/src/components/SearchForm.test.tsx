@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PlayerSuggestion } from '../api/types';
 import { RIOT_ID_ERROR_DISPLAY } from '../domain/riotId';
 import type { DebounceScheduler, SuggestionFetcher } from '../hooks/usePlayerSuggestions';
+import { StaticDataContext, buildStaticDataIndex, createStaticDataProvider } from '../staticData';
 import { SearchForm } from './SearchForm';
 
 /**
@@ -340,6 +341,156 @@ describe('autofill-search — the suggestion dropdown (Requirement 3/4/5)', () =
     await user.click(submitButton());
 
     expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Doffy#Smile' });
+  });
+});
+
+describe('champion-build-stats — champion rows in the dropdown (Requirements 1, 2, 9)', () => {
+  const CHAMPION_JSON = {
+    data: {
+      Jax: { name: 'Jax', image: { full: 'Jax.png' } },
+      Janna: { name: 'Janna', image: { full: 'Janna.png' } },
+      Jinx: { name: 'Jinx', image: { full: 'Jinx.png' } },
+      MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' } },
+    },
+  };
+  const VERSION = '16.17.1';
+
+  function renderWithChampions(overrides: Partial<Parameters<typeof SearchForm>[0]> = {}) {
+    const onSubmit = vi.fn();
+    const onSelectChampion = vi.fn();
+    const timer = manualScheduler();
+    const fetcher = controllableFetcher();
+    const provider = createStaticDataProvider(
+      VERSION,
+      buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }),
+    );
+    render(
+      <StaticDataContext.Provider value={provider}>
+        <SearchForm
+          onSubmit={onSubmit}
+          onSelectChampion={onSelectChampion}
+          suggestionOptions={{ schedule: timer.schedule, fetchSuggestions: fetcher.fetchSuggestions }}
+          {...overrides}
+        />
+      </StaticDataContext.Provider>,
+    );
+    return { onSubmit, onSelectChampion, timer, fetcher };
+  }
+
+  const options = () => screen.getAllByRole('option');
+
+  it('shows matching champions as options, without any request', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = renderWithChampions();
+
+    await user.type(riotIdInput(), 'ja');
+
+    expect(fetcher.calls).toHaveLength(0);
+    expect(options().map((o) => o.textContent)).toEqual(['Janna', 'Jax']);
+  });
+
+  it('does not render champion rows when onSelectChampion is not supplied', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const provider = createStaticDataProvider(
+      VERSION,
+      buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }),
+    );
+    render(
+      <StaticDataContext.Provider value={provider}>
+        <SearchForm onSubmit={onSubmit} />
+      </StaticDataContext.Provider>,
+    );
+    await user.type(riotIdInput(), 'ja');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('labels the two groups only when both are present', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderWithChampions();
+
+    // champions only -> no "Champions" heading
+    await user.type(riotIdInput(), 'jin');
+    expect(screen.queryByText('Champions')).not.toBeInTheDocument();
+
+    // now a player match arrives too
+    act(() => {
+      timer.fire();
+    });
+    const call = fetcher.calls[fetcher.calls.length - 1];
+    await act(async () => {
+      call.resolve([suggestion('Jinxed', 'NA1')]);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Champions')).toBeInTheDocument();
+    expect(screen.getByText('Players')).toBeInTheDocument();
+  });
+
+  it('a players-only dropdown carries no group label (behaves as before)', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderWithChampions();
+
+    await user.type(riotIdInput(), 'zz'); // matches no champion
+    act(() => {
+      timer.fire();
+    });
+    const call = fetcher.calls[fetcher.calls.length - 1];
+    await act(async () => {
+      call.resolve([suggestion('Zzz', 'NA1')]);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.queryByText('Players')).not.toBeInTheDocument();
+    expect(screen.queryByText('Champions')).not.toBeInTheDocument();
+  });
+
+  it('traverses champion rows then player rows as one sequence', async () => {
+    const user = userEvent.setup();
+    const { timer, fetcher } = renderWithChampions();
+
+    await user.type(riotIdInput(), 'jin');
+    act(() => {
+      timer.fire();
+    });
+    const call = fetcher.calls[fetcher.calls.length - 1];
+    await act(async () => {
+      call.resolve([suggestion('Jinxed', 'NA1')]);
+      await Promise.resolve();
+    });
+
+    // rows: [Jinx (champion), Jinxed (player)]
+    await user.keyboard('{ArrowDown}');
+    expect(options()[0]).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowDown}');
+    expect(options()[1]).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowDown}'); // wraps
+    expect(options()[0]).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('picking a champion row calls onSelectChampion and runs no validation or lookup', async () => {
+    const user = userEvent.setup();
+    const { onSubmit, onSelectChampion } = renderWithChampions();
+
+    await user.type(riotIdInput(), 'wuk');
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(onSelectChampion).toHaveBeenCalledWith('MonkeyKing');
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('a value with # yields no champion rows and still submits a full Riot ID', async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderWithChampions();
+
+    await user.type(riotIdInput(), 'Jax#NA1');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    await user.click(submitButton());
+    expect(onSubmit).toHaveBeenCalledWith({ riotId: 'Jax#NA1' });
   });
 });
 

@@ -4,11 +4,13 @@ import {
   errorCodeForStatus,
   fetchBuildPath,
   fetchCachedReport,
+  fetchChampionBuildStats,
   fetchSuggestions,
   isProfileReport,
   lookupProfile,
   readBuildPathResponse,
   readCachedReport,
+  readChampionBuildStats,
   readErrorPayload,
   readLiveGameResponse,
   readSuggestions,
@@ -545,5 +547,125 @@ describe('readLiveGameResponse', () => {
     expect(readLiveGameResponse({ kind: 'in_game', lobby: { matchId: 5 } })).toBeNull();
     expect(readLiveGameResponse(null)).toBeNull();
     expect(readLiveGameResponse(lobby([{ teamId: 100 }]))).toBeNull(); // participant missing fields
+  });
+});
+
+describe('champion-build-stats — GET /api/champions/:championKey/build-stats', () => {
+  const validBody = {
+    champion: { key: 'Jinx', name: 'Jinx' },
+    filtersApplied: { role: 'BOTTOM', rank: 'EMERALD_PLUS', region: 'world' },
+    meta: {
+      patch: '16.17',
+      lastUpdatedAt: 1_700_000_000_000,
+      availableRoles: ['ALL', 'BOTTOM'],
+      defaultRole: 'BOTTOM',
+      availableRanks: ['ALL', 'EMERALD_PLUS'],
+      defaultRank: 'ALL',
+      availableRegions: ['world'],
+      overall: { winRate: 0.52, pickRate: 0.24, totalGames: 12_400 },
+    },
+    popular: {
+      matchCount: 4200,
+      winRate: 0.51,
+      pickRate: 0.34,
+      coreItems: [3006, 3031, 3036, 6672],
+      startingItems: [1055, 2003],
+      skillOrder: { maxOrder: ['Q', 'W', 'E'], perLevel: [1, 3, 2, 1] },
+      runes: {
+        primaryStyle: 8100,
+        secondaryStyle: 8000,
+        primarySelections: [8112, 8126, 8138, 8135],
+        secondarySelections: [9111, 8014],
+        statShards: [5008, 5008, 5001],
+      },
+      summonerSpells: [4, 7],
+    },
+    highestWinRate: null,
+  };
+
+  it('requests the endpoint, omitting default filters', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchLike: FetchLike = (url, init) => {
+      calls.push({ url, init });
+      return Promise.resolve(jsonResponse(200, validBody));
+    };
+
+    await fetchChampionBuildStats('Jinx', { role: 'ALL', rank: 'ALL', region: 'world' }, { fetch: fetchLike, baseUrl: BASE });
+    expect(calls[0].url).toBe(`${BASE}/api/champions/Jinx/build-stats`);
+
+    calls.length = 0;
+    await fetchChampionBuildStats('Jinx', { role: 'BOTTOM', rank: 'EMERALD_PLUS' }, { fetch: fetchLike, baseUrl: BASE });
+    expect(calls[0].url).toBe(`${BASE}/api/champions/Jinx/build-stats?role=BOTTOM&rank=EMERALD_PLUS`);
+    expect(calls[0].init.method).toBe('GET');
+  });
+
+  it('parses a well-formed 200 body, trimming coreItems to 3', async () => {
+    const result = await fetchChampionBuildStats('Jinx', {}, {
+      fetch: () => Promise.resolve(jsonResponse(200, validBody)),
+      baseUrl: BASE,
+    });
+    expect(result.champion).toEqual({ key: 'Jinx', name: 'Jinx' });
+    expect(result.meta.overall.totalGames).toBe(12_400);
+    expect(result.popular?.coreItems).toEqual([3006, 3031, 3036]);
+    expect(result.popular?.runes?.primaryStyle).toBe(8100);
+    expect(result.highestWinRate).toBeNull();
+  });
+
+  it('rejects on a non-2xx, a transport error, and an unparseable body (Requirement 4.4)', async () => {
+    await expect(
+      fetchChampionBuildStats('Jinx', {}, { fetch: () => Promise.resolve(jsonResponse(500, { error: 'boom' })), baseUrl: BASE }),
+    ).rejects.toThrow();
+    await expect(
+      fetchChampionBuildStats('Jinx', {}, { fetch: () => Promise.reject(new Error('aborted')), baseUrl: BASE }),
+    ).rejects.toThrow();
+    await expect(
+      fetchChampionBuildStats('Jinx', {}, { fetch: () => Promise.resolve(unparseableResponse(200)), baseUrl: BASE }),
+    ).rejects.toThrow();
+  });
+
+  it('resolves a 200 whose body does not narrow to the empty-state, not an error', async () => {
+    const malformed = await fetchChampionBuildStats('Jinx', { role: 'BOTTOM' }, {
+      fetch: () => Promise.resolve(jsonResponse(200, { nonsense: true })),
+      baseUrl: BASE,
+    });
+    expect(malformed).toEqual({
+      champion: { key: 'Jinx', name: 'Jinx' },
+      filtersApplied: { role: 'BOTTOM', rank: 'ALL', region: 'world' },
+      meta: {
+        patch: '',
+        lastUpdatedAt: 0,
+        availableRoles: [],
+        defaultRole: 'ALL',
+        availableRanks: [],
+        defaultRank: 'ALL',
+        availableRegions: [],
+        overall: { winRate: 0, pickRate: 0, totalGames: 0 },
+      },
+      popular: null,
+      highestWinRate: null,
+    });
+  });
+
+  it('passes the abort signal through', async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    await fetchChampionBuildStats('Jinx', {}, {
+      fetch: (_url, init) => {
+        seen = init.signal ?? undefined;
+        return Promise.resolve(jsonResponse(200, validBody));
+      },
+      baseUrl: BASE,
+      signal: controller.signal,
+    });
+    expect(seen).toBe(controller.signal);
+  });
+
+  it('readChampionBuildStats drops a build whose numbers are not finite', () => {
+    const parsed = readChampionBuildStats({
+      ...validBody,
+      popular: { ...validBody.popular, winRate: Number.NaN },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.popular).toBeNull();
   });
 });

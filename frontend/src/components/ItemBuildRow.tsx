@@ -31,7 +31,13 @@ import type { ItemBuild } from '../api/types';
 import { AssetPlaceholder } from './AssetPlaceholder';
 import { Tooltip } from './Tooltip';
 
-function ItemSlot({ id, size, className }: { id: number; size: number; className?: string }) {
+/**
+ * One item icon: resolves the id to a Data Dragon icon with a hover `Tooltip`,
+ * degrading to an `AssetPlaceholder` for an empty slot (`0`) or an unresolvable
+ * id. Exported so `CoreItemsRow` (champion-build-stats) renders the exact same
+ * tile as the match Build Path tab.
+ */
+export function ItemSlot({ id, size, className }: { id: number; size: number; className?: string }) {
   const provider = useStaticData();
   const [failed, setFailed] = useState(false);
 

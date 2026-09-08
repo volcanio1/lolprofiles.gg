@@ -83,11 +83,22 @@ function useChampionAbilities(championKey: string): ChampionAbilities | null {
   return abilities;
 }
 
+export type AbilitySlot = 'Q' | 'W' | 'E';
+
+/** slot index 0-2 -> ability key. */
+const RANKABLE_KEYS: readonly AbilitySlot[] = ['Q', 'W', 'E'];
+
 /**
- * For Q/W/E (slots 1-3): the 1-based order in which each was maxed (reached 5
- * points). `undefined` for an ability that never hit 5. R is not ranked.
+ * Q/W/E in the order they were maxed (reached 5 points) — e.g. `['Q', 'W', 'E']`.
+ * An ability that never hit 5 is omitted; R is never ranked. This is the shape
+ * the champion-build-stats wire contract (`Build.skillOrder.maxOrder`) already
+ * uses, so `SkillOrderChart` takes it directly from either source.
+ *
+ * Renamed from `maxOrder` by champion-build-stats task 12.2 (the old name
+ * collided with the `SkillOrderChart` prop) and changed from a slot->rank record
+ * to this ordered key list.
  */
-export function maxOrder(skillOrder: readonly number[]): Record<number, number | undefined> {
+export function maxOrderFromSkillOrder(skillOrder: readonly number[]): AbilitySlot[] {
   const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
   const maxedAtIndex: Record<number, number> = {};
   skillOrder.forEach((slot, index) => {
@@ -99,28 +110,31 @@ export function maxOrder(skillOrder: readonly number[]): Record<number, number |
       maxedAtIndex[slot] = index;
     }
   });
-  const maxedSlots = [1, 2, 3]
+  return [1, 2, 3]
     .filter((slot) => maxedAtIndex[slot] !== undefined)
-    .sort((a, b) => maxedAtIndex[a] - maxedAtIndex[b]);
-  const result: Record<number, number | undefined> = {};
-  maxedSlots.forEach((slot, rank) => {
-    result[slot] = rank + 1;
-  });
-  return result;
+    .sort((a, b) => maxedAtIndex[a] - maxedAtIndex[b])
+    .map((slot) => RANKABLE_KEYS[slot - 1]);
 }
 
-const BADGE = ['', '①', '②', '③'];
+const BADGE = ['①', '②', '③'];
 
-export interface SkillOrderViewProps {
+export interface SkillOrderChartProps {
   /** Riot champion key, e.g. `Ahri` / `MonkeyKing`. */
-  championName: string;
-  skillOrder: readonly number[];
+  championKey: string;
+  /** One ability slot (1-4 = Q/W/E/R) per champion level, in level order. */
+  perLevel: readonly number[];
+  /** Q/W/E in max order; empty when none reached 5 points. */
+  maxOrder: readonly AbilitySlot[];
 }
 
-export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps) {
-  const abilities = useChampionAbilities(championName);
-  const orders = maxOrder(skillOrder);
-  const levels = skillOrder.length;
+/**
+ * The presentational core: ability tiles + max-order badges + the per-level
+ * grid. Fed directly by the champion build page and, via the thin
+ * `SkillOrderView` wrapper below, by the match Build Path tab.
+ */
+export function SkillOrderChart({ championKey, perLevel, maxOrder }: SkillOrderChartProps) {
+  const abilities = useChampionAbilities(championKey);
+  const levels = perLevel.length;
 
   if (levels === 0) {
     return null;
@@ -132,9 +146,9 @@ export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps
 
       <ul className="skill-order-tiles" role="list">
         {SLOT_KEYS.map((key, index) => {
-          const slot = index + 1;
           const iconUrl = abilities?.spellIconUrls[index] ?? null;
           const name = abilities?.spellNames[index] ?? `${key} ability`;
+          const rank = key === 'R' ? -1 : maxOrder.indexOf(key as AbilitySlot);
           return (
             <li key={key} className="skill-order-tile">
               {iconUrl !== null ? (
@@ -145,9 +159,9 @@ export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps
                 </span>
               )}
               <span className="skill-order-tile-key">{key}</span>
-              {orders[slot] !== undefined ? (
-                <span className="skill-order-tile-badge" aria-label={`maxed ${String(orders[slot])}`}>
-                  {BADGE[orders[slot] as number]}
+              {rank >= 0 ? (
+                <span className="skill-order-tile-badge" aria-label={`maxed ${String(rank + 1)}`}>
+                  {BADGE[rank]}
                 </span>
               ) : null}
             </li>
@@ -175,7 +189,7 @@ export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps
                 <th scope="row" className="skill-order-grid-ability">
                   {key}
                 </th>
-                {skillOrder.map((leveled, level) => (
+                {perLevel.map((leveled, level) => (
                   <td
                     key={level}
                     className={
@@ -191,5 +205,23 @@ export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps
         </tbody>
       </table>
     </div>
+  );
+}
+
+export interface SkillOrderViewProps {
+  /** Riot champion key, e.g. `Ahri` / `MonkeyKing`. */
+  championName: string;
+  skillOrder: readonly number[];
+}
+
+/** The match Build Path tab's entry point — derives the chart's props from the
+ * per-level array the match timeline produces. */
+export function SkillOrderView({ championName, skillOrder }: SkillOrderViewProps) {
+  return (
+    <SkillOrderChart
+      championKey={championName}
+      perLevel={skillOrder}
+      maxOrder={maxOrderFromSkillOrder(skillOrder)}
+    />
   );
 }

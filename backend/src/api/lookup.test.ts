@@ -6,6 +6,7 @@ import type { LookupInput, LookupOrchestrator, LookupResult, ProfileReport } fro
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import { createApiRouter, type ApiLogger } from './index';
 import { parseLookupRequest } from './lookup';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Task 15.1 — `POST /api/lookup` over the real Express stack via supertest.
@@ -58,6 +59,7 @@ function makeHarness(result: LookupResult, throws?: () => never): Harness {
         getLiveGame: () => Promise.resolve({ kind: 'not_in_game' }),
       },
       scoutingOrchestrator: { scout: () => Promise.resolve({ kind: 'not_registered' }) },
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger,

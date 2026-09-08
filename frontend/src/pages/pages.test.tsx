@@ -9,6 +9,7 @@ import type { ProfileReport } from '../api/types';
 import { perQueueReportFields } from '../test/reportExtras';
 import { RIOT_ATTRIBUTION_TEXT } from '../compliance/RiotDataPage';
 import type { UseLookupOptions } from '../hooks/useLookup';
+import { StaticDataContext, buildStaticDataIndex, createStaticDataProvider } from '../staticData';
 import { ProfileReportPage } from './ProfileReportPage';
 import { SearchPage, reportPathFor } from './SearchPage';
 
@@ -117,6 +118,36 @@ describe('SearchPage — Requirement 1.1/1.2', () => {
       expect(screen.getByTestId('location')).toHaveTextContent('/profile');
     });
     expect(screen.getByTestId('location')).toHaveTextContent('riotId=Doffy%23Smile');
+  });
+
+  it('navigates to the champion page when a champion row is picked (champion-build-stats Requirement 2.4)', async () => {
+    const user = userEvent.setup();
+    const version = '16.17.1';
+    const provider = createStaticDataProvider(
+      version,
+      buildStaticDataIndex(version, { data: { Jinx: { name: 'Jinx', image: { full: 'Jinx.png' } } } }, { data: {} }),
+    );
+    render(
+      <HelmetProvider>
+        <StaticDataContext.Provider value={provider}>
+          <MemoryRouter initialEntries={['/']}>
+            <LocationProbe />
+            <Routes>
+              <Route path="/" element={<SearchPage />} />
+              <Route path="/champion/:championKey" element={<div data-testid="champion-page" />} />
+            </Routes>
+          </MemoryRouter>
+        </StaticDataContext.Provider>
+      </HelmetProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Riot ID'), 'jin');
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/champion/Jinx');
+    });
+    expect(screen.getByTestId('champion-page')).toBeInTheDocument();
   });
 
   it('does not navigate when validation fails (Requirement 9.1)', async () => {

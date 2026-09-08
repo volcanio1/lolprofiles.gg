@@ -28,6 +28,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
+import { championPathFor } from '../domain/championSuggestions';
 import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 
@@ -66,6 +67,11 @@ export function SearchPage() {
         }}
         onSelectSuggestion={(submission) => {
           navigate(reportPathFor(submission, true));
+        }}
+        onSelectChampion={(championKey) => {
+          // champion-build-stats Requirement 2.4 / 3.6: a champion pick is a
+          // history push to the champion page — Back returns here.
+          navigate(championPathFor(championKey));
         }}
       />
     </RiotDataPage>

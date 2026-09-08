@@ -1,19 +1,33 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { SkillOrderView, maxOrder } from './SkillOrderView';
+import { SkillOrderChart, SkillOrderView, maxOrderFromSkillOrder } from './SkillOrderView';
 
 // Q W Q E Q R Q W Q W R W W E E R E  (17 level-ups)
 const ORDER = [1, 2, 1, 3, 1, 4, 1, 2, 1, 2, 4, 2, 2, 3, 3, 4, 3];
 
-describe('maxOrder', () => {
-  it('ranks Q/W/E by the level at which each reached 5 points; R is not ranked', () => {
+describe('maxOrderFromSkillOrder', () => {
+  it('lists Q/W/E in the order each reached 5 points; R is not ranked', () => {
     // Q's 5th point is at index 8, W's 5th at index 12, E never reaches 5.
-    expect(maxOrder(ORDER)).toEqual({ 1: 1, 2: 2 });
+    expect(maxOrderFromSkillOrder(ORDER)).toEqual(['Q', 'W']);
   });
 
   it('is empty when nothing was maxed', () => {
-    expect(maxOrder([1, 2, 3, 4])).toEqual({});
+    expect(maxOrderFromSkillOrder([1, 2, 3, 4])).toEqual([]);
+  });
+});
+
+describe('SkillOrderChart', () => {
+  it('badges the abilities in the given max order and takes perLevel directly', () => {
+    render(<SkillOrderChart championKey="Orianna" perLevel={ORDER} maxOrder={['W', 'Q']} />);
+    expect(screen.getByLabelText('maxed 1')).toBeInTheDocument(); // W, first
+    expect(screen.getByLabelText('maxed 2')).toBeInTheDocument(); // Q, second
+    expect(document.querySelectorAll('.skill-order-grid-cell--on')).toHaveLength(ORDER.length);
+  });
+
+  it('renders nothing with no level data', () => {
+    const { container } = render(<SkillOrderChart championKey="Orianna" perLevel={[]} maxOrder={[]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
 

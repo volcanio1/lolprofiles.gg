@@ -14,6 +14,7 @@ import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createInMemoryCacheStore } from '../cache';
 import { createApiRouter, type ApiLogger } from './index';
 import { clampLimit, MAX_SUGGESTIONS } from './suggest';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Integration tests for `GET /api/players/suggest` (specs/autofill-search/ task 1.4).
@@ -61,6 +62,7 @@ function makeHarness(lookedUpPlayerStore?: LookedUpPlayerStore): Harness {
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
       scoutingOrchestrator: stubScoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now: () => NOW }),
       now: () => NOW,
       logger,

@@ -12,6 +12,14 @@
  * know it exists.
  */
 
+// The champion-build-stats filter vocabularies live with their values +
+// parity test in `domain/buildStatsConstants.ts`; re-exported here under
+// contract-scoped names so consumers can import them alongside the wire types.
+import type { RankBucket, Role } from '../domain/buildStatsConstants';
+
+export type ChampionStatsRole = Role;
+export type ChampionStatsRankBucket = RankBucket;
+
 export interface RiotIdParts {
   gameName: string;
   tagLine: string;
@@ -532,3 +540,59 @@ export type ClashScoutResponse =
   | { kind: 'report'; report: ClashScoutingReport }
   | { kind: 'multiple_teams'; teams: readonly ClashTeamSummary[] }
   | { kind: 'not_registered' };
+
+// ---------------------------------------------------------------------------
+// champion-build-stats: GET /api/champions/:championKey/build-stats
+// Mirrors backend/src/db/championStatsStore.ts + api/championBuildStats.ts.
+// ---------------------------------------------------------------------------
+
+export interface ChampionBuildSkillOrder {
+  /** Ability max order, e.g. `['Q', 'W', 'E']` (Requirement 11.2). */
+  maxOrder: readonly ('Q' | 'W' | 'E')[];
+  /** One ability (1-4 = Q/W/E/R) per level, in level order. */
+  perLevel: readonly (1 | 2 | 3 | 4)[];
+}
+
+export interface ChampionBuild {
+  /** Games played on THIS build (Requirement 5.3.2) — non-negative integer. */
+  matchCount: number;
+  /** In `[0, 1]` (Requirement 11.3). */
+  winRate: number;
+  /** In `[0, 1]` — this build's share of the champion's games at these filters. */
+  pickRate: number;
+  /** Item ids in purchase order, length <= `CORE_ITEM_COUNT` (Requirement 11.2). */
+  coreItems: readonly number[];
+  startingItems: readonly number[] | null;
+  /** Modal value within this build's cohort; `null` below the modal threshold (Requirement 7.3). */
+  skillOrder: ChampionBuildSkillOrder | null;
+  /** Same shape the match Runes tab consumes; `null` below the modal threshold. */
+  runes: RunePage | null;
+  summonerSpells: readonly [number, number] | null;
+}
+
+export interface ChampionStatsOverall {
+  winRate: number;
+  pickRate: number;
+  totalGames: number;
+}
+
+export interface ChampionStatsMeta {
+  /** e.g. `"16.17"` (Requirement 8.1). */
+  patch: string;
+  /** Epoch ms; the frontend renders "updated N ago" (Requirement 8.1). */
+  lastUpdatedAt: number;
+  availableRoles: readonly ChampionStatsRole[];
+  defaultRole: ChampionStatsRole;
+  availableRanks: readonly ChampionStatsRankBucket[];
+  defaultRank: ChampionStatsRankBucket;
+  availableRegions: readonly string[];
+  overall: ChampionStatsOverall;
+}
+
+export interface ChampionBuildStats {
+  champion: { key: string; name: string };
+  filtersApplied: { role: ChampionStatsRole; rank: ChampionStatsRankBucket; region: string };
+  meta: ChampionStatsMeta;
+  popular: ChampionBuild | null;
+  highestWinRate: ChampionBuild | null;
+}

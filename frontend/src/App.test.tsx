@@ -29,6 +29,13 @@ describe('App routing', () => {
     expect(screen.queryByRole('heading', { name: 'Search a player' })).not.toBeInTheDocument();
   });
 
+  it('renders the champion build page at "/champion/:championKey"', () => {
+    renderAt('/champion/Jinx');
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Champion build' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No match' })).not.toBeInTheDocument();
+  });
+
   it('renders the 404 page for any unmatched route', () => {
     renderAt('/no/such/page');
 

@@ -9,6 +9,7 @@ import type { LookupOrchestrator } from './orchestrator';
 import type { BuildPathOrchestrator } from './orchestrator/buildPath';
 import type { LiveGameOrchestrator } from './liveGame/orchestrator';
 import type { ScoutingOrchestrator } from './clashScouting/orchestrator';
+import { createNoopChampionStatsStore } from './db/championStatsStore';
 
 /**
  * App-level assembly tests. The orchestrator is a stub and the cache is the real
@@ -40,6 +41,7 @@ function makeApp(overrides: { staticDir?: string } = {}) {
     buildPathOrchestrator: stubBuildPathOrchestrator,
     liveGameOrchestrator: stubLiveGameOrchestrator,
     scoutingOrchestrator: stubScoutingOrchestrator,
+    championStatsStore: createNoopChampionStatsStore(),
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },

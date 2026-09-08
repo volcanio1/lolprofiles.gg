@@ -37,6 +37,27 @@ export function formatWinRate(winRatePercent: number | 'N/A'): string {
 }
 
 /**
+ * champion-build-stats Requirement 5.5: a `[0, 1]` rate as a percentage to one
+ * decimal place — `0.5123` -> `"51.2%"`. A non-finite input renders as `"—"`,
+ * never `NaN%` / `Infinity%`.
+ */
+export function formatRateToPercent(fraction: number): string {
+  if (!Number.isFinite(fraction)) {
+    return '—';
+  }
+  const clamped = Math.min(1, Math.max(0, fraction));
+  return `${(clamped * 100).toFixed(1)}%`;
+}
+
+/**
+ * champion-build-stats Requirement 5.1/5.3.2: a whole count with a thousands
+ * separator — `12400` -> `"12,400"`. A non-finite input renders as `"—"`.
+ */
+export function formatGameCount(value: number): string {
+  return Number.isFinite(value) ? Math.round(Math.max(0, value)).toLocaleString('en-US') : '—';
+}
+
+/**
  * autofill-search Requirement 10.2: a compact relative age for the Refresh
  * label — "just now", "3m ago", "5h ago", "2d ago". `from` and `now` are epoch
  * ms; a future or unparseable `from` reads as "just now".

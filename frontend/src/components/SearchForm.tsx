@@ -11,6 +11,11 @@
  *  - autofill-search Requirements 3-5: an as-you-type suggestion dropdown driven
  *    by `usePlayerSuggestions`, wired as an ARIA combobox, where selecting a row
  *    fills a known-good Riot ID and submits it.
+ *  - champion-build-stats Requirements 1-2, 9: when the value is a champion-name
+ *    prefix (no `#`), champion rows appear in a "Champions" group above the
+ *    "Players" group; picking one navigates to `/champion/:key` via
+ *    `onSelectChampion` and runs NO Riot ID validation or lookup. The two groups
+ *    share one flat keyboard sequence.
  *
  * ---------------------------------------------------------------------------
  * DOCUMENTED DECISIONS
@@ -35,21 +40,32 @@
  * 4. autofill-search — THE DROPDOWN NEVER CHANGES WHAT SUBMIT MEANS. `activeIndex`
  *    is `-1` (no active row) until the visitor arrows or hovers into the list; with
  *    no active row, Enter falls through to the form's normal submit path
- *    (Requirement 4.3). Selecting a row builds the value from a known-good record
- *    and still runs it through `validateRiotId` before dispatching (Requirement
- *    5.3), so the suggestion path and the typed path share one validation.
+ *    (Requirement 4.3). Selecting a PLAYER row builds the value from a known-good
+ *    record and still runs it through `validateRiotId` before dispatching
+ *    (Requirement 5.3); selecting a CHAMPION row navigates away and never touches
+ *    the validator (champion-build-stats Requirement 2.4).
  *
  * 5. autofill-search — ROWS USE `onMouseDown` WITH `preventDefault`, NOT `onClick`.
  *    A click on a row would blur the input first, closing the dropdown before the
  *    click resolves. `mousedown` fires before blur and `preventDefault` keeps focus
  *    on the input through the selection (Requirement 4.5 / 3.6).
+ *
+ * 6. champion-build-stats — THE GROUP LABELS SHOW ONLY WHEN BOTH KINDS ARE
+ *    PRESENT (Requirement 2.1). A players-only dropdown is exactly what
+ *    autofill-search shipped: no "Players" heading. `champions` and `players` are
+ *    concatenated into one `rows` array so the keyboard model (Requirement 4 /
+ *    2.3) needs no rethink — only `selectRow` branches on `row.kind` and the
+ *    render splits into two groups.
  */
 
 import { useId, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { RIOT_ID_ERROR_DISPLAY, validateRiotId } from '../domain/riotId';
 import { namePrefixOf } from '../domain/suggestions';
+import { matchChampions } from '../domain/championSuggestions';
 import { usePlayerSuggestions, type UsePlayerSuggestionsOptions } from '../hooks/usePlayerSuggestions';
 import type { PlayerSuggestion } from '../api/types';
+import { useStaticData } from '../staticData';
+import { ChampionIcon } from './ChampionIcon';
 import { ProfileIcon } from './ProfileIcon';
 
 export interface SearchSubmission {
@@ -65,6 +81,12 @@ export interface SearchFormProps {
    * report first. Defaults to `onSubmit` when not supplied.
    */
   onSelectSuggestion?: (submission: SearchSubmission) => void;
+  /**
+   * champion-build-stats Requirement 2.4: called with a `Champion_Key` when a
+   * champion row is picked. The caller navigates to the champion page. When not
+   * supplied, champion rows do not render.
+   */
+  onSelectChampion?: (championKey: string) => void;
   /** Prefills when returning to the form from a report. */
   initialRiotId?: string;
   /** Disables submission while a lookup is in flight. */
@@ -73,9 +95,14 @@ export interface SearchFormProps {
   suggestionOptions?: UsePlayerSuggestionsOptions;
 }
 
+type Row =
+  | { kind: 'champion'; key: string; name: string }
+  | { kind: 'player'; player: PlayerSuggestion };
+
 export function SearchForm({
   onSubmit,
   onSelectSuggestion,
+  onSelectChampion,
   initialRiotId = '',
   busy = false,
   suggestionOptions,
@@ -90,12 +117,25 @@ export function SearchForm({
   const riotIdInputId = useId();
   const riotIdErrorId = useId();
   const listboxId = useId();
+  const championGroupId = useId();
+  const playerGroupId = useId();
   const optionId = (index: number) => `${listboxId}-option-${String(index)}`;
 
   const { suggestions, clear } = usePlayerSuggestions(namePrefixOf(riotId), suggestionOptions);
 
-  const open = focused && !dismissed && suggestions.length > 0;
-  const active = open && activeIndex >= 0 && activeIndex < suggestions.length ? activeIndex : -1;
+  const championCatalog = useStaticData().championCatalog();
+  const champions =
+    onSelectChampion === undefined ? [] : matchChampions(riotId, championCatalog);
+
+  // Decision 6: one flat sequence, champions first.
+  const rows: Row[] = [
+    ...champions.map((c): Row => ({ kind: 'champion', key: c.key, name: c.name })),
+    ...suggestions.map((player): Row => ({ kind: 'player', player })),
+  ];
+  const showGroupLabels = champions.length > 0 && suggestions.length > 0;
+
+  const open = focused && !dismissed && rows.length > 0;
+  const active = open && activeIndex >= 0 && activeIndex < rows.length ? activeIndex : -1;
 
   function dispatch(value: string, viaSuggestion: boolean) {
     const validation = validateRiotId(value);
@@ -120,12 +160,22 @@ export function SearchForm({
     dispatch(riotId, false);
   }
 
-  function select(suggestion: PlayerSuggestion) {
-    const value = `${suggestion.gameName}#${suggestion.tagLine}`;
-    setRiotId(value);
+  function closeDropdown() {
     clear();
     setDismissed(true);
     setActiveIndex(-1);
+  }
+
+  function selectRow(row: Row) {
+    if (row.kind === 'champion') {
+      closeDropdown();
+      // Decision 4: no validation, no lookup (Requirement 2.4).
+      onSelectChampion?.(row.key);
+      return;
+    }
+    const value = `${row.player.gameName}#${row.player.tagLine}`;
+    setRiotId(value);
+    closeDropdown();
     // Decision 4: still runs through the shared validator (Requirement 5.3/5.4).
     dispatch(value, true);
   }
@@ -144,18 +194,48 @@ export function SearchForm({
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveIndex((current) => (current + 1) % suggestions.length);
+      setActiveIndex((current) => (current + 1) % rows.length);
       return;
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActiveIndex((current) => (current <= 0 ? suggestions.length - 1 : current - 1));
+      setActiveIndex((current) => (current <= 0 ? rows.length - 1 : current - 1));
       return;
     }
     if (event.key === 'Enter' && active >= 0) {
       event.preventDefault();
-      select(suggestions[active]);
+      selectRow(rows[active]);
     }
+  }
+
+  function renderRow(row: Row, index: number) {
+    return (
+      <li
+        key={row.kind === 'champion' ? `champion:${row.key}` : `player:${row.player.gameName}#${row.player.tagLine}`}
+        id={optionId(index)}
+        role="option"
+        aria-selected={index === active}
+        className={index === active ? 'suggestion suggestion--active' : 'suggestion'}
+        onMouseEnter={() => {
+          setActiveIndex(index);
+        }}
+        onMouseDown={(event) => {
+          // Decision 5.
+          event.preventDefault();
+          selectRow(row);
+        }}
+      >
+        {row.kind === 'champion' ? (
+          <ChampionIcon championKey={row.key} size={24} className="suggestion-icon" />
+        ) : (
+          <>
+            <ProfileIcon profileIconId={row.player.profileIconId} size={24} className="suggestion-icon" />
+            <span className="suggestion-name">{row.player.gameName}</span>
+            <span className="suggestion-tag">#{row.player.tagLine}</span>
+          </>
+        )}
+      </li>
+    );
   }
 
   return (
@@ -202,27 +282,34 @@ export function SearchForm({
           />
           {open ? (
             <ul id={listboxId} role="listbox" className="suggestion-list">
-              {suggestions.map((suggestion, index) => (
-                <li
-                  key={`${suggestion.gameName}#${suggestion.tagLine}`}
-                  id={optionId(index)}
-                  role="option"
-                  aria-selected={index === active}
-                  className={index === active ? 'suggestion suggestion--active' : 'suggestion'}
-                  onMouseEnter={() => {
-                    setActiveIndex(index);
-                  }}
-                  onMouseDown={(event) => {
-                    // Decision 5.
-                    event.preventDefault();
-                    select(suggestion);
-                  }}
-                >
-                  <ProfileIcon profileIconId={suggestion.profileIconId} size={24} className="suggestion-icon" />
-                  <span className="suggestion-name">{suggestion.gameName}</span>
-                  <span className="suggestion-tag">#{suggestion.tagLine}</span>
+              {champions.length > 0 ? (
+                <li role="presentation" className="suggestion-group">
+                  {showGroupLabels ? (
+                    <span id={championGroupId} className="suggestion-group-label">
+                      Champions
+                    </span>
+                  ) : null}
+                  <ul role="group" aria-labelledby={showGroupLabels ? championGroupId : undefined} className="suggestion-group-list">
+                    {rows.map((row, index) =>
+                      row.kind === 'champion' ? renderRow(row, index) : null,
+                    )}
+                  </ul>
                 </li>
-              ))}
+              ) : null}
+              {suggestions.length > 0 ? (
+                <li role="presentation" className="suggestion-group">
+                  {showGroupLabels ? (
+                    <span id={playerGroupId} className="suggestion-group-label">
+                      Players
+                    </span>
+                  ) : null}
+                  <ul role="group" aria-labelledby={showGroupLabels ? playerGroupId : undefined} className="suggestion-group-list">
+                    {rows.map((row, index) =>
+                      row.kind === 'player' ? renderRow(row, index) : null,
+                    )}
+                  </ul>
+                </li>
+              ) : null}
             </ul>
           ) : null}
         </div>

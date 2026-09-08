@@ -52,6 +52,7 @@ import type { RankCheckpointStore } from '../db/rankCheckpointStore';
 import type { LookedUpPlayerStore } from '../db/lookedUpPlayerStore';
 import type { ProfileSnapshotStore } from '../db/profileSnapshotStore';
 import type { MatchStore } from '../db/matchStore';
+import type { ChampionStatsStore } from '../db/championStatsStore';
 import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
@@ -66,6 +67,7 @@ import { createPrivacyDeleteHandler } from './privacy';
 import { createStaticDataHandler } from './staticData';
 import { createSuggestHandler } from './suggest';
 import { createCachedReportHandler } from './cachedReport';
+import { createChampionBuildStatsHandler } from './championBuildStats';
 
 export * from './errors';
 export { createCorsMiddleware, parseAllowedOrigins, type CorsOptions } from './cors';
@@ -127,6 +129,13 @@ export interface ApiLogger {
    * the client will fall through to a live lookup. Operational note, not a defect.
    */
   cachedReportFailed(info: { error: unknown }): void;
+  /**
+   * specs/champion-build-stats/ Requirement 12.3. The champion stats store threw
+   * while serving `GET /api/champions/:championKey/build-stats`; the endpoint
+   * degraded to the empty-state response and the page shows Not_Enough_Data.
+   * Operational note, not a defect — the request still answered 200.
+   */
+  championBuildStatsFailed(info: { error: unknown }): void;
 }
 
 /** Default sink, so an unhandled defect is never silently discarded. */
@@ -143,6 +152,10 @@ export const consoleApiLogger: ApiLogger = {
     // eslint-disable-next-line no-console
     console.warn('[lolprofiles] Cached-report lookup failed (falling through to a live lookup):', error);
   },
+  championBuildStatsFailed({ error }) {
+    // eslint-disable-next-line no-console
+    console.warn('[lolprofiles] Champion build-stats read failed (page degraded to no data):', error);
+  },
 };
 
 export interface ApiDependencies {
@@ -153,6 +166,13 @@ export interface ApiDependencies {
   liveGameOrchestrator: LiveGameOrchestrator;
   /** clash-scouting: serves `GET /api/clash/scout`. */
   scoutingOrchestrator: ScoutingOrchestrator;
+  /**
+   * champion-build-stats: serves `GET /api/champions/:championKey/build-stats`.
+   * Required (like the orchestrators) rather than optional — the composition
+   * root passes the no-op impl until the crawler pipeline lands, so the endpoint
+   * still answers, with the empty-state response (Requirement 14.1).
+   */
+  championStatsStore: ChampionStatsStore;
   cache: CacheStore;
   /**
    * Persistent_Store (specs/database/). Optional — omitted means the no-op
@@ -238,6 +258,13 @@ export function createApiRouter(deps: ApiDependencies): Router {
   );
   router.get('/live-game', createLiveGameHandler({ liveGameOrchestrator: deps.liveGameOrchestrator }));
   router.get('/clash/scout', createClashScoutingHandler({ scoutingOrchestrator: deps.scoutingOrchestrator }));
+  router.get(
+    '/champions/:championKey/build-stats',
+    createChampionBuildStatsHandler({
+      championStatsStore: deps.championStatsStore,
+      onError: (error) => logger.championBuildStatsFailed({ error }),
+    }),
+  );
   router.get(
     '/players/suggest',
     createSuggestHandler({

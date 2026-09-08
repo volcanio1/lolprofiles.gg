@@ -8,6 +8,7 @@ import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
 import { createApiRouter } from './index';
 import { parseAllowedOrigins } from './cors';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Cross-origin behavior, driven through the real Express stack.
@@ -49,6 +50,7 @@ function makeApp(allowedOrigins?: readonly string[]) {
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
       scoutingOrchestrator: stubScoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

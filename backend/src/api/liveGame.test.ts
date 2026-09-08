@@ -8,6 +8,7 @@ import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator, LiveGameResult } from '../liveGame/orchestrator';
 import type { LiveGameLobby } from '../liveGame/types';
 import { createApiRouter } from './index';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 const stubLookup: LookupOrchestrator = {
   runLookup: () => Promise.resolve({ kind: 'error', code: 'RIOT_UNAVAILABLE', retriable: true }),
@@ -27,6 +28,7 @@ function appWith(result: LiveGameResult) {
       buildPathOrchestrator: stubBuildPath,
       liveGameOrchestrator,
       scoutingOrchestrator: { scout: () => Promise.resolve({ kind: 'not_registered' }) },
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

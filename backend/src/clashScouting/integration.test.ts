@@ -26,6 +26,7 @@ import { createLiveGameOrchestrator } from '../liveGame/orchestrator';
 import { createRateLimitManager } from '../rateLimit';
 import { createRiotApiClient, type RiotHttpResponse, type RiotHttpTransport } from '../riotApiClient';
 import { createScoutingOrchestrator } from './orchestrator';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 const API_KEY = 'RGAPI-clash-integration-fake';
 const SEARCHER_PUUID = 'p1'; // the captain; the visitor scouts by naming them.
@@ -192,6 +193,7 @@ function makeApp() {
       buildPathOrchestrator: stubBuildPath,
       liveGameOrchestrator: createLiveGameOrchestrator({ client: riotApiClient, cache, now }),
       scoutingOrchestrator: createScoutingOrchestrator({ client: riotApiClient, cache, now }),
+      championStatsStore: createNoopChampionStatsStore(),
       cache,
       now,
       logger: { unexpectedError: () => undefined },

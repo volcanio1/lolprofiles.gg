@@ -12,6 +12,7 @@ import {
   type RiotHttpResponse,
   type RiotHttpTransport,
 } from './riotApiClient';
+import { createNoopChampionStatsStore } from './db/championStatsStore';
 
 /**
  * Task 18.2 — end-to-end tests over the REAL assembled stack.
@@ -204,6 +205,7 @@ function makeHarness(): Harness {
     buildPathOrchestrator: createBuildPathOrchestrator({ cache, riotApiClient, now }),
     liveGameOrchestrator: createLiveGameOrchestrator({ client: riotApiClient, cache, now }),
     scoutingOrchestrator: createScoutingOrchestrator({ client: riotApiClient, cache, now }),
+    championStatsStore: createNoopChampionStatsStore(),
     cache,
     now,
     logger: { unexpectedError: () => undefined },

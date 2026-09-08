@@ -37,8 +37,9 @@
  */
 
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchCachedReport as realFetchCachedReport } from '../api/lookupClient';
+import { championPathFor } from '../domain/championSuggestions';
 import { ErrorNotice } from '../components/ErrorNotice';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { ProfileReportView } from '../components/ProfileReportView';
@@ -57,6 +58,7 @@ export interface ProfileReportPageProps {
 
 export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetchCachedReport }: ProfileReportPageProps = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const riotId = (searchParams.get('riotId') ?? '').trim();
   // autofill-search Requirement 9.8: only a dropdown selection carries this.
@@ -138,6 +140,12 @@ export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetch
     setSearchParams(new URLSearchParams({ riotId: submission.riotId, src: 'suggest' }));
   }
 
+  function handleSelectChampion(championKey: string) {
+    // champion-build-stats Requirement 2.4 / 3.6: leave the profile route for the
+    // champion page (history push).
+    navigate(championPathFor(championKey));
+  }
+
   // A Riot ID is present but the session hasn't dispatched yet: the mount tick,
   // or the `fetchCachedReport` round trip on a suggestion pick. Show the loader
   // so the page is never blank while it decides between a snapshot and a lookup.
@@ -166,6 +174,7 @@ export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetch
         key={riotId}
         onSubmit={handleResubmit}
         onSelectSuggestion={handleSelectSuggestion}
+        onSelectChampion={handleSelectChampion}
         initialRiotId={riotId}
         busy={loading}
       />

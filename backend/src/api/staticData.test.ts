@@ -6,6 +6,7 @@ import type { LookupOrchestrator } from '../orchestrator';
 import type { BuildPathOrchestrator } from '../orchestrator/buildPath';
 import type { LiveGameOrchestrator } from '../liveGame/orchestrator';
 import type { ScoutingOrchestrator } from '../clashScouting/orchestrator';
+import { createNoopChampionStatsStore } from '../db/championStatsStore';
 
 /**
  * Route tests for the pinned Data Dragon version endpoint. The orchestrator is a
@@ -37,6 +38,7 @@ function makeApp(dataDragonVersion = '16.17.1') {
     buildPathOrchestrator: stubBuildPathOrchestrator,
     liveGameOrchestrator: stubLiveGameOrchestrator,
     scoutingOrchestrator: stubScoutingOrchestrator,
+    championStatsStore: createNoopChampionStatsStore(),
     cache: createInMemoryCacheStore({ now }),
     now,
     logger: { unexpectedError: () => undefined },
@@ -83,6 +85,7 @@ describe('GET /api/static-data', () => {
       buildPathOrchestrator: stubBuildPathOrchestrator,
       liveGameOrchestrator: stubLiveGameOrchestrator,
       scoutingOrchestrator: stubScoutingOrchestrator,
+      championStatsStore: createNoopChampionStatsStore(),
       cache: createInMemoryCacheStore({ now }),
       now,
       logger: { unexpectedError: () => undefined },

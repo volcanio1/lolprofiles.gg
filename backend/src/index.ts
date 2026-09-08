@@ -51,6 +51,7 @@ import {
   type ProfileSnapshotStore,
 } from './db/profileSnapshotStore';
 import { createNoopMatchStore, MongoMatchStore, type MatchStore } from './db/matchStore';
+import { createNoopChampionStatsStore, type ChampionStatsStore } from './db/championStatsStore';
 import { createLookupOrchestrator } from './orchestrator';
 import { createBuildPathOrchestrator } from './orchestrator/buildPath';
 import { createLiveGameOrchestrator } from './liveGame/orchestrator';
@@ -90,6 +91,10 @@ async function main(): Promise<void> {
   const matchStore: MatchStore = databaseClient.enabled
     ? new MongoMatchStore(databaseClient.db())
     : createNoopMatchStore();
+  // champion-build-stats: always the no-op until `champion-build-stats-pipeline`
+  // ships `MongoChampionStatsStore` and the crawler that fills its collection.
+  // The endpoint still answers — with the empty-state response (Requirement 14.1).
+  const championStatsStore: ChampionStatsStore = createNoopChampionStatsStore();
 
   if (databaseClient.enabled) {
     // eslint-disable-next-line no-console
@@ -154,6 +159,7 @@ async function main(): Promise<void> {
     buildPathOrchestrator,
     liveGameOrchestrator,
     scoutingOrchestrator,
+    championStatsStore,
     cache,
     now,
     allowedOrigins: config.allowedOrigins,

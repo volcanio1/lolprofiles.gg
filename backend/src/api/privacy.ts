@@ -101,6 +101,10 @@ export interface PrivacyRouteDependencies {
   profileSnapshotStore?: ProfileSnapshotStore;
   /** match-cache Requirement 6.1. Every Stored_Match the PUUID participated in is evicted. */
   matchStore?: MatchStore;
+  // champion-build-stats has NO deletion target here by design: its
+  // `championStatsStore` holds only per-(champion, role, rank, region, patch)
+  // aggregates with frequency counters — never a PUUID, name, or match id
+  // (Requirement 12.1) — so there is nothing personal to erase.
 }
 
 /** design.md's declared confirmation body (decision 1). */

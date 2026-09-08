@@ -45,11 +45,24 @@
 
 import { apiBaseUrl } from '../config';
 import { isAnswerableSuggestionQuery, MAX_SUGGESTIONS } from '../domain/suggestions';
+import {
+  CORE_ITEM_COUNT,
+  DEFAULT_RANK,
+  DEFAULT_REGION,
+  DEFAULT_ROLE,
+  RANK_BUCKET_VALUES,
+  ROLE_VALUES,
+} from '../domain/buildStatsConstants';
 import type {
   ApiErrorPayload,
   BuildPathEntry,
   BuildPathResponse,
   CachedReportResponse,
+  ChampionBuild,
+  ChampionBuildSkillOrder,
+  ChampionBuildStats,
+  ChampionStatsRankBucket,
+  ChampionStatsRole,
   ClashScoutingReport,
   ClashScoutResponse,
   ClashTeamSummary,
@@ -60,6 +73,7 @@ import type {
   PlayerSuggestion,
   ProfileReport,
   RiotIdParts,
+  RunePage,
 } from './types';
 
 /** Decision 2. */
@@ -443,6 +457,248 @@ export async function fetchCachedReport(
   } catch {
     return { source: 'miss' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// champion-build-stats: GET /api/champions/:championKey/build-stats
+// ---------------------------------------------------------------------------
+
+export interface ChampionStatsFilters {
+  role?: ChampionStatsRole;
+  rank?: ChampionStatsRankBucket;
+  region?: string;
+}
+
+/** The Not_Enough_Data-everywhere response: what a failed or malformed fetch degrades to. */
+export function emptyChampionBuildStats(
+  championKey: string,
+  filters: ChampionStatsFilters = {},
+): ChampionBuildStats {
+  return {
+    champion: { key: championKey, name: championKey },
+    filtersApplied: {
+      role: filters.role ?? DEFAULT_ROLE,
+      rank: filters.rank ?? DEFAULT_RANK,
+      region: filters.region ?? DEFAULT_REGION,
+    },
+    meta: {
+      patch: '',
+      lastUpdatedAt: 0,
+      availableRoles: [],
+      defaultRole: DEFAULT_ROLE,
+      availableRanks: [],
+      defaultRank: DEFAULT_RANK,
+      availableRegions: [],
+      overall: { winRate: 0, pickRate: 0, totalGames: 0 },
+    },
+    popular: null,
+    highestWinRate: null,
+  };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function readNumberArray(value: unknown): readonly number[] | null {
+  return Array.isArray(value) && value.every(isFiniteNumber) ? value : null;
+}
+
+function readSkillOrder(value: unknown): ChampionBuildSkillOrder | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const maxOrder = candidate.maxOrder;
+  const perLevel = candidate.perLevel;
+  if (
+    !Array.isArray(maxOrder) ||
+    !maxOrder.every((slot) => slot === 'Q' || slot === 'W' || slot === 'E') ||
+    !Array.isArray(perLevel) ||
+    !perLevel.every((slot) => slot === 1 || slot === 2 || slot === 3 || slot === 4)
+  ) {
+    return null;
+  }
+  return { maxOrder: maxOrder as ('Q' | 'W' | 'E')[], perLevel: perLevel as (1 | 2 | 3 | 4)[] };
+}
+
+function readRunePage(value: unknown): RunePage | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    !isFiniteNumber(candidate.primaryStyle) ||
+    !isFiniteNumber(candidate.secondaryStyle) ||
+    readNumberArray(candidate.primarySelections) === null ||
+    readNumberArray(candidate.secondarySelections) === null ||
+    !Array.isArray(candidate.statShards) ||
+    candidate.statShards.length !== 3 ||
+    !candidate.statShards.every(isFiniteNumber)
+  ) {
+    return null;
+  }
+  return {
+    primaryStyle: candidate.primaryStyle,
+    secondaryStyle: candidate.secondaryStyle,
+    primarySelections: candidate.primarySelections as number[],
+    secondarySelections: candidate.secondarySelections as number[],
+    statShards: candidate.statShards as [number, number, number],
+  };
+}
+
+/** A build, or `null` when the shape is off — the panel then shows Not_Enough_Data. */
+function readChampionBuild(value: unknown): ChampionBuild | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const coreItems = readNumberArray(candidate.coreItems);
+  if (
+    !isFiniteNumber(candidate.matchCount) ||
+    !isFiniteNumber(candidate.winRate) ||
+    !isFiniteNumber(candidate.pickRate) ||
+    coreItems === null
+  ) {
+    return null;
+  }
+  const summonerSpells = candidate.summonerSpells;
+  return {
+    matchCount: candidate.matchCount,
+    winRate: candidate.winRate,
+    pickRate: candidate.pickRate,
+    coreItems: coreItems.slice(0, CORE_ITEM_COUNT),
+    startingItems: readNumberArray(candidate.startingItems),
+    skillOrder: readSkillOrder(candidate.skillOrder),
+    runes: readRunePage(candidate.runes),
+    summonerSpells:
+      Array.isArray(summonerSpells) &&
+      summonerSpells.length === 2 &&
+      summonerSpells.every(isFiniteNumber)
+        ? (summonerSpells as [number, number])
+        : null,
+  };
+}
+
+function readStringArray(value: unknown): readonly string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : [];
+}
+
+/**
+ * Narrows an untrusted 200 body to `ChampionBuildStats`, or `null` when the
+ * top-level shape is wrong. `fetchChampionBuildStats` maps `null` to the
+ * empty-state (design.md — "never throw past the hook").
+ */
+export function readChampionBuildStats(body: unknown): ChampionBuildStats | null {
+  if (body === null || typeof body !== 'object') {
+    return null;
+  }
+  const candidate = body as Record<string, unknown>;
+  const champion = candidate.champion as Record<string, unknown> | undefined;
+  const filters = candidate.filtersApplied as Record<string, unknown> | undefined;
+  const meta = candidate.meta as Record<string, unknown> | undefined;
+  if (
+    champion === undefined ||
+    typeof champion.key !== 'string' ||
+    typeof champion.name !== 'string' ||
+    filters === undefined ||
+    typeof filters.role !== 'string' ||
+    typeof filters.rank !== 'string' ||
+    typeof filters.region !== 'string' ||
+    meta === undefined ||
+    typeof meta !== 'object'
+  ) {
+    return null;
+  }
+  const overall = meta.overall as Record<string, unknown> | undefined;
+  if (
+    overall === undefined ||
+    !isFiniteNumber(overall.winRate) ||
+    !isFiniteNumber(overall.pickRate) ||
+    !isFiniteNumber(overall.totalGames)
+  ) {
+    return null;
+  }
+  const availableRoles = readStringArray(meta.availableRoles).filter((r) =>
+    (ROLE_VALUES as readonly string[]).includes(r),
+  ) as ChampionStatsRole[];
+  const availableRanks = readStringArray(meta.availableRanks).filter((r) =>
+    (RANK_BUCKET_VALUES as readonly string[]).includes(r),
+  ) as ChampionStatsRankBucket[];
+
+  return {
+    champion: { key: champion.key, name: champion.name },
+    filtersApplied: {
+      role: filters.role as ChampionStatsRole,
+      rank: filters.rank as ChampionStatsRankBucket,
+      region: filters.region,
+    },
+    meta: {
+      patch: typeof meta.patch === 'string' ? meta.patch : '',
+      lastUpdatedAt: isFiniteNumber(meta.lastUpdatedAt) ? meta.lastUpdatedAt : 0,
+      availableRoles,
+      defaultRole: (ROLE_VALUES as readonly string[]).includes(meta.defaultRole as string)
+        ? (meta.defaultRole as ChampionStatsRole)
+        : DEFAULT_ROLE,
+      availableRanks,
+      defaultRank: (RANK_BUCKET_VALUES as readonly string[]).includes(meta.defaultRank as string)
+        ? (meta.defaultRank as ChampionStatsRankBucket)
+        : DEFAULT_RANK,
+      availableRegions: readStringArray(meta.availableRegions),
+      overall: {
+        winRate: overall.winRate,
+        pickRate: overall.pickRate,
+        totalGames: overall.totalGames,
+      },
+    },
+    popular: readChampionBuild(candidate.popular),
+    highestWinRate: readChampionBuild(candidate.highestWinRate),
+  };
+}
+
+/**
+ * `GET /api/champions/:championKey/build-stats`.
+ *
+ * REJECTS on a failed request — a transport error, a non-2xx status, or an
+ * unparseable body — so `useChampionBuildStats` can show `ErrorNotice` + retry
+ * (Requirement 4.4). (An abort also rejects; the hook's request-id guard drops
+ * that before it reaches the error state.)
+ *
+ * A well-formed 200 whose body does not narrow (a backend contract slip) is NOT
+ * a failure — it resolves to the empty-state `ChampionBuildStats`, so the page
+ * shows Not_Enough_Data rather than an error (design.md — `readChampionBuildStats`
+ * "never throw past the hook"). A filter at its `ALL` / `world` default is
+ * omitted from the query string (Requirement 4.1).
+ */
+export async function fetchChampionBuildStats(
+  championKey: string,
+  filters: ChampionStatsFilters = {},
+  options: { baseUrl?: string; fetch?: FetchLike; signal?: AbortSignal } = {},
+): Promise<ChampionBuildStats> {
+  const doFetch = options.fetch ?? ((url, init) => fetch(url, init));
+  const baseUrl = options.baseUrl ?? apiBaseUrl;
+
+  const query = new URLSearchParams();
+  if (filters.role !== undefined && filters.role !== DEFAULT_ROLE) {
+    query.set('role', filters.role);
+  }
+  if (filters.rank !== undefined && filters.rank !== DEFAULT_RANK) {
+    query.set('rank', filters.rank);
+  }
+  if (filters.region !== undefined && filters.region !== DEFAULT_REGION) {
+    query.set('region', filters.region);
+  }
+  const suffix = query.toString();
+  const url = `${baseUrl}/api/champions/${encodeURIComponent(championKey)}/build-stats${
+    suffix ? `?${suffix}` : ''
+  }`;
+
+  const response = await doFetch(url, { method: 'GET', signal: options.signal });
+  if (!response.ok) {
+    throw new Error(`champion build-stats request failed with status ${String(response.status)}`);
+  }
+  const body: unknown = await response.json();
+  return readChampionBuildStats(body) ?? emptyChampionBuildStats(championKey, filters);
 }
 
 /**

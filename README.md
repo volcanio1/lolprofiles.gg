@@ -139,7 +139,7 @@ Or from inside a workspace: `npm run dev`, `npm run build`, `npm test`, `npm run
 
 ## Deployment
 
-The frontend is a **history-mode SPA**: `/profile`, `/test`, and the catch-all 404 route exist only in the browser router, not as files on disk. Every host that serves `frontend/dist` must send `index.html` for any path that isn't a real built file — otherwise a hard refresh or a shared deep link 404s before the app ever loads. Client-side navigation still works without this because React Router intercepts it; a refresh doesn't, because the request reaches the server.
+The frontend is a **history-mode SPA**: `/profile`, `/live`, `/champion/:championKey`, `/test`, and the catch-all 404 route exist only in the browser router, not as files on disk. Every host that serves `frontend/dist` must send `index.html` for any path that isn't a real built file — otherwise a hard refresh or a shared deep link 404s before the app ever loads. Client-side navigation still works without this because React Router intercepts it; a refresh doesn't, because the request reaches the server.
 
 Pick whichever matches how you serve the build:
 
@@ -357,6 +357,40 @@ Serves the most recent stored `ProfileReport` for a player so that **picking the
 
 Only a **dropdown selection** consults this endpoint — a Riot ID typed by hand always runs a live lookup. The `?src=suggest` marker the search page adds to the report URL triggers the cache-first path and is stripped after the first render, so a shared or reloaded link always goes live. The report view carries a "Refresh" button (disabled for 5 minutes after the data was fetched) that re-runs the live lookup and overwrites the snapshot.
 
+### `GET /api/champions/:championKey/build-stats`
+
+```
+GET /api/champions/Jinx/build-stats?role=BOTTOM&rank=EMERALD_PLUS&region=world
+```
+
+Champion build stats for the `/champion/:championKey` page — win rate, pick rate, and two headline builds (**most popular** and **highest win rate**, the latter drawn only from builds with ≥ 500 games) for a champion filtered by role, rank bucket and region. `:championKey` is a Data Dragon champion key (`Jinx`, `MonkeyKing`); an unknown key is a **`404`**. An unknown `role` / `rank` / `region` is **clamped to that filter's default and echoed back in `filtersApplied`** — never a `400`.
+
+A **pure read of pre-aggregated documents** — no Riot API call, no rate-limit reservation, no lookup orchestration — so it is cheap to serve and safe to cache at the edge.
+
+```jsonc
+{
+  "champion": { "key": "Jinx", "name": "Jinx" },
+  "filtersApplied": { "role": "BOTTOM", "rank": "EMERALD_PLUS", "region": "world" },
+  "meta": {
+    "patch": "16.17", "lastUpdatedAt": 1700000000000,
+    "availableRoles": ["ALL", "BOTTOM"], "defaultRole": "BOTTOM",
+    "availableRanks": ["ALL", "EMERALD_PLUS", "DIAMOND_PLUS", "MASTER_PLUS"], "defaultRank": "ALL",
+    "availableRegions": ["world"],
+    "overall": { "winRate": 0.52, "pickRate": 0.24, "totalGames": 124000 }
+  },
+  "popular":        { "matchCount": 42000, "winRate": 0.51, "pickRate": 0.34,
+                      "coreItems": [3006, 3031, 3036], "startingItems": [1055, 2003],
+                      "skillOrder": { "maxOrder": ["Q", "W", "E"], "perLevel": [1, 3, 2, 1] },
+                      "runes": { /* the shape the match Runes tab consumes */ },
+                      "summonerSpells": [4, 7] },
+  "highestWinRate": null   // null until some build reaches 500 games at these filters
+}
+```
+
+`winRate` / `pickRate` are in `[0, 1]`. `popular` is `null` when the champion/filter combination has too few recorded games; a build's `skillOrder` / `runes` / `summonerSpells` / `startingItems` are `null` when no single value cleared the modal threshold within that build's cohort.
+
+**Cold-start / not-yet-built.** Every number comes from **this site's own aggregation of crawled ranked matches** — Riot publishes no aggregate endpoint. The crawler pipeline that fills that store is a separate, not-yet-built spec (`champion-build-stats-pipeline`), so today the store is empty and the endpoint returns a `200` with `popular` / `highestWinRate` `null` and empty `meta` option lists. The page then renders "Not enough games recorded" everywhere — the same cold-start behaviour `/api/players/suggest` shipped with. The endpoint holds no per-player data, so `POST /api/privacy/delete` has nothing to clear from it.
+
 ### `POST /api/privacy/delete`
 
 Takes a `puuid`, evicts its cached data, scrubs its participant rows from retained match details, and (when the [persistent store](#database) is enabled) deletes its `rank_snapshots`, `looked_up_players` and `profile_reports` rows. Returns `{ found, deletedAt }` — `found` is `true` if *any* store removed something; row counts are deliberately not exposed. A PUUID with nothing stored returns `found: false` with a 200 — not an error. A persistent-store outage does not fail the request (the cache half still runs). See [Known gaps](#known-gaps) before exposing this publicly.
@@ -513,6 +547,7 @@ Stated plainly rather than left to be discovered:
 - **The database has no backups and its deletion isn't durable.** The Atlas M0 collections (`rank_snapshots`, `looked_up_players`, `profile_reports`, `match_details`) have no automated backups (acceptable — all of it is derived data, re-fetchable from Riot, whose loss degrades gracefully). Privacy deletion clears a PUUID's data across all of them, but a later lookup of the same player lawfully re-creates it. The Atlas network allow-list is `0.0.0.0/0` because the app host has no static egress IP.
 - **Performance targets are unverified.** The spec sets p95 ≤2s cached / ≤15s fresh. Unit tests can't prove that; it needs staging load testing, and no claim is made here.
 - **Account cache keys are case-sensitive.** `Faker#KR1` and `faker#kr1` occupy separate entries, so a hot endpoint loses hit rate. Normalising the key would change the declared cache key params.
+- **`/api/champions/:championKey/build-stats` has no data yet.** The endpoint, the `/champion/:championKey` page and the champion rows in the search dropdown are all built, but the numbers come from a crawl of ranked matches that this codebase does not yet run — the crawler / seeder / extractor / aggregate schema are a separate, undrafted spec (`champion-build-stats-pipeline`). Until that lands the endpoint returns its empty-state response and the page shows "Not enough games recorded" for every champion. The frontend degrades cleanly; there is nothing to switch on when the pipeline ships beyond wiring `MongoChampionStatsStore` into the composition root.
 
 ## Riot compliance
 

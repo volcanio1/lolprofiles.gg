@@ -3013,3 +3013,222 @@ th[scope='row'].sb-player {
   font-size: 0.75rem;
   color: var(--dim);
 }
+
+/* ========================================================================
+   champion-build-stats — search dropdown groups + the champion build page
+   ======================================================================== */
+
+/* Two labelled groups inside the one suggestion listbox (Requirement 2.1). */
+.suggestion-group {
+  list-style: none;
+}
+
+.suggestion-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.suggestion-group + .suggestion-group {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.25rem;
+}
+
+.suggestion-group-label {
+  display: block;
+  padding: 0.3rem 0.5rem 0.15rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+}
+
+/* ---- the /champion/:key page ------------------------------------------- */
+
+.champion-build-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.champion-build-header .champion-icon-label {
+  gap: 0.7rem;
+}
+
+.champion-build-header .champion-icon-name {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.champion-build-header-figures {
+  display: flex;
+  gap: 1.4rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.champion-build-header-figures span {
+  color: var(--text);
+}
+
+.champion-stats-filters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.champion-stats-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.champion-stats-filter .field-label {
+  font-size: 0.7rem;
+}
+
+.champion-stats-filter select {
+  font-size: 0.85rem;
+  padding: 0.4rem 2rem 0.4rem 0.65rem;
+}
+
+.champion-stats-filter select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.champion-build-freshness {
+  color: var(--dim);
+  font-size: 0.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.champion-build-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+@media (max-width: 819px) {
+  .champion-build-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.champion-build-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.champion-build-panel--empty {
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.champion-build-panel-label {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  margin: 0;
+}
+
+.champion-build-panel-note {
+  color: var(--dim);
+  font-size: 0.8rem;
+  margin: 0.15rem 0 0;
+}
+
+.champion-build-panel-stats {
+  display: flex;
+  gap: 1.4rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0 0;
+}
+
+.champion-build-panel-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.champion-build-panel-stats dt {
+  font-size: 0.68rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.champion-build-panel-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  /* Gold = the highlighted figure, never a green/red WR tint (design-system). */
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.champion-build-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.champion-build-section-heading {
+  font-size: 0.7rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0;
+}
+
+.champion-build-runes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.champion-build-runes .rune-page-card {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.champion-build-spells {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.champion-build-missing {
+  color: var(--loss);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.core-items-row {
+  list-style: none;
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.core-items-icon {
+  border-radius: var(--radius);
+}

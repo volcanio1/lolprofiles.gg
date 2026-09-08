@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { REGION_TO_PLATFORMS, SUPPORTED_REGIONS } from './regions';
 import { MAX_GAME_NAME_LENGTH, MAX_TAG_LINE_LENGTH } from './riotId';
 import { MAX_SUGGESTIONS, MIN_QUERY_LENGTH } from './suggestions';
+import {
+  CORE_ITEM_COUNT,
+  MIN_SAMPLE,
+  RANK_BUCKET_VALUES,
+  ROLE_VALUES,
+} from './buildStatsConstants';
 
 /**
  * Drift guard for the rules this workspace MIRRORS from the backend.
@@ -40,6 +46,7 @@ const regionPath = resolve(backendSrc, 'region/index.ts');
 const validatorPath = resolve(backendSrc, 'validator/index.ts');
 const orchestratorPath = resolve(backendSrc, 'orchestrator/index.ts');
 const suggestPath = resolve(backendSrc, 'api/suggest.ts');
+const buildStatsConstantsPath = resolve(backendSrc, 'champions/buildStatsConstants.ts');
 
 const backendAvailable = existsSync(regionPath) && existsSync(validatorPath) && existsSync(orchestratorPath);
 
@@ -60,6 +67,15 @@ function parseBackendRegionMap(source: string): Record<string, string[]> {
     match = entry.exec(block[1]);
   }
   return map;
+}
+
+/** Extracts a `NAME: readonly T[] = ['a', 'b', …]` string-literal array from source. */
+function parseBackendStringArray(source: string, name: string): string[] {
+  const found = new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`).exec(source);
+  if (found === null) {
+    throw new Error(`Could not locate ${name} in the backend source.`);
+  }
+  return [...found[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
 
 function parseBackendNumber(source: string, name: string): number {
@@ -106,6 +122,20 @@ describe.skipIf(!backendAvailable)('parity with the authoritative backend rules'
     expect(parseBackendNumber(source, 'MIN_QUERY_LENGTH')).toBe(MIN_QUERY_LENGTH);
     expect(parseBackendNumber(source, 'MAX_SUGGESTIONS')).toBe(MAX_SUGGESTIONS);
   });
+
+  it.skipIf(!existsSync(buildStatsConstantsPath))(
+    'mirrors the champion-build-stats constants (champion-build-stats Requirement 13.1)',
+    () => {
+      const source = readFileSync(buildStatsConstantsPath, 'utf8');
+      expect(parseBackendNumber(source, 'MIN_SAMPLE')).toBe(MIN_SAMPLE);
+      expect(parseBackendNumber(source, 'CORE_ITEM_COUNT')).toBe(CORE_ITEM_COUNT);
+      expect(parseBackendStringArray(source, 'ROLE_VALUES')).toEqual([...ROLE_VALUES]);
+      expect(parseBackendStringArray(source, 'RANK_BUCKET_VALUES')).toEqual([...RANK_BUCKET_VALUES]);
+      // The frontend's belt-and-braces DISPLAY_FLOOR must stay frontend-only — the
+      // backend has BACKEND_DISPLAY_FLOOR, never a bare DISPLAY_FLOOR to mirror.
+      expect(source).not.toMatch(/export const DISPLAY_FLOOR\b/);
+    },
+  );
 
   it('mirrors the ErrorCode set exactly (lookup-pipeline-fixes) — catches PLAYER_NOT_ON_PLATFORM/UNSUPPORTED_REGION reappearing on only one side', () => {
     const source = readFileSync(orchestratorPath, 'utf8');
