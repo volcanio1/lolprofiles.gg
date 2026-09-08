@@ -188,6 +188,7 @@ export function createCrawlWorker(deps: {
       .toArray();
 
     const seenThisCycle = new Set<string>();
+    let processedSeeds = 0;
 
     try {
       for (const seed of batch) {
@@ -196,6 +197,9 @@ export function createCrawlWorker(deps: {
           deps.client.getMatchIdsByPuuid(region, seed._id, deps.config.matchesPerSeed, RANKED_SOLO_QUEUE_ID),
         );
         if (ids.kind !== 'ok') {
+          // Still advance past this seed — a persistently-failing one must not stall the cursor.
+          processedSeeds += 1;
+          await writeState((cursor + processedSeeds) % total);
           continue;
         }
         summary.seedsProcessed += 1;
@@ -230,17 +234,23 @@ export function createCrawlWorker(deps: {
             summary.observationsFolded += observations.length;
           }
         }
+
+        // Advance the cursor per seed, not just at cycle end — so a cycle cut
+        // short by a restart still makes forward progress and does not re-crawl
+        // the same seeds forever.
+        processedSeeds += 1;
+        await writeState((cursor + processedSeeds) % total);
       }
     } catch (error) {
       if (!(error instanceof RateCapReached)) {
         throw error;
       }
       summary.endedEarly = true;
-      await writeState(null); // do NOT advance the cursor — retry the same seeds next tick
+      await writeState((cursor + processedSeeds) % total);
       return summary;
     }
 
-    await writeState((cursor + deps.config.seedsPerCycle) % total);
+    await writeState((cursor + Math.max(processedSeeds, deps.config.seedsPerCycle)) % total);
     return summary;
 
     async function writeState(nextCursor: number | null): Promise<void> {

@@ -213,16 +213,20 @@ describe('createCrawlWorker', () => {
     expect(cycle.mock.calls[1][0].idsSkippedProcessed).toBe(2);
   });
 
-  it('ends the cycle early on a rate_limited result and does not advance the cursor', async () => {
+  it('ends the cycle early on a rate_limited result without advancing past unprocessed seeds', async () => {
     const client = fakeClient({ matchIds: () => ({ kind: 'rate_limited' }) });
-    const { db, state } = fakeDb([{ _id: 'p1', tier: 'DIAMOND', platform: 'euw1' }]);
+    const { db, state } = fakeDb([
+      { _id: 'p1', tier: 'DIAMOND', platform: 'euw1' },
+      { _id: 'p2', tier: 'DIAMOND', platform: 'euw1' },
+    ]);
     const cycle = vi.fn();
     const worker = createCrawlWorker({ client, db, config: CONFIG, now: () => 1, schedule: () => () => undefined, logger: { cycle, cycleFailed: vi.fn() } });
 
     worker.start();
     await vi.waitFor(() => expect(cycle).toHaveBeenCalled());
     expect(cycle.mock.calls[0][0].endedEarly).toBe(true);
-    expect((state.get('singleton') as { seedCursor?: number }).seedCursor).toBeUndefined();
+    // rate-limited on the first seed's match-ids call -> cursor stays at 0 (nothing done)
+    expect((state.get('singleton') as { seedCursor?: number }).seedCursor).toBe(0);
   });
 
   it('drops a tick that fires while a cycle is still running', async () => {

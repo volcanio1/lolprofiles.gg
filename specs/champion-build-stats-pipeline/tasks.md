@@ -354,19 +354,36 @@ the Role/Rank vocabularies, and the pure `resolveBuilds`.
   - [x] 17.5 `specs/champion-build-stats/tasks.md` task 2.3 note + design.md
     "Store" note updated: `MongoChampionStatsStore` now exists.
 
-- [ ] 18. Verification
-  - [ ] 18.1 `npm run test:backend` + lint + build clean; mongo-integration green.
-  - [ ] 18.2 Against real Atlas M0 (`backend/.env`): boot with `CRAWLER_ENABLED`
-    unset → no crawl activity, `GET /api/champions/Jinx/build-stats` → 200
-    empty-state (Mongo store, empty collections). Then `CRAWLER_ENABLED=1` with a
-    **tiny** `CRAWL_SEEDS_PER_CYCLE=1` / `CRAWL_MATCHES_PER_SEED=2` and a low
-    `CRAWL_BUDGET_FRACTION`: one cycle seeds a few PUUIDs, crawls ~2 matches,
-    writes aggregate + totals + processed docs; `GET /api/champions/<a champion
-    from those matches>/build-stats` now returns real (tiny-sample) numbers with
-    `highestWinRate: null` (under `MIN_SAMPLE`). Stop the worker; clear the test
-    docs from the cluster.
+- [x] 18. Verification
+  - [x] 18.1 backend 929 pass / 17 skip, lint + build clean; the 2 new
+    mongo-integration files (`pipeline.integration.test.ts`, the
+    `mongo.integration.test.ts` pipeline-index assertion) green against the real
+    Atlas M0 (17 tests).
+  - [x] 18.2 Against real Atlas M0: the composition-root build with `CRAWLER_ENABLED`
+    unset serves `GET /api/champions/Jinx/build-stats` → 200 empty-state (Mongo
+    store, `availableRoles: []`). **The user had already committed the pipeline
+    (`f11c651 "crawlers"`) and deployed it to Render with `CRAWLER_ENABLED=1`**, so
+    the real crawler was found running against the shared `lolprofiles` cluster:
+    `crawl_seeds` 1500 (CHALLENGER 300 / GRANDMASTER 700 / MASTER 500 — the seeder
+    hitting `MAX_SEED_ENTRIES_PER_REFRESH`), `crawl_processed` 22, `champion_build_
+    aggregates` 736 docs across 90 champions on two patches (16.17 + 16.16),
+    `champion_build_totals` 8 (`{bucket}|world|{patch}`, 18 matches on 16.17 / 4 on
+    16.16). Apex seeds correctly fold into all four buckets (`Viktor|ALL|MASTER_PLUS`
+    == `Viktor|ALL|EMERALD_PLUS` == 5). Endpoint reads it back correctly (Jinx →
+    `totalGames: 2`, `pickRate: 2/13`, `popular: null` — under the 100-game floor).
+    No data corruption; no cleanup done (it is the user's real prod data now).
     - _Requirements: 10.1, 10.2_
-  - [ ] 18.3 Confirm a live `POST /api/lookup` during an active crawl cycle is not
+  - [x] 18.4 **Robustness fix found during 18.2**: `crawl_state.seedCursor` was
+    only persisted at clean cycle end / early-stop, so a cycle cut short by a
+    Render redeploy (observed: `crawl_state: null` after 22 matches) never
+    advanced and the crawler would re-scan the same 25 seeds forever. `runCycle`
+    now writes `crawl_state` **after each seed player**, so progress survives a
+    mid-cycle restart. `crawlWorker.test.ts` updated. **Not committed — needs a
+    commit + Render redeploy.**
+  - [~] 18.3 Verified by design (CrawlGate unit tests + `reserveSlot` is the
+    shared counter, live lookups bypass the gate). A precise live A/B timing was
+    not run — consistent with README's "performance targets are unverified".
+    Original: Confirm a live `POST /api/lookup` during an active crawl cycle is not
     measurably slower (the `CrawlGate` + `reserveSlot` interplay) — spot-check,
     not a load test.
     - _Requirements: 7.4_

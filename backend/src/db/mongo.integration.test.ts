@@ -83,14 +83,18 @@ describe.skipIf(!TEST_URI)('MongoDB integration', () => {
   beforeAll(async () => {
     client = new MongoClient(TEST_URI as string, { serverSelectionTimeoutMS: 8_000 });
     await client.connect();
-    dbName = `lolprofiles_test_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    dbName = `lp_test_${Math.random().toString(36).slice(2, 12)}`; // Atlas caps db names at 38 bytes
     db = client.db(dbName);
     await ensureIndexes(db);
   });
 
   afterAll(async () => {
+    // Atlas M0 forbids dropDatabase for this user; dropping every collection is
+    // allowed and leaves the (now empty) database invisible.
     if (db) {
-      await db.dropDatabase();
+      for (const { name } of await db.listCollections().toArray()) {
+        await db.dropCollection(name).catch(() => undefined);
+      }
     }
     if (client) {
       await client.close();
