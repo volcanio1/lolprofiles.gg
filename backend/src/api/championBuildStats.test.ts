@@ -99,7 +99,7 @@ describe('GET /api/champions/:championKey/build-stats', () => {
     expect(res.status).toBe(200);
     expect(res.body.filtersApplied).toEqual({ role: 'BOTTOM', rank: 'EMERALD_PLUS', region: 'world' });
     expect(res.body.champion).toEqual({ key: 'Jinx', name: 'Jinx' });
-    expect(res.body.popular.coreItems).toEqual([3006, 3031, 3036]);
+    expect(res.body.popular.coreItems).toEqual([[3006], [3031], [3036]]);
     expect(res.body.meta.overall.totalGames).toBe(900);
   });
 

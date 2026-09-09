@@ -553,6 +553,19 @@ export interface ChampionBuildSkillOrder {
   perLevel: readonly (1 | 2 | 3 | 4)[];
 }
 
+/**
+ * One core-item slot in purchase order: `[leader]`, or `[leader, alternative]`
+ * when a second item was built nearly as often. Rendered as `A` or `A / B`.
+ */
+export type ChampionCoreItemSlot = readonly number[];
+
+/** A modal sub-section plus how many games in the build's cohort used it — the
+ * "N games" shown next to each section. `null` below the modal threshold. */
+export interface ChampionBuildSection<T> {
+  value: T;
+  games: number;
+}
+
 export interface ChampionBuild {
   /** Games played on THIS build (Requirement 5.3.2) — non-negative integer. */
   matchCount: number;
@@ -560,14 +573,16 @@ export interface ChampionBuild {
   winRate: number;
   /** In `[0, 1]` — this build's share of the champion's games at these filters. */
   pickRate: number;
-  /** Item ids in purchase order, length <= `CORE_ITEM_COUNT` (Requirement 11.2). */
-  coreItems: readonly number[];
-  startingItems: readonly number[] | null;
-  /** Modal value within this build's cohort; `null` below the modal threshold (Requirement 7.3). */
-  skillOrder: ChampionBuildSkillOrder | null;
+  /** Core item path, one slot per purchase position, length <= `CORE_ITEM_COUNT`
+   * (Requirement 11.2). Each slot holds the most-built item for that position and
+   * optionally a close second. */
+  coreItems: readonly ChampionCoreItemSlot[];
+  startingItems: ChampionBuildSection<readonly number[]> | null;
+  /** Modal value + its cohort game count; `null` below the modal threshold (Requirement 7.3). */
+  skillOrder: ChampionBuildSection<ChampionBuildSkillOrder> | null;
   /** Same shape the match Runes tab consumes; `null` below the modal threshold. */
-  runes: RunePage | null;
-  summonerSpells: readonly [number, number] | null;
+  runes: ChampionBuildSection<RunePage> | null;
+  summonerSpells: ChampionBuildSection<readonly [number, number]> | null;
 }
 
 export interface ChampionStatsOverall {

@@ -36,11 +36,32 @@ export const CORE_ITEM_COUNT = 3;
 export const BACKEND_DISPLAY_FLOOR = 100;
 
 /**
- * design.md "Store": the smallest share of an item-path cohort a skill order /
- * rune page / spell pair must hold to be emitted rather than `null`
- * (Requirement 11.6). Interpretation choice.
+ * Requirement 11.6 (reinterpreted): a modal skill order / rune page / spell pair
+ * / starting-items set is emitted when its top value is both a real plurality
+ * (`MODAL_MIN_SHARE` of the build's cohort) AND backed by at least
+ * `MODAL_MIN_GAMES` games. The original 0.30 share gate hid almost every section
+ * at real sample sizes (values are stored as exact sequences, so the top one
+ * rarely clears a third of the cohort); the build page now shows the supporting
+ * game count next to each section, so a lower share bar plus an absolute floor is
+ * the honest trade — the reader can see how thin the evidence is. Interpretation
+ * choice, backend-only.
  */
-export const MODAL_MIN_SHARE = 0.3;
+export const MODAL_MIN_SHARE = 0.1;
+export const MODAL_MIN_GAMES = 5;
+
+/**
+ * `popular` is resolved slot-by-slot (most-built first item, then most-built
+ * second item among games that opened with it, and so on) rather than as one
+ * exact recorded path — at real sample sizes a single full path is a handful of
+ * games while each slot is backed by dozens. Within a slot, the runner-up item
+ * is surfaced as a "/" alternative (rendered `A / B`) when it is genuinely
+ * competitive: at least `CORE_ITEM_ALT_RATIO` of the leader's games AND at least
+ * `CORE_ITEM_ALT_MIN_GAMES` in absolute terms (so noise in a thin cohort does
+ * not print a spurious second option). Backend-only tuning — the frontend just
+ * renders whatever slots arrive.
+ */
+export const CORE_ITEM_ALT_RATIO = 0.8;
+export const CORE_ITEM_ALT_MIN_GAMES = 3;
 
 export type Role = 'ALL' | 'TOP' | 'JUNGLE' | 'MIDDLE' | 'BOTTOM' | 'UTILITY';
 

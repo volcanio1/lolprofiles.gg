@@ -3158,36 +3158,96 @@ th[scope='row'].sb-player {
 
 .champion-build-panel-stats {
   display: flex;
-  gap: 1.4rem;
+  gap: 1.6rem;
   flex-wrap: wrap;
+  align-items: center;
   margin: 0.6rem 0 0;
 }
 
-.champion-build-panel-stats div {
+.champion-build-radial {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  align-items: center;
+  gap: 0.35rem;
 }
 
-.champion-build-panel-stats dt {
-  font-size: 0.68rem;
+.champion-build-radial-svg {
+  width: 3.25rem;
+  height: 3.25rem;
+}
+
+.champion-build-radial-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 5;
+}
+
+.champion-build-radial-arc {
+  fill: none;
+  /* Gold = the highlighted figure, never a green/red WR tint (design-system). */
+  stroke: var(--gold);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease;
+}
+
+.champion-build-radial-value {
+  fill: var(--gold);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.champion-build-radial-label {
+  font-size: 0.66rem;
   letter-spacing: var(--track);
   text-transform: uppercase;
   color: var(--dim);
 }
 
-.champion-build-panel-stats dd {
-  margin: 0;
+.champion-build-panel-count {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.champion-build-panel-count-value {
   font-family: var(--font-display);
   font-size: 1rem;
-  /* Gold = the highlighted figure, never a green/red WR tint (design-system). */
   color: var(--gold);
   font-variant-numeric: tabular-nums;
+}
+
+.champion-build-panel-count-label {
+  font-size: 0.66rem;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
 .champion-build-section {
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+}
+
+.champion-build-combo {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+}
+
+.champion-build-combo > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.champion-build-section-head {
+  display: flex;
+  align-items: baseline;
   gap: 0.5rem;
 }
 
@@ -3197,6 +3257,17 @@ th[scope='row'].sb-player {
   text-transform: uppercase;
   color: var(--dim);
   margin: 0;
+}
+
+.champion-build-games {
+  font-size: 0.7rem;
+  color: var(--gold-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.champion-build-starting {
+  display: flex;
+  gap: 0.3rem;
 }
 
 .champion-build-runes {
@@ -3224,9 +3295,31 @@ th[scope='row'].sb-player {
 .core-items-row {
   list-style: none;
   display: flex;
-  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
   margin: 0;
   padding: 0;
+}
+
+.core-items-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+/* Purchase-order arrow between positions (lolalytics-style flow). */
+.core-items-slot:not(:first-child)::before {
+  content: '\2192';
+  margin: 0 0.35rem 0 0.05rem;
+  color: var(--gold-dim);
+  font-size: 0.9rem;
+}
+
+.core-items-or {
+  color: var(--dim);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .core-items-icon {

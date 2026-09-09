@@ -125,6 +125,8 @@ export interface SkillOrderChartProps {
   perLevel: readonly number[];
   /** Q/W/E in max order; empty when none reached 5 points. */
   maxOrder: readonly AbilitySlot[];
+  /** Suppress the component's own "Skill order" heading — the caller renders one. */
+  hideHeading?: boolean;
 }
 
 /**
@@ -132,7 +134,12 @@ export interface SkillOrderChartProps {
  * grid. Fed directly by the champion build page and, via the thin
  * `SkillOrderView` wrapper below, by the match Build Path tab.
  */
-export function SkillOrderChart({ championKey, perLevel, maxOrder }: SkillOrderChartProps) {
+export function SkillOrderChart({
+  championKey,
+  perLevel,
+  maxOrder,
+  hideHeading = false,
+}: SkillOrderChartProps) {
   const abilities = useChampionAbilities(championKey);
   const levels = perLevel.length;
 
@@ -142,7 +149,7 @@ export function SkillOrderChart({ championKey, perLevel, maxOrder }: SkillOrderC
 
   return (
     <div className="skill-order" data-testid="skill-order">
-      <h5 className="skill-order-heading">Skill order</h5>
+      {hideHeading ? null : <h5 className="skill-order-heading">Skill order</h5>}
 
       <ul className="skill-order-tiles" role="list">
         {SLOT_KEYS.map((key, index) => {

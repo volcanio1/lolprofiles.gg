@@ -52,6 +52,11 @@ export interface ChampionBuildPageProps {
   now?: () => number;
 }
 
+/** The leader item of each core slot, joined — for comparing two builds' paths. */
+function leaderPath(coreItems: readonly (readonly number[])[]): string {
+  return coreItems.map((slot) => slot[0]).join('-');
+}
+
 function isRole(value: string | null): value is Role {
   return value !== null && (ROLE_VALUES as readonly string[]).includes(value);
 }
@@ -186,7 +191,7 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
                   championKey={data.champion.key}
                   build={data.highestWinRate}
                   note={
-                    data.highestWinRate.coreItems.join('-') === data.popular.coreItems.join('-')
+                    leaderPath(data.highestWinRate.coreItems) === leaderPath(data.popular.coreItems)
                       ? 'This is also the most popular build.'
                       : undefined
                   }

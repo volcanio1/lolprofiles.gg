@@ -504,6 +504,24 @@ function readNumberArray(value: unknown): readonly number[] | null {
   return Array.isArray(value) && value.every(isFiniteNumber) ? value : null;
 }
 
+/**
+ * Core items as one slot per purchase position — `[[3006], [3031, 6672], ...]`.
+ * Tolerates a legacy flat `number[]` body (each id becomes its own slot) so a
+ * frontend deploy that lands before the backend one still renders.
+ */
+function readCoreItems(value: unknown): readonly (readonly number[])[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.every(isFiniteNumber)) {
+    return value.slice(0, CORE_ITEM_COUNT).map((id) => [id]);
+  }
+  const slots: number[][] = [];
+  for (const slot of value) {
+    if (!Array.isArray(slot) || slot.length === 0 || !slot.every(isFiniteNumber)) return null;
+    slots.push(slot.slice(0, 2));
+  }
+  return slots.slice(0, CORE_ITEM_COUNT);
+}
+
 function readSkillOrder(value: unknown): ChampionBuildSkillOrder | null {
   if (value === null || typeof value !== 'object') {
     return null;
@@ -547,13 +565,41 @@ function readRunePage(value: unknown): RunePage | null {
   };
 }
 
+function readSpellPair(value: unknown): [number, number] | null {
+  return Array.isArray(value) && value.length === 2 && value.every(isFiniteNumber)
+    ? (value as [number, number])
+    : null;
+}
+
+/**
+ * A `{ value, games }` sub-section, or `null` when the shape is off. Tolerates a
+ * legacy bare-value body (no `games` wrapper) by defaulting `games` to 0, so a
+ * frontend deploy that lands before the backend one still renders the section.
+ */
+function readSection<T>(
+  value: unknown,
+  readInner: (v: unknown) => T | null,
+): { value: T; games: number } | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'object' && !Array.isArray(value) && 'value' in (value as object)) {
+    const candidate = value as Record<string, unknown>;
+    const inner = readInner(candidate.value);
+    if (inner === null) return null;
+    return { value: inner, games: isFiniteNumber(candidate.games) ? candidate.games : 0 };
+  }
+  const inner = readInner(value);
+  return inner === null ? null : { value: inner, games: 0 };
+}
+
 /** A build, or `null` when the shape is off — the panel then shows Not_Enough_Data. */
 function readChampionBuild(value: unknown): ChampionBuild | null {
   if (value === null || typeof value !== 'object') {
     return null;
   }
   const candidate = value as Record<string, unknown>;
-  const coreItems = readNumberArray(candidate.coreItems);
+  const coreItems = readCoreItems(candidate.coreItems);
   if (
     !isFiniteNumber(candidate.matchCount) ||
     !isFiniteNumber(candidate.winRate) ||
@@ -562,21 +608,15 @@ function readChampionBuild(value: unknown): ChampionBuild | null {
   ) {
     return null;
   }
-  const summonerSpells = candidate.summonerSpells;
   return {
     matchCount: candidate.matchCount,
     winRate: candidate.winRate,
     pickRate: candidate.pickRate,
-    coreItems: coreItems.slice(0, CORE_ITEM_COUNT),
-    startingItems: readNumberArray(candidate.startingItems),
-    skillOrder: readSkillOrder(candidate.skillOrder),
-    runes: readRunePage(candidate.runes),
-    summonerSpells:
-      Array.isArray(summonerSpells) &&
-      summonerSpells.length === 2 &&
-      summonerSpells.every(isFiniteNumber)
-        ? (summonerSpells as [number, number])
-        : null,
+    coreItems,
+    startingItems: readSection(candidate.startingItems, readNumberArray),
+    skillOrder: readSection(candidate.skillOrder, readSkillOrder),
+    runes: readSection(candidate.runes, readRunePage),
+    summonerSpells: readSection(candidate.summonerSpells, readSpellPair),
   };
 }
 

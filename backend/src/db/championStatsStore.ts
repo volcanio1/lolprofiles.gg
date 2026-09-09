@@ -48,10 +48,13 @@ import {
 } from '../champions/pipeline/serialize';
 import {
   BACKEND_DISPLAY_FLOOR,
+  CORE_ITEM_ALT_MIN_GAMES,
+  CORE_ITEM_ALT_RATIO,
   CORE_ITEM_COUNT,
   DEFAULT_RANK,
   DEFAULT_ROLE,
   MIN_SAMPLE,
+  MODAL_MIN_GAMES,
   MODAL_MIN_SHARE,
   RANK_BUCKET_VALUES,
   ROLE_VALUES,
@@ -76,6 +79,24 @@ export interface ChampionSkillOrder {
   perLevel: readonly (1 | 2 | 3 | 4)[];
 }
 
+/**
+ * One core-item slot in purchase order: the most-built item for that position,
+ * followed by up to one near-equally-built alternative. Index 0 is always the
+ * leader; a length-2 slot renders as `A / B`.
+ */
+export type ChampionCoreItemSlot = readonly number[];
+
+/**
+ * A modal sub-section (skill order / runes / spells / starting items) plus how
+ * many games in the build's cohort actually used it — the "N games" the build
+ * page shows next to each section, mirroring the reference layout. `null` when
+ * the top value holds less than `MODAL_MIN_SHARE` of the cohort.
+ */
+export interface ChampionBuildSection<T> {
+  value: T;
+  games: number;
+}
+
 export interface ChampionBuild {
   /** Games played on THIS build (Requirement 5.3.2) — non-negative integer. */
   matchCount: number;
@@ -83,14 +104,20 @@ export interface ChampionBuild {
   winRate: number;
   /** In `[0, 1]` — this build's share of the champion's games at these filters. */
   pickRate: number;
-  /** Item ids in purchase order, length ≤ `CORE_ITEM_COUNT` (Requirement 11.2). */
-  coreItems: readonly number[];
-  startingItems: readonly number[] | null;
-  /** Modal value within this build's cohort, or `null` below the modal threshold. */
-  skillOrder: ChampionSkillOrder | null;
+  /**
+   * Core item path, one slot per purchase position, length ≤ `CORE_ITEM_COUNT`
+   * (Requirement 11.2). For `popular` each slot is resolved independently (most
+   * built at that position, anchored on the previous slots' leaders) and may
+   * carry a second competitive option; for `highestWinRate` each slot holds the
+   * single item from that exact winning path.
+   */
+  coreItems: readonly ChampionCoreItemSlot[];
+  startingItems: ChampionBuildSection<readonly number[]> | null;
+  /** Modal value + its cohort game count, or `null` below the modal threshold. */
+  skillOrder: ChampionBuildSection<ChampionSkillOrder> | null;
   /** Same shape the match Runes tab consumes; `null` below the modal threshold. */
-  runes: RunePage | null;
-  summonerSpells: readonly [number, number] | null;
+  runes: ChampionBuildSection<RunePage> | null;
+  summonerSpells: ChampionBuildSection<readonly [number, number]> | null;
 }
 
 export interface ChampionStatsOverall {
@@ -179,20 +206,122 @@ function clamp01(value: number): number {
   return value >= 1 ? 1 : value;
 }
 
-/** The modal cohort value, or `null` when the top value holds less than
- * `MODAL_MIN_SHARE` of the cohort (Requirement 11.6). */
-function modalOf<T>(entries: readonly CohortEntry<T>[], cohortGames: number): T | null {
+/** The modal cohort value + its game count, or `null` when the top value is not
+ * a real plurality (`MODAL_MIN_SHARE` of the cohort) or is backed by fewer than
+ * `MODAL_MIN_GAMES` games (Requirement 11.6). */
+function modalOf<T>(
+  entries: readonly CohortEntry<T>[],
+  cohortGames: number,
+): ChampionBuildSection<T> | null {
   if (entries.length === 0 || cohortGames <= 0) return null;
   const top = entries.reduce((best, entry) => (entry.games > best.games ? entry : best));
-  return top.games / cohortGames >= MODAL_MIN_SHARE ? top.value : null;
+  if (top.games < MODAL_MIN_GAMES || top.games / cohortGames < MODAL_MIN_SHARE) return null;
+  return { value: top.value, games: top.games };
 }
 
-function toBuild(path: ItemPathAggregate, championGames: number): ChampionBuild {
+/**
+ * Merge per-path cohort tallies (skill orders / rune pages / spell pairs /
+ * starting items) across several item paths into one list, summing the games for
+ * equal values. Deep-equal values collapse; `modalOf` then runs over the union.
+ */
+function mergeCohorts<T>(lists: readonly (readonly CohortEntry<T>[])[]): CohortEntry<T>[] {
+  const byKey = new Map<string, CohortEntry<T>>();
+  for (const list of lists) {
+    for (const entry of list) {
+      const key = JSON.stringify(entry.value);
+      const existing = byKey.get(key);
+      byKey.set(
+        key,
+        existing === undefined
+          ? { value: entry.value, games: entry.games }
+          : { value: existing.value, games: existing.games + entry.games },
+      );
+    }
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Resolve the core item path slot-by-slot: the most-built first item across the
+ * whole cohort, then the most-built second item among paths that opened with
+ * that leader, and so on (Requirement 11.2, reinterpreted — a single exact
+ * recorded path is only a handful of games at real sample sizes; each slot here
+ * is backed by the full cohort). A slot carries its runner-up as a second option
+ * when that item is genuinely competitive (`CORE_ITEM_ALT_RATIO` of the leader's
+ * games and at least `CORE_ITEM_ALT_MIN_GAMES`).
+ */
+function anchoredCoreSlots(paths: readonly ItemPathAggregate[]): number[][] {
+  const slots: number[][] = [];
+  const leaders: number[] = [];
+  for (let position = 0; position < CORE_ITEM_COUNT; position += 1) {
+    const cohort = paths.filter(
+      (path) =>
+        path.coreItems.length > position &&
+        leaders.every((id, index) => path.coreItems[index] === id),
+    );
+    if (cohort.length === 0) break;
+
+    const games = new Map<number, number>();
+    for (const path of cohort) {
+      const id = path.coreItems[position];
+      games.set(id, (games.get(id) ?? 0) + path.games);
+    }
+    const ranked = [...games.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    const [leaderId, leaderGames] = ranked[0];
+    const slot = [leaderId];
+    const runnerUp = ranked[1];
+    if (
+      runnerUp !== undefined &&
+      runnerUp[1] >= CORE_ITEM_ALT_MIN_GAMES &&
+      runnerUp[1] / leaderGames >= CORE_ITEM_ALT_RATIO
+    ) {
+      slot.push(runnerUp[0]);
+    }
+    slots.push(slot);
+    leaders.push(leaderId);
+  }
+  return slots;
+}
+
+/**
+ * The `popular` build: anchored core slots, with the headline figures and the
+ * modal skill order / runes / spells / starting items taken over the *first-item
+ * cohort* — every path that opened with slot 0's item(s). Deeper slots vary too
+ * much to define a meaningful "games on this build"; the opening commitment does
+ * not, and it is still a large, representative sample.
+ */
+function toAnchoredBuild(
+  paths: readonly ItemPathAggregate[],
+  championGames: number,
+): ChampionBuild | null {
+  const slots = anchoredCoreSlots(paths);
+  if (slots.length === 0) return null;
+
+  const openers = slots[0];
+  const cohort = paths.filter((path) => openers.includes(path.coreItems[0]));
+  const games = cohort.reduce((sum, path) => sum + path.games, 0);
+  const wins = cohort.reduce((sum, path) => sum + path.wins, 0);
+
+  return {
+    matchCount: games,
+    winRate: clamp01(games > 0 ? wins / games : 0),
+    pickRate: clamp01(championGames > 0 ? games / championGames : 0),
+    coreItems: slots,
+    startingItems: modalOf(mergeCohorts(cohort.map((p) => p.startingItems)), games),
+    skillOrder: modalOf(mergeCohorts(cohort.map((p) => p.skillOrders)), games),
+    runes: modalOf(mergeCohorts(cohort.map((p) => p.runePages)), games),
+    summonerSpells: modalOf(mergeCohorts(cohort.map((p) => p.spellPairs)), games),
+  };
+}
+
+/** The `highestWinRate` build: one exact recorded path, its own cohort modals.
+ * Each core slot holds exactly that path's item at that position. */
+function toPathBuild(path: ItemPathAggregate, championGames: number): ChampionBuild {
   return {
     matchCount: path.games,
     winRate: clamp01(path.games > 0 ? path.wins / path.games : 0),
     pickRate: clamp01(championGames > 0 ? path.games / championGames : 0),
-    coreItems: path.coreItems.slice(0, CORE_ITEM_COUNT),
+    coreItems: path.coreItems.slice(0, CORE_ITEM_COUNT).map((id) => [id]),
     startingItems: modalOf(path.startingItems, path.games),
     skillOrder: modalOf(path.skillOrders, path.games),
     runes: modalOf(path.runePages, path.games),
@@ -201,9 +330,9 @@ function toBuild(path: ItemPathAggregate, championGames: number): ChampionBuild 
 }
 
 /**
- * Pick `popular` (most games) and `highestWinRate` (best win rate among paths
- * with ≥ `MIN_SAMPLE` games) from one aggregate cell. Both `null` when the cell
- * is below `BACKEND_DISPLAY_FLOOR` total games (Requirement 11.5) or has no
+ * Pick `popular` (anchored slot-by-slot core build) and `highestWinRate` (best
+ * win rate among exact paths with ≥ `MIN_SAMPLE` games). Both `null` when the
+ * cell is below `BACKEND_DISPLAY_FLOOR` total games (Requirement 11.5) or has no
  * paths.
  */
 export function resolveBuilds(cell: ChampionAggregate | null): {
@@ -214,10 +343,7 @@ export function resolveBuilds(cell: ChampionAggregate | null): {
     return { popular: null, highestWinRate: null };
   }
 
-  const byGames = [...cell.itemPaths].sort(
-    (a, b) => b.games - a.games || joinKey(a.coreItems).localeCompare(joinKey(b.coreItems)),
-  );
-  const popular = toBuild(byGames[0], cell.games);
+  const popular = toAnchoredBuild(cell.itemPaths, cell.games);
 
   const eligible = cell.itemPaths.filter((path) => path.games >= MIN_SAMPLE);
   if (eligible.length === 0) {
@@ -232,7 +358,7 @@ export function resolveBuilds(cell: ChampionAggregate | null): {
         joinKey(a.coreItems).localeCompare(joinKey(b.coreItems)),
     )[0];
 
-  return { popular, highestWinRate: toBuild(best, cell.games) };
+  return { popular, highestWinRate: toPathBuild(best, cell.games) };
 }
 
 function joinKey(items: readonly number[]): string {
@@ -406,7 +532,13 @@ function toChampionAggregate(doc: StoredAggregateDoc): ChampionAggregate {
   };
 }
 
-const READ_TIMEOUT_MS = 500;
+// M0 fetching the fat aggregate docs (a role's ~40-path itemPaths map, ×N roles)
+// runs 300-600 ms from a warm connection and longer on a Render dyno sharing the
+// pool with the crawler's writes. 500 ms timed every real request out to `null`
+// (the page showed Not_Enough_Data for fully-populated champions); 3 s clears the
+// observed worst case with headroom. The endpoint is edge-cacheable and not
+// latency-critical, so a slow read is worth waiting for.
+const READ_TIMEOUT_MS = 3_000;
 
 /**
  * Reads the crawler's aggregate documents and reuses the pure `resolveBuilds` —
@@ -439,19 +571,17 @@ export class MongoChampionStatsStore implements ChampionStatsStore {
         return null;
       }
 
-      const cells = (await this.aggregates.find({ championKey, patch: latestPatch }).toArray()).map(
-        toChampionAggregate,
-      );
+      const [cellDocs, totalsDoc] = await Promise.all([
+        this.aggregates.find({ championKey, patch: latestPatch }).toArray(),
+        this.totals.findOne({ _id: `${filters.rank}|world|${latestPatch}` }),
+      ]);
+      const cells = cellDocs.map(toChampionAggregate);
       const cell =
         cells.find(
           (c) => c.role === filters.role && c.rank === filters.rank && c.region === 'world',
         ) ?? null;
 
       const { popular, highestWinRate } = resolveBuilds(cell);
-
-      const totalsDoc = await this.totals.findOne({
-        _id: `${filters.rank}|world|${latestPatch}`,
-      });
       const totalMatches = totalsDoc?.matches ?? 0;
 
       const withGames = cells.filter((c) => c.games > 0);

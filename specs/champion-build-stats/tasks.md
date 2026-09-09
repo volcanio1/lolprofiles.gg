@@ -501,6 +501,33 @@ Backend (1→6) and the pure frontend front (7, 12) can start in parallel. Task 
 
 ## Notes
 
+- **Post-ship revision (2026-09-09): `popular` is resolved slot-by-slot, not as
+  one exact recorded path.** Req 11.2 / 13.1 as written define `coreItems` as the
+  most-played full item path's items. At real crawl sample sizes a single full
+  path is a handful of games, so `resolveBuilds` now walks the path greedily —
+  most-built first item across the whole cohort, then most-built second item
+  *among paths that opened with that leader*, then third — and each slot may carry
+  a near-equally-built runner-up (rendered `A / B`, gated by `CORE_ITEM_ALT_RATIO`
+  / `CORE_ITEM_ALT_MIN_GAMES`). The wire type changed: `ChampionBuild.coreItems`
+  is now `number[][]` (one slot per position, 1-2 ids). Headline figures + the
+  skill/rune/spell modals for `popular` are taken over the first-item cohort (all
+  paths that opened with slot 0). `highestWinRate` is unchanged — still one exact
+  `MIN_SAMPLE`-eligible path, its items wrapped as singleton slots.
+  - **Still fragmented:** skill order and rune pages are stored as exact
+    full-length sequences, so their modal is thin even over a large cohort.
+    Bucketing them by max-order / keystone before the modal is a follow-up.
+- **Post-ship revision (2026-09-09): lolalytics-style panel + per-section counts.**
+  `ChampionBuild`'s modal sub-fields (`skillOrder` / `runes` / `summonerSpells` /
+  `startingItems`) changed from `T | null` to `{ value: T; games: number } | null`
+  so the build page can show "N games" next to each section. `MODAL_MIN_SHARE`
+  dropped 0.30 → 0.10 and gained an absolute floor `MODAL_MIN_GAMES = 5` — the
+  0.30 share gate hid nearly every section at real sample sizes, and the visible
+  game count now lets the reader judge how thin the evidence is. `ChampionBuildPanel`
+  re-laid-out: radial win/pick gauges, section order runes → skill order → (starting
+  items + core build + spells), core build rendered as a left-to-right arrow flow.
+  - **Known:** the timeline extractor's starting-items logic yields almost nothing
+    for supports (Nautilus: 2 distinct keys, top is a stray `1001`), so that
+    section stays empty for them — a separate extractor fix.
 - **Cross-spec dependency:** none blocking. This plan needs `specs/database/`'s
   store-pattern conventions (Interface + `InMemory…` + `createNoop…` + `Mongo…`)
   but not a live DB — the no-op store is the shipped path (Req 14.1).

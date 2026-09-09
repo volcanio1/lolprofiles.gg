@@ -11,17 +11,20 @@ function build(overrides: Partial<ChampionBuild> = {}): ChampionBuild {
     matchCount: 1240,
     winRate: 0.5123,
     pickRate: 0.337,
-    coreItems: [3006, 3031, 3036],
-    startingItems: [1055],
-    skillOrder: { maxOrder: ['Q', 'W', 'E'], perLevel: [1, 3, 2, 1, 1] },
+    coreItems: [[3006], [3031], [3036]],
+    startingItems: { value: [1055], games: 1100 },
+    skillOrder: { value: { maxOrder: ['Q', 'W', 'E'], perLevel: [1, 3, 2, 1, 1] }, games: 900 },
     runes: {
-      primaryStyle: 8100,
-      secondaryStyle: 8000,
-      primarySelections: [8112, 8126, 8138, 8135],
-      secondarySelections: [9111, 8014],
-      statShards: [5008, 5008, 5001],
+      value: {
+        primaryStyle: 8100,
+        secondaryStyle: 8000,
+        primarySelections: [8112, 8126, 8138, 8135],
+        secondarySelections: [9111, 8014],
+        statShards: [5008, 5008, 5001],
+      },
+      games: 1000,
     },
-    summonerSpells: [4, 7],
+    summonerSpells: { value: [4, 7], games: 1200 },
     ...overrides,
   };
 }
@@ -52,16 +55,42 @@ describe('ChampionBuildPanel', () => {
     expect(screen.getByTestId('skill-order')).toBeInTheDocument();
     expect(screen.getByTestId('champion-build-runes')).toBeInTheDocument();
     expect(screen.getByTestId('build-spells')).toBeInTheDocument();
+    expect(screen.getByTestId('build-starting-items')).toBeInTheDocument();
+  });
+
+  it('shows the per-section game count next to each section (Requirement 8-style provenance)', () => {
+    renderPanel(build());
+    // runes 1,000 · skill order 900 · starting items 1,100 · spells 1,200
+    const tags = screen.getAllByText(/^[\d,]+ games$/).map((n) => n.textContent);
+    expect(tags).toEqual(expect.arrayContaining(['1,000 games', '900 games', '1,100 games', '1,200 games']));
+  });
+
+  it('orders the sections runes -> skill order -> core items, with spells alongside the items', () => {
+    renderPanel(build());
+    const runes = screen.getByTestId('champion-build-runes');
+    const skills = screen.getByTestId('skill-order');
+    const items = screen.getByTestId('core-items');
+    const spells = screen.getByTestId('build-spells');
+    const before = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(runes, skills)).toBe(true);
+    expect(before(skills, items)).toBe(true);
+    // items + spells share the one combined section
+    expect(items.closest('.champion-build-combo')).toBe(spells.closest('.champion-build-combo'));
+    expect(items.closest('.champion-build-combo')).not.toBeNull();
   });
 
   it('shows a per-section "not enough data" line for each null field, panel still renders (Requirement 7.3)', () => {
-    renderPanel(build({ skillOrder: null, runes: null, summonerSpells: null, coreItems: [] }));
+    renderPanel(
+      build({ skillOrder: null, runes: null, summonerSpells: null, startingItems: null, coreItems: [] }),
+    );
     expect(screen.getByRole('region', { name: 'Most popular' })).toBeInTheDocument();
     expect(screen.queryByTestId('skill-order')).not.toBeInTheDocument();
     expect(screen.queryByTestId('build-spells')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('build-starting-items')).not.toBeInTheDocument();
     expect(screen.getByTestId('champion-build-runes-unavailable')).toBeInTheDocument();
-    // three "Not enough data yet." lines (core items, skill order, spells)
-    expect(screen.getAllByText('Not enough data yet.')).toHaveLength(3);
+    // four "Not enough data yet." lines (starting items, core build, skill order, spells)
+    expect(screen.getAllByText('Not enough data yet.')).toHaveLength(4);
   });
 
   it('never renders NaN / Infinity% on holey rate data (Requirement 5.5)', () => {

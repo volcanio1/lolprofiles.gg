@@ -1,23 +1,27 @@
 /**
- * A champion build's core item path — the first few completed items + boots, in
- * purchase order (champion-build-stats Requirement 5.3.3).
+ * A champion build's core item path — the completed items in purchase order,
+ * shown as a left-to-right flow with arrows between positions
+ * (champion-build-stats Requirement 5.3.3).
  *
- * A thin wrapper over `ItemBuildRow`'s `ItemSlot`, so the icons, hover tooltips
- * and unresolved-id degradation match the match Build Path tab exactly. Renders
- * an ordered list because purchase order is meaningful.
+ * Each position is a slot: usually one item, but two when the backend found a
+ * near-equally-built alternative — shown as `A / B` so both viable choices are
+ * visible. A thin wrapper over `ItemBuildRow`'s `ItemSlot`, so icons, hover
+ * tooltips and unresolved-id degradation match the match Build Path tab exactly.
  */
 
+import { Fragment } from 'react';
+import type { ChampionCoreItemSlot } from '../api/types';
 import { ItemSlot } from './ItemBuildRow';
 
 export interface CoreItemsRowProps {
-  /** Item ids in purchase order. */
-  itemIds: readonly number[];
+  /** One slot per purchase position; each slot has 1-2 item ids. */
+  slots: readonly ChampionCoreItemSlot[];
   size?: number;
   className?: string;
 }
 
-export function CoreItemsRow({ itemIds, size = 28, className }: CoreItemsRowProps) {
-  if (itemIds.length === 0) {
+export function CoreItemsRow({ slots, size = 32, className }: CoreItemsRowProps) {
+  if (slots.length === 0) {
     return null;
   }
   return (
@@ -25,9 +29,14 @@ export function CoreItemsRow({ itemIds, size = 28, className }: CoreItemsRowProp
       className={className === undefined ? 'core-items-row' : `core-items-row ${className}`}
       data-testid="core-items"
     >
-      {itemIds.map((id, index) => (
+      {slots.map((slot, index) => (
         <li key={index} className="core-items-slot">
-          <ItemSlot id={id} size={size} className="core-items-icon" />
+          {slot.map((id, option) => (
+            <Fragment key={option}>
+              {option > 0 ? <span className="core-items-or">/</span> : null}
+              <ItemSlot id={id} size={size} className="core-items-icon" />
+            </Fragment>
+          ))}
         </li>
       ))}
     </ol>

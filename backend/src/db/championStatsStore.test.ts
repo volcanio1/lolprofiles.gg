@@ -49,7 +49,7 @@ function cell(overrides: Partial<ChampionAggregate> = {}): ChampionAggregate {
 const FILTERS = { role: 'BOTTOM', rank: 'EMERALD_PLUS', region: 'world' } as const;
 
 describe('resolveBuilds', () => {
-  it('picks the most-played path as popular', () => {
+  it('resolves popular slot-by-slot from the most-built item at each position', () => {
     const { popular } = resolveBuilds(
       cell({
         itemPaths: [
@@ -58,9 +58,39 @@ describe('resolveBuilds', () => {
         ],
       }),
     );
-    expect(popular?.coreItems).toEqual([4, 5, 6]);
+    expect(popular?.coreItems).toEqual([[4], [5], [6]]);
     expect(popular?.matchCount).toBe(700);
     expect(popular?.pickRate).toBeCloseTo(0.7);
+  });
+
+  it('surfaces a "/" alternative when a slot has a near-equally-built runner-up', () => {
+    const { popular } = resolveBuilds(
+      cell({
+        itemPaths: [
+          // slot 1: 3006 (520) vs 3047 (480) — 0.92 ratio, both shown
+          itemPath({ coreItems: [3006, 3031, 3036], games: 520, wins: 260 }),
+          itemPath({ coreItems: [3047, 3031, 3036], games: 480, wins: 240 }),
+        ],
+      }),
+    );
+    expect(popular?.coreItems[0]).toEqual([3006, 3047]);
+    // slot 2/3 are anchored on the leader (3006) cohort only → single items
+    expect(popular?.coreItems[1]).toEqual([3031]);
+    expect(popular?.coreItems[2]).toEqual([3036]);
+  });
+
+  it('anchors each slot on the previous slots’ leaders, not global frequency', () => {
+    const { popular } = resolveBuilds(
+      cell({
+        itemPaths: [
+          itemPath({ coreItems: [10, 20, 30], games: 700, wins: 350 }),
+          itemPath({ coreItems: [11, 21, 30], games: 300, wins: 150 }),
+        ],
+      }),
+    );
+    // 10 leads slot 1; slot 2 must be 20 (pairs with 10), never 21
+    expect(popular?.coreItems).toEqual([[10], [20], [30]]);
+    expect(popular?.matchCount).toBe(700);
   });
 
   it('returns highestWinRate null when no path reaches MIN_SAMPLE', () => {
@@ -86,7 +116,7 @@ describe('resolveBuilds', () => {
         ],
       }),
     );
-    expect(highestWinRate?.coreItems).toEqual([1, 2, 3]);
+    expect(highestWinRate?.coreItems).toEqual([[1], [2], [3]]);
     expect(highestWinRate?.winRate).toBeCloseTo(0.8);
   });
 
@@ -102,33 +132,43 @@ describe('resolveBuilds', () => {
     expect(resolveBuilds(null)).toEqual({ popular: null, highestWinRate: null });
   });
 
-  it('emits a sub-section only when its modal value clears MODAL_MIN_SHARE', () => {
+  it('emits a sub-section when its modal value is a plurality with enough games, else null', () => {
     const path = itemPath({ coreItems: [1, 2, 3], games: 1000, wins: 500 });
     const { popular } = resolveBuilds(
       cell({
         itemPaths: [
           {
             ...path,
-            // top skill order holds 200/1000 = 20% < 30% → null
+            // top skill order = 3/1000 → below MODAL_MIN_GAMES → null
             skillOrders: [
-              { value: SKILLS_A, games: 200 },
-              { value: { maxOrder: ['W', 'Q', 'E'], perLevel: [2, 1, 3] }, games: 150 },
+              { value: SKILLS_A, games: 3 },
+              { value: { maxOrder: ['W', 'Q', 'E'], perLevel: [2, 1, 3] }, games: 2 },
             ],
-            // top rune page holds 500/1000 = 50% ≥ 30% → emitted
-            runePages: [{ value: RUNES_A, games: 500 }],
+            // top spell pair = 40/1000 = 4% → below MODAL_MIN_SHARE → null
+            spellPairs: [
+              { value: [4, 7], games: 40 },
+              { value: [4, 14], games: 38 },
+            ],
+            // top rune page = 150/1000 = 15% and ≥ MODAL_MIN_GAMES → emitted with its count
+            runePages: [
+              { value: RUNES_A, games: 150 },
+              { value: { ...RUNES_A, secondaryStyle: 8200 }, games: 90 },
+            ],
           },
         ],
       }),
     );
     expect(popular?.skillOrder).toBeNull();
-    expect(popular?.runes).toEqual(RUNES_A);
+    expect(popular?.summonerSpells).toBeNull();
+    expect(popular?.runes?.value).toEqual(RUNES_A);
+    expect(popular?.runes?.games).toBe(150);
   });
 
-  it('trims coreItems to CORE_ITEM_COUNT', () => {
+  it('trims coreItems to CORE_ITEM_COUNT slots', () => {
     const { popular } = resolveBuilds(
       cell({ itemPaths: [itemPath({ coreItems: [1, 2, 3, 4, 5], games: 800, wins: 400 })] }),
     );
-    expect(popular?.coreItems).toEqual([1, 2, 3]);
+    expect(popular?.coreItems).toEqual([[1], [2], [3]]);
   });
 });
 
@@ -146,7 +186,7 @@ describe('InMemoryChampionStatsStore', () => {
     expect(result?.meta.overall.winRate).toBeCloseTo(500 / 900);
     expect(result?.meta.overall.pickRate).toBeCloseTo(0.24);
     expect(result?.meta.patch).toBe('16.17');
-    expect(result?.popular?.coreItems).toEqual([3006, 3031, 3036]);
+    expect(result?.popular?.coreItems).toEqual([[3006], [3031], [3036]]);
   });
 
   it('advertises every role/rank/region it has seen for the champion, in reference order', async () => {

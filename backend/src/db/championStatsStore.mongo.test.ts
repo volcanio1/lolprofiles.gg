@@ -147,8 +147,8 @@ describe('MongoChampionStatsStore', () => {
 
     expect(mongo?.popular).toEqual(memory?.popular);
     expect(mongo?.highestWinRate).toEqual(memory?.highestWinRate);
-    expect(mongo?.popular?.coreItems).toEqual([3031, 6672, 3036]);
-    expect(mongo?.popular?.runes).toEqual(RUNES);
+    expect(mongo?.popular?.coreItems).toEqual([[3031], [6672], [3036]]);
+    expect(mongo?.popular?.runes?.value).toEqual(RUNES);
   });
 
   it('computes overall.pickRate from the role-agnostic totals doc', async () => {
@@ -180,7 +180,7 @@ describe('MongoChampionStatsStore', () => {
     const recent = storedCell({ patch: '16.17', games: 100, wins: 40, paths: [{ coreItems: [1, 2, 3], games: 100, wins: 40 }] });
     const result = await new MongoChampionStatsStore(fakeDb([old, recent])).getBuildStats('Jinx', FILTERS);
     expect(result?.meta.patch).toBe('16.17');
-    expect(result?.popular?.coreItems).toEqual([1, 2, 3]);
+    expect(result?.popular?.coreItems).toEqual([[1], [2], [3]]);
   });
 
   it('returns null when a read throws', async () => {

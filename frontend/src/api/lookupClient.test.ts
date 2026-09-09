@@ -568,17 +568,20 @@ describe('champion-build-stats — GET /api/champions/:championKey/build-stats',
       matchCount: 4200,
       winRate: 0.51,
       pickRate: 0.34,
-      coreItems: [3006, 3031, 3036, 6672],
-      startingItems: [1055, 2003],
-      skillOrder: { maxOrder: ['Q', 'W', 'E'], perLevel: [1, 3, 2, 1] },
+      coreItems: [[3006], [3031, 6672], [3036], [3072]],
+      startingItems: { value: [1055, 2003], games: 3800 },
+      skillOrder: { value: { maxOrder: ['Q', 'W', 'E'], perLevel: [1, 3, 2, 1] }, games: 2600 },
       runes: {
-        primaryStyle: 8100,
-        secondaryStyle: 8000,
-        primarySelections: [8112, 8126, 8138, 8135],
-        secondarySelections: [9111, 8014],
-        statShards: [5008, 5008, 5001],
+        value: {
+          primaryStyle: 8100,
+          secondaryStyle: 8000,
+          primarySelections: [8112, 8126, 8138, 8135],
+          secondarySelections: [9111, 8014],
+          statShards: [5008, 5008, 5001],
+        },
+        games: 3100,
       },
-      summonerSpells: [4, 7],
+      summonerSpells: { value: [4, 7], games: 4000 },
     },
     highestWinRate: null,
   };
@@ -599,16 +602,35 @@ describe('champion-build-stats — GET /api/champions/:championKey/build-stats',
     expect(calls[0].init.method).toBe('GET');
   });
 
-  it('parses a well-formed 200 body, trimming coreItems to 3', async () => {
+  it('parses a well-formed 200 body, keeping the "/" slot and trimming coreItems to 3 slots', async () => {
     const result = await fetchChampionBuildStats('Jinx', {}, {
       fetch: () => Promise.resolve(jsonResponse(200, validBody)),
       baseUrl: BASE,
     });
     expect(result.champion).toEqual({ key: 'Jinx', name: 'Jinx' });
     expect(result.meta.overall.totalGames).toBe(12_400);
-    expect(result.popular?.coreItems).toEqual([3006, 3031, 3036]);
-    expect(result.popular?.runes?.primaryStyle).toBe(8100);
+    expect(result.popular?.coreItems).toEqual([[3006], [3031, 6672], [3036]]);
+    expect(result.popular?.runes?.value.primaryStyle).toBe(8100);
+    expect(result.popular?.runes?.games).toBe(3100);
+    expect(result.popular?.skillOrder?.games).toBe(2600);
     expect(result.highestWinRate).toBeNull();
+  });
+
+  it('wraps a legacy flat coreItems array into one-item slots and a bare section into { value, games: 0 }', async () => {
+    const legacy = {
+      ...validBody,
+      popular: {
+        ...validBody.popular,
+        coreItems: [3006, 3031, 3036, 6672],
+        summonerSpells: [4, 7],
+      },
+    };
+    const result = await fetchChampionBuildStats('Jinx', {}, {
+      fetch: () => Promise.resolve(jsonResponse(200, legacy)),
+      baseUrl: BASE,
+    });
+    expect(result.popular?.coreItems).toEqual([[3006], [3031], [3036]]);
+    expect(result.popular?.summonerSpells).toEqual({ value: [4, 7], games: 0 });
   });
 
   it('rejects on a non-2xx, a transport error, and an unparseable body (Requirement 4.4)', async () => {
