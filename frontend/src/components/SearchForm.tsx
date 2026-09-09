@@ -226,7 +226,7 @@ export function SearchForm({
         }}
       >
         {row.kind === 'champion' ? (
-          <ChampionIcon championKey={row.key} size={24} className="suggestion-icon" />
+          <ChampionIcon championKey={row.key} size={24} className="suggestion-icon" linkName={false} />
         ) : (
           <>
             <ProfileIcon profileIconId={row.player.profileIconId} size={24} className="suggestion-icon" />

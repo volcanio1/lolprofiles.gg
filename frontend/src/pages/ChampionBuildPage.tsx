@@ -152,7 +152,7 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
       {reportReady ? (
         <>
           <header className="champion-build-header">
-            <ChampionIcon championKey={data.champion.key} size={48} />
+            <ChampionIcon championKey={data.champion.key} size={48} linkName={false} />
             <div className="champion-build-header-figures">
               <span data-testid="champion-overall-win-rate">
                 {formatRateToPercent(data.meta.overall.winRate)} win rate

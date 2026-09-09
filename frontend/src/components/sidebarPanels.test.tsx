@@ -49,9 +49,11 @@ const masteryEntry = (championId: number, over: Partial<ChampionMasteryEntry> = 
 function renderMasteryPanel(champions: ChampionMasteryEntry[]) {
   const provider = createStaticDataProvider(VERSION, buildStaticDataIndex(VERSION, CHAMPION_JSON, { data: {} }));
   return render(
-    <StaticDataContext.Provider value={provider}>
-      <ChampionMasteryPanel champions={champions} />
-    </StaticDataContext.Provider>,
+    <MemoryRouter>
+      <StaticDataContext.Provider value={provider}>
+        <ChampionMasteryPanel champions={champions} />
+      </StaticDataContext.Provider>
+    </MemoryRouter>,
   );
 }
 

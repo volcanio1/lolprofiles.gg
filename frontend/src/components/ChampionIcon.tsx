@@ -18,6 +18,9 @@
  * name text is the one required alternative; the icon is decorative alongside it.
  */
 
+import { Link } from 'react-router-dom';
+
+import { championPathFor } from '../domain/championSuggestions';
 import { useStaticData } from '../staticData';
 import { CdnImage } from './CdnImage';
 
@@ -25,17 +28,33 @@ export interface ChampionIconProps {
   championKey: string;
   size: number;
   className?: string;
+  /**
+   * When true (the default), the champion's name links to that champion's build
+   * page (`/champion/:key`). Pass false where the icon already sits inside
+   * another interactive element — e.g. a search suggestion row — so the markup
+   * does not nest one clickable control in another.
+   */
+  linkName?: boolean;
 }
 
-export function ChampionIcon({ championKey, size, className }: ChampionIconProps) {
+export function ChampionIcon({ championKey, size, className, linkName = true }: ChampionIconProps) {
   const provider = useStaticData();
   const url = provider.championIconUrl(championKey);
   const name = provider.championDisplayName(championKey);
+  // Only link when the key resolves to a known champion — a numeric-id fallback
+  // (or a key from a newer patch) would just land on the "not recognised" page.
+  const linked = linkName && url !== null;
 
   return (
     <span className="champion-icon-label">
       <CdnImage url={url} alt="" fallbackLabel="Champion icon unavailable" size={size} className={className} />
-      <span className="champion-icon-name">{name}</span>
+      {linked ? (
+        <Link to={championPathFor(championKey)} className="champion-icon-name champion-name-link">
+          {name}
+        </Link>
+      ) : (
+        <span className="champion-icon-name">{name}</span>
+      )}
     </span>
   );
 }

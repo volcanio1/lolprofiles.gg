@@ -1737,6 +1737,20 @@ figure {
   font-size: 0.9rem;
 }
 
+/* The champion name links to that champion's build page. Reads as plain text in
+   place — same idiom as `.player-link` — with an underline + gold shift as the
+   only hover/focus tell that it's clickable. */
+.champion-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.champion-name-link:hover,
+.champion-name-link:focus-visible {
+  color: var(--gold);
+  text-decoration: underline;
+}
+
 .rid-row {
   display: flex;
   align-items: center;
