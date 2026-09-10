@@ -602,14 +602,21 @@ describe('champion-build-stats — GET /api/champions/:championKey/build-stats',
     expect(calls[0].init.method).toBe('GET');
   });
 
-  it('parses a well-formed 200 body, keeping the "/" slot and trimming coreItems to 3 slots', async () => {
+  it('parses a well-formed 200 body, keeping the "/" slot and trimming coreItems to Core_Item_Count slots', async () => {
+    const body = {
+      ...validBody,
+      popular: {
+        ...validBody.popular,
+        coreItems: [[3006], [3031, 6672], [3036], [3072], [3033], [3094], [6675], [3087]],
+      },
+    };
     const result = await fetchChampionBuildStats('Jinx', {}, {
-      fetch: () => Promise.resolve(jsonResponse(200, validBody)),
+      fetch: () => Promise.resolve(jsonResponse(200, body)),
       baseUrl: BASE,
     });
     expect(result.champion).toEqual({ key: 'Jinx', name: 'Jinx' });
     expect(result.meta.overall.totalGames).toBe(12_400);
-    expect(result.popular?.coreItems).toEqual([[3006], [3031, 6672], [3036]]);
+    expect(result.popular?.coreItems).toEqual([[3006], [3031, 6672], [3036], [3072], [3033], [3094]]);
     expect(result.popular?.runes?.value.primaryStyle).toBe(8100);
     expect(result.popular?.runes?.games).toBe(3100);
     expect(result.popular?.skillOrder?.games).toBe(2600);
@@ -621,7 +628,7 @@ describe('champion-build-stats — GET /api/champions/:championKey/build-stats',
       ...validBody,
       popular: {
         ...validBody.popular,
-        coreItems: [3006, 3031, 3036, 6672],
+        coreItems: [3006, 3031, 3036, 6672, 3033, 3094, 6675, 3087],
         summonerSpells: [4, 7],
       },
     };
@@ -629,7 +636,7 @@ describe('champion-build-stats — GET /api/champions/:championKey/build-stats',
       fetch: () => Promise.resolve(jsonResponse(200, legacy)),
       baseUrl: BASE,
     });
-    expect(result.popular?.coreItems).toEqual([[3006], [3031], [3036]]);
+    expect(result.popular?.coreItems).toEqual([[3006], [3031], [3036], [6672], [3033], [3094]]);
     expect(result.popular?.summonerSpells).toEqual({ value: [4, 7], games: 0 });
   });
 

@@ -20,8 +20,8 @@
 /** Glossary "Min_Sample": the fewest games a build needs to be the highest-win-rate build. */
 export const MIN_SAMPLE = 500;
 
-/** Glossary "Core_Item_Count": completed items + boots that define a build's item path. */
-export const CORE_ITEM_COUNT = 3;
+/** Glossary "Core_Item_Count": completed items + boots that define a build's item path (a full six-slot build). */
+export const CORE_ITEM_COUNT = 6;
 
 /** Frontend-only. See module doc — not parity-checked. */
 export const DISPLAY_FLOOR = 100;

@@ -25,9 +25,11 @@ export const MIN_SAMPLE = 500;
 
 /**
  * Glossary "Core_Item_Count": how many completed items + boots define a build's
- * item path (Requirement 11.2 — "length ≤ Core_Item_Count").
+ * item path (Requirement 11.2 — "length ≤ Core_Item_Count"). Set to a full build
+ * (six slots) so the champion page shows the whole item path, not just the
+ * opening commitment — there is room for it and readers expect it.
  */
-export const CORE_ITEM_COUNT = 3;
+export const CORE_ITEM_COUNT = 6;
 
 /**
  * Requirement 11.5: `popular` is `null` when the champion / filter combination

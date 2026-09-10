@@ -3120,9 +3120,24 @@ th[scope='row'].sb-player {
   font-weight: 600;
 }
 
+.champion-build-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* One-line "who is this champion": title · class · resource · difficulty. */
+.champion-build-blurb {
+  color: var(--dim);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .champion-build-header-figures {
   display: flex;
-  gap: 1.4rem;
+  align-items: center;
+  gap: 1.6rem;
   flex-wrap: wrap;
   margin-left: auto;
   font-variant-numeric: tabular-nums;
@@ -3130,8 +3145,27 @@ th[scope='row'].sb-player {
   font-size: 0.9rem;
 }
 
-.champion-build-header-figures span {
+.champion-build-header-games {
   color: var(--text);
+}
+
+/* Inline rate gauge: a small arc with the figure folded into the caption
+   ("53.0% win rate") — champion page header + anywhere a one-liner is wanted. */
+.radial-stat--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.radial-stat-svg {
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+}
+
+.radial-stat-caption {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .champion-stats-filters {
@@ -3167,16 +3201,13 @@ th[scope='row'].sb-player {
   margin-bottom: 1.5rem;
 }
 
+/* One column: each build gets the full page width, so the six-item core row and
+   the full in-game rune page have room to breathe (they were cramped side by
+   side). The two builds read top-to-bottom, most-popular first. */
 .champion-build-panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 2rem;
-}
-
-@media (max-width: 819px) {
-  .champion-build-panels {
-    grid-template-columns: 1fr;
-  }
 }
 
 .champion-build-panel {
@@ -3293,6 +3324,30 @@ th[scope='row'].sb-player {
   gap: 1.6rem;
 }
 
+/* Runes and skill order share one row — the rune page took the full width but
+   used only its left half, so the skill chart moves into the space beside it. */
+.champion-build-runes-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1.75rem 3.5rem;
+}
+
+.champion-build-runes-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.champion-build-skills-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
 .champion-build-combo > div {
   display: flex;
   flex-direction: column;
@@ -3333,6 +3388,110 @@ th[scope='row'].sb-player {
 .champion-build-runes .rune-page-card {
   padding: 0;
   border-bottom: 0;
+}
+
+/* ---- full in-game rune page (RunePageDiagram) ------------------------- */
+
+.rune-diagram {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem 4rem;
+  align-items: flex-start;
+}
+
+/* Fallback when Data Dragon published no tree structure — the old compact row. */
+.rune-diagram--compact {
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+}
+
+.rune-diagram-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.rune-diagram-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.rune-diagram-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* A hairline rule under the keystone row, as the client draws it. */
+.rune-diagram-row--keystone {
+  gap: 1.15rem;
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.rune-diagram-shards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.rune-diagram-shards-label {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 0.1rem;
+}
+
+.rune-diagram-row--shard {
+  gap: 0.6rem;
+}
+
+/* One rune position. Picked = full colour on a gold ring; not picked = dimmed
+   and desaturated, the way the client greys the alternatives. */
+.rune-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: opacity 120ms ease, box-shadow 120ms ease;
+}
+
+.rune-cell--off {
+  opacity: 0.3;
+  filter: grayscale(0.7);
+}
+
+.rune-cell--off:hover {
+  opacity: 0.55;
+}
+
+.rune-cell--on {
+  box-shadow: 0 0 0 2px var(--gold);
+}
+
+.rune-cell--keystone.rune-cell--on {
+  box-shadow: 0 0 0 2px var(--gold), 0 0 10px rgba(232, 181, 74, 0.45);
+}
+
+.rune-cell--shard.rune-cell--on {
+  box-shadow: 0 0 0 2px var(--gold);
 }
 
 .champion-build-spells {

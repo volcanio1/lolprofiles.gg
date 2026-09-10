@@ -78,6 +78,22 @@ export interface ChampionEntry {
   name: string;
   /** Image filename from the metadata's `image.full`, e.g. `MonkeyKing.png`. */
   image: string;
+  /** `champion.json`'s `title`, e.g. `the Loose Cannon`. Absent in older cache entries. */
+  title?: string;
+  /** `champion.json`'s `tags`, e.g. `['Marksman']`. */
+  tags?: readonly string[];
+  /** `champion.json`'s `partype` (the resource bar), e.g. `Mana`, `Energy`, `None`. */
+  resource?: string;
+  /** `champion.json`'s `info` — Riot's 0-10 designer ratings. */
+  info?: { attack: number; defense: number; magic: number; difficulty: number };
+}
+
+/** The short "who is this champion" line for the build page header. */
+export interface ChampionProfile {
+  title: string;
+  tags: readonly string[];
+  resource: string;
+  info: { attack: number; defense: number; magic: number; difficulty: number } | null;
 }
 
 /** One line of an item's `<stats>` block, e.g. `{ amount: '75', stat: 'Attack Damage' }`. */
@@ -284,6 +300,13 @@ export interface StaticDataIndex {
   /** Keyed by rune tree id as a string (e.g. `8100` for Domination). */
   runeTrees: Record<string, NamedIconEntry>;
   /**
+   * Keyed by rune tree id as a string. The tree's slots in Riot's published
+   * order — slot 0 is the keystone row, slots 1-3 the minor rows — each an
+   * ordered list of the rune ids it offers. Powers the full in-game rune-page
+   * layout on the champion build page (every rune shown, the picked ones lit).
+   */
+  runeTreeSlots: Record<string, number[][]>;
+  /**
    * `match-detail-tabs` Requirement 12.1/12.5. Keyed by augment id as a string,
    * from Community_Dragon's `cherry-augments.json` — a different CDN from every
    * other map here. This mapping's `id` space is UNVERIFIED against real
@@ -314,6 +337,13 @@ export interface StaticDataProvider {
    * scans every display name for a prefix match, purely client-side.
    */
   championCatalog(): Readonly<Record<string, ChampionEntry>> | null;
+  /**
+   * The short "who is this champion" line — title, class tags, resource and
+   * Riot's 0-10 ratings — for the build page header. `null` until the index is
+   * ready or when the key is unknown; individual fields fall back to empty when
+   * an older cache entry predates them.
+   */
+  championProfile(key: string): ChampionProfile | null;
   /** `0` is a REAL icon (verified 200), so only `null` means absent. */
   profileIconUrl(id: number | null): string | null;
   /** `0` is an EMPTY SLOT, never an item, so it resolves to `null`. */
@@ -340,6 +370,12 @@ export interface StaticDataProvider {
   runeTreeDisplayName(styleId: number): string;
   /** Requirement 7.3/7.4. Unversioned path. */
   runeTreeIconUrl(styleId: number): string | null;
+  /**
+   * The tree's slots (keystone row first, then the three minor rows), each an
+   * ordered list of rune ids. `[]` when the index is not ready or `runesReforged`
+   * carried no structure — callers fall back to showing only the picked runes.
+   */
+  runeTreeSlots(styleId: number): readonly (readonly number[])[];
   /** Requirement 8.3. */
   statShardDisplayName(id: number): string;
   /** Parsed stat summary for the hover tooltip; empty when unresolvable. */
@@ -498,15 +534,40 @@ export function buildStaticDataIndex(
   const spells: Record<string, NamedIconEntry> = {};
   const runes: Record<string, NamedIconEntry> = {};
   const runeTrees: Record<string, NamedIconEntry> = {};
+  const runeTreeSlots: Record<string, number[][]> = {};
   const augments: Record<string, NamedIconEntry> = {};
 
   const championData = (championJson as { data?: Record<string, unknown> } | null)?.data;
   if (championData && typeof championData === 'object') {
     for (const [key, value] of Object.entries(championData)) {
-      const entry = value as { name?: unknown; image?: { full?: unknown }; key?: unknown };
+      const entry = value as {
+        name?: unknown;
+        image?: { full?: unknown };
+        key?: unknown;
+        title?: unknown;
+        tags?: unknown;
+        partype?: unknown;
+        info?: { attack?: unknown; defense?: unknown; magic?: unknown; difficulty?: unknown };
+      };
       const name = typeof entry?.name === 'string' ? entry.name : key;
       const image = typeof entry?.image?.full === 'string' ? entry.image.full : `${key}.png`;
-      champions[key] = { name, image };
+      const title = typeof entry?.title === 'string' ? entry.title : undefined;
+      const tags = Array.isArray(entry?.tags)
+        ? entry.tags.filter((tag): tag is string => typeof tag === 'string')
+        : undefined;
+      const resource = typeof entry?.partype === 'string' ? entry.partype : undefined;
+      const rawInfo = entry?.info;
+      const toRating = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+      const info =
+        rawInfo && typeof rawInfo === 'object'
+          ? {
+              attack: toRating(rawInfo.attack),
+              defense: toRating(rawInfo.defense),
+              magic: toRating(rawInfo.magic),
+              difficulty: toRating(rawInfo.difficulty),
+            }
+          : undefined;
+      champions[key] = { name, image, title, tags, resource, info };
       // `key` is the numeric id as a string (e.g. `"62"`). Absent or malformed
       // metadata simply yields no reverse entry for that champion.
       if (typeof entry?.key === 'string' && /^\d+$/.test(entry.key)) {
@@ -580,11 +641,13 @@ export function buildStaticDataIndex(
       if (!Array.isArray(treeEntry?.slots)) {
         continue;
       }
+      const slotIds: number[][] = [];
       for (const slot of treeEntry.slots) {
         const slotRunes = (slot as { runes?: unknown[] })?.runes;
         if (!Array.isArray(slotRunes)) {
           continue;
         }
+        const idsInSlot: number[] = [];
         for (const rune of slotRunes) {
           const runeEntry = rune as { id?: unknown; name?: unknown; icon?: unknown; shortDesc?: unknown; longDesc?: unknown };
           if (typeof runeEntry?.id !== 'number' || !Number.isInteger(runeEntry.id)) {
@@ -597,7 +660,12 @@ export function buildStaticDataIndex(
               ? runeEntry.longDesc
               : runeEntry.shortDesc;
           runes[String(runeEntry.id)] = { name, icon, description: parseAssetDescription(rawDesc) };
+          idsInSlot.push(runeEntry.id);
         }
+        slotIds.push(idsInSlot);
+      }
+      if (typeof treeEntry?.id === 'number' && Number.isInteger(treeEntry.id)) {
+        runeTreeSlots[String(treeEntry.id)] = slotIds;
       }
     }
   }
@@ -625,7 +693,7 @@ export function buildStaticDataIndex(
     }
   }
 
-  return { version, champions, championsById, items, spells, runes, runeTrees, augments };
+  return { version, champions, championsById, items, spells, runes, runeTrees, runeTreeSlots, augments };
 }
 
 /**
@@ -745,6 +813,31 @@ export function createStaticDataProvider(
     championCatalog(): Readonly<Record<string, ChampionEntry>> | null {
       const catalog = usable?.champions;
       return catalog !== undefined && catalog !== null && typeof catalog === 'object' ? catalog : null;
+    },
+
+    championProfile(key: string): ChampionProfile | null {
+      if (typeof key !== 'string' || key.length === 0) {
+        return null;
+      }
+      const entry = lookupEntry(usable?.champions, key, isChampionEntry);
+      if (entry === undefined) {
+        return null;
+      }
+      const info = entry.info;
+      const validInfo =
+        info !== undefined &&
+        info !== null &&
+        typeof info === 'object' &&
+        typeof info.attack === 'number' &&
+        typeof info.defense === 'number' &&
+        typeof info.magic === 'number' &&
+        typeof info.difficulty === 'number';
+      return {
+        title: typeof entry.title === 'string' ? entry.title : '',
+        tags: Array.isArray(entry.tags) ? entry.tags.filter((tag) => typeof tag === 'string') : [],
+        resource: typeof entry.resource === 'string' ? entry.resource : '',
+        info: validInfo ? info : null,
+      };
     },
 
     profileIconUrl(id: number | null): string | null {
@@ -898,6 +991,23 @@ export function createStaticDataProvider(
         return null;
       }
       return unversionedIconUrl(entry.icon);
+    },
+
+    runeTreeSlots(styleId: number): readonly (readonly number[])[] {
+      const key = usableIdKey(styleId);
+      if (usable === null || key === null) {
+        return [];
+      }
+      const slots = usable.runeTreeSlots?.[key];
+      if (!Array.isArray(slots)) {
+        return [];
+      }
+      // Guard a tampered cache entry: every slot must be an array of finite numbers.
+      return slots.every(
+        (slot) => Array.isArray(slot) && slot.every((id) => typeof id === 'number' && Number.isFinite(id)),
+      )
+        ? slots
+        : [];
     },
 
     statShardDisplayName(id: number): string {

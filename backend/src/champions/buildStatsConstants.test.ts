@@ -18,8 +18,8 @@ describe('build-stats constants', () => {
   it('pins the spec-fixed values', () => {
     // Glossary "Min_Sample" / Requirement 11.4
     expect(MIN_SAMPLE).toBe(500);
-    // Glossary "Core_Item_Count" / Requirement 11.2
-    expect(CORE_ITEM_COUNT).toBe(3);
+    // Glossary "Core_Item_Count" / Requirement 11.2 — a full six-slot build.
+    expect(CORE_ITEM_COUNT).toBe(6);
   });
 
   it('keeps the interpretation-choice thresholds in a sane range', () => {

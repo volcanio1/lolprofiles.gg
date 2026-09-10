@@ -53,8 +53,14 @@ import type { StaticDataIndex } from './provider';
  * v6 -> v7 when `live-game` added `championsById` (numeric id -> Champion_Key): an
  * older entry validates by shape and would serve as "ready" while every live-game
  * champion resolves to its numeric id for a full 24-hour retention period.
+ * v7 -> v8 when the champion build page added `runeTreeSlots` (tree id -> its
+ * slots of rune ids) to drive the full in-game rune-page layout: an older entry
+ * validates by shape but the diagram falls back to picked-runes-only until it
+ * expires. v8 -> v9 when `ChampionEntry` gained `title` / `tags` / `resource` /
+ * `info` for the build page's champion blurb: an older entry validates by shape
+ * but the blurb stays empty until it expires.
  */
-const STORAGE_KEY = 'lolprofiles.staticData.v7';
+const STORAGE_KEY = 'lolprofiles.staticData.v9';
 
 /** Requirement 4.4 — "no less than 24 hours". */
 export const STATIC_DATA_TTL_MS = 24 * 60 * 60 * 1000;
@@ -99,6 +105,8 @@ function isWellShapedIndex(candidate: unknown, version: string): candidate is St
     typeof index.runes === 'object' &&
     index.runeTrees !== null &&
     typeof index.runeTrees === 'object' &&
+    index.runeTreeSlots !== null &&
+    typeof index.runeTreeSlots === 'object' &&
     index.augments !== null &&
     typeof index.augments === 'object'
   );

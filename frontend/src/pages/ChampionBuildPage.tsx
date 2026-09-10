@@ -24,6 +24,7 @@ import { ChampionBuildPanel } from '../components/ChampionBuildPanel';
 import { ChampionIcon } from '../components/ChampionIcon';
 import { ChampionStatsFilters, type ChampionStatsFiltersValue } from '../components/ChampionStatsFilters';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { RadialStat } from '../components/RadialStat';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
 import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
@@ -40,7 +41,8 @@ import {
   type RankBucket,
   type Role,
 } from '../domain/buildStatsConstants';
-import { formatGameCount, formatRateToPercent, relativeAge } from '../domain/format';
+import { formatChampionBlurb } from '../domain/championBlurb';
+import { formatGameCount, relativeAge } from '../domain/format';
 import {
   useChampionBuildStats,
   type UseChampionBuildStatsOptions,
@@ -70,7 +72,8 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
   const { championKey = '' } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const catalog = useStaticData().championCatalog();
+  const staticData = useStaticData();
+  const catalog = staticData.championCatalog();
 
   // The same search bar the other Riot-data pages carry (profile, live game), so
   // a visitor can look up a player — or jump to another champion — without going
@@ -176,15 +179,31 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
       {reportReady ? (
         <>
           <header className="champion-build-header">
-            <ChampionIcon championKey={data.champion.key} size={48} linkName={false} />
+            <div className="champion-build-identity">
+              <ChampionIcon championKey={data.champion.key} size={48} linkName={false} />
+              {(() => {
+                const blurb = formatChampionBlurb(staticData.championProfile(data.champion.key));
+                return blurb.length > 0 ? (
+                  <p className="champion-build-blurb" data-testid="champion-blurb">
+                    {blurb}
+                  </p>
+                ) : null;
+              })()}
+            </div>
             <div className="champion-build-header-figures">
-              <span data-testid="champion-overall-win-rate">
-                {formatRateToPercent(data.meta.overall.winRate)} win rate
-              </span>
-              <span data-testid="champion-overall-pick-rate">
-                {formatRateToPercent(data.meta.overall.pickRate)} pick rate
-              </span>
-              <span data-testid="champion-overall-games">
+              <RadialStat
+                inline
+                label="win rate"
+                value={data.meta.overall.winRate}
+                testId="champion-overall-win-rate"
+              />
+              <RadialStat
+                inline
+                label="pick rate"
+                value={data.meta.overall.pickRate}
+                testId="champion-overall-pick-rate"
+              />
+              <span className="champion-build-header-games" data-testid="champion-overall-games">
                 {formatGameCount(data.meta.overall.totalGames)} games
               </span>
             </div>

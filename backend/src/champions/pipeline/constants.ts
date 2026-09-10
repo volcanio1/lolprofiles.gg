@@ -38,10 +38,16 @@ export const MAX_SEED_ENTRIES_PER_REFRESH = 1500;
 
 /** A buy at or before this game time (ms) counts as a starting-base purchase. */
 export const STARTING_ITEMS_CUTOFF_MS = 90_000;
-/** Trinkets + consumables never counted as starting items. */
+/**
+ * Never counted as starting items: the free trinket every player opens with, and
+ * the control ward (a vision buy, not a build choice). Health / Refillable /
+ * Corrupting potions ARE kept — starting a Doran's + potions, a Corrupting
+ * Potion, or a Refillable is a real build decision the page should show, the way
+ * the in-game shop and other build sites present it.
+ */
 export const STARTING_EXCLUDED_ITEM_IDS: ReadonlySet<number> = new Set([
   3340, 3363, 3364, // trinkets (warding / farsight / oracle)
-  2003, 2031, 2033, 2055, // health / refillable / control ward
+  2055, // control ward
 ]);
 
 /** Queue id this pipeline crawls — Ranked Solo/Duo, Summoner's Rift. */

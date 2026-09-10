@@ -9,7 +9,7 @@ const KRAKEN = 6672;
 const BOOTS = 3172;
 const LONGSWORD = 1036; // component — must not appear in itemPath
 const DORAN = 1055; // starter — a starting item, not a core item
-const POTION = 2003; // consumable — excluded from starting items
+const POTION = 2003; // Health Potion — a real starting-item choice, kept
 
 function participant(overrides: Partial<MatchParticipantDto> & { puuid: string }): MatchParticipantDto {
   return {
@@ -108,16 +108,44 @@ describe('extractObservations', () => {
     expect(jinx.role).toBe('BOTTOM');
     expect(jinx.win).toBe(true);
     expect(jinx.patch).toBe('16.17');
-    // completed items only, purchase order, capped at 3 — component (LONGSWORD) dropped
+    // completed items only, purchase order, capped at Core_Item_Count — component (LONGSWORD) dropped
     expect(jinx.itemPath).toEqual([IE, KRAKEN, BOOTS]);
-    // starting items: Doran kept, potion excluded
-    expect(jinx.startingItems).toEqual([DORAN]);
+    // starting items: Doran + Health Potion, in purchase order (trinket would be excluded)
+    expect(jinx.startingItems).toEqual([DORAN, POTION]);
     expect(jinx.skillOrder).toEqual({
       maxOrder: ['Q'],
       perLevel: [1, 1, 1, 1, 1, 2],
     });
     expect(jinx.spellPair).toEqual([4, 7]);
     expect(jinx.runePage).not.toBeNull();
+  });
+
+  it('keeps potions as starting items but still drops trinkets and the control ward', () => {
+    const p = participant({ puuid: 'S' });
+    const match: MatchDto = {
+      metadata: { matchId: 'EUW1_S', participants: ['S'] },
+      info: { queueId: 420, gameVersion: '16.17.1.1', gameStartTimestamp: 0, gameDuration: 100, participants: [p] },
+    };
+    const timeline: MatchTimelineDto = {
+      metadata: { matchId: 'EUW1_S', participants: ['S'] },
+      info: {
+        participants: [{ participantId: 1, puuid: 'S' }],
+        frames: [
+          {
+            timestamp: 0,
+            events: [
+              purchase(1, 3850, 5_000), // Spellthief's — support starter
+              purchase(1, 2003, 6_000), // Health Potion — kept
+              purchase(1, 2003, 7_000), // second Health Potion — kept
+              purchase(1, 3340, 8_000), // Warding Trinket — dropped
+              purchase(1, 2055, 9_000), // Control Ward — dropped
+            ],
+          },
+        ],
+      },
+    };
+    const [obs] = extractObservations(match, timeline);
+    expect(obs.startingItems).toEqual([3850, 2003, 2003]);
   });
 
   it('returns [] for a non-420 queue', () => {

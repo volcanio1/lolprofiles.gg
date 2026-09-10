@@ -10,7 +10,18 @@ import type { ChampionBuildStatsFetcher } from '../hooks/useChampionBuildStats';
 import { ChampionBuildPage } from './ChampionBuildPage';
 
 const VERSION = '16.17.1';
-const CHAMPION_JSON = { data: { Jinx: { name: 'Jinx', image: { full: 'Jinx.png' } } } };
+const CHAMPION_JSON = {
+  data: {
+    Jinx: {
+      name: 'Jinx',
+      title: 'the Loose Cannon',
+      image: { full: 'Jinx.png' },
+      tags: ['Marksman'],
+      partype: 'Mana',
+      info: { attack: 9, defense: 2, magic: 4, difficulty: 6 },
+    },
+  },
+};
 
 function fullBuild(overrides: Partial<ChampionBuild> = {}): ChampionBuild {
   return {
@@ -126,6 +137,12 @@ describe('ChampionBuildPage', () => {
     expect(freshness).toHaveTextContent('updated 1m ago'); // now - lastUpdatedAt = 100_000 ms
     expect(freshness).toHaveTextContent('not Riot data');
     expect(screen.queryByTestId('champion-not-enough-data')).not.toBeInTheDocument();
+  });
+
+  it('shows the champion blurb next to the name (title, class, resource, difficulty)', async () => {
+    renderPage('/champion/Jinx', async () => stats());
+    const blurb = await screen.findByTestId('champion-blurb');
+    expect(blurb).toHaveTextContent('The Loose Cannon · Marksman · Mana · Difficulty 6/10');
   });
 
   it('drops a stale response after the filters change mid-flight (Requirement 4.3)', async () => {

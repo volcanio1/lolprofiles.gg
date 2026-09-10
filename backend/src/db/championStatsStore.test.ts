@@ -166,9 +166,9 @@ describe('resolveBuilds', () => {
 
   it('trims coreItems to CORE_ITEM_COUNT slots', () => {
     const { popular } = resolveBuilds(
-      cell({ itemPaths: [itemPath({ coreItems: [1, 2, 3, 4, 5], games: 800, wins: 400 })] }),
+      cell({ itemPaths: [itemPath({ coreItems: [1, 2, 3, 4, 5, 6, 7, 8], games: 800, wins: 400 })] }),
     );
-    expect(popular?.coreItems).toEqual([[1], [2], [3]]);
+    expect(popular?.coreItems).toEqual([[1], [2], [3], [4], [5], [6]]);
   });
 });
 

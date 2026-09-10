@@ -14,10 +14,11 @@
  */
 
 import type { ChampionBuild } from '../api/types';
-import { formatGameCount, formatRateToPercent } from '../domain/format';
+import { formatGameCount } from '../domain/format';
 import { ItemSlot } from './ItemBuildRow';
 import { CoreItemsRow } from './CoreItemsRow';
-import { RunePageCard } from './RunePageCard';
+import { RadialStat } from './RadialStat';
+import { RunePageDiagram } from './RunePageDiagram';
 import { SkillOrderChart } from './SkillOrderView';
 import { SummonerSpellIcon } from './SummonerSpellIcon';
 
@@ -43,34 +44,6 @@ function GamesTag({ games }: { games: number }) {
   return <span className="champion-build-games">{formatGameCount(games)} games</span>;
 }
 
-/** A win/pick rate as a gold arc on a dark track with the figure in the centre
- * (design-system: gold = the highlighted figure, never a green/red WR tint). */
-function RadialStat({ label, value, testId }: { label: string; value: number; testId: string }) {
-  const fraction = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
-  const radius = 22;
-  const circumference = 2 * Math.PI * radius;
-  const text = formatRateToPercent(value);
-  return (
-    <div className="champion-build-radial">
-      <svg viewBox="0 0 56 56" className="champion-build-radial-svg" role="img" aria-label={`${label}: ${text}`}>
-        <circle cx="28" cy="28" r={radius} className="champion-build-radial-track" />
-        <circle
-          cx="28"
-          cy="28"
-          r={radius}
-          className="champion-build-radial-arc"
-          strokeDasharray={`${fraction * circumference} ${circumference}`}
-          transform="rotate(-90 28 28)"
-        />
-        <text x="28" y="28" className="champion-build-radial-value" data-testid={testId}>
-          {text}
-        </text>
-      </svg>
-      <span className="champion-build-radial-label">{label}</span>
-    </div>
-  );
-}
-
 export function ChampionBuildPanel({ label, championKey, build, note }: ChampionBuildPanelProps) {
   return (
     <section className="champion-build-panel" aria-label={label}>
@@ -89,41 +62,40 @@ export function ChampionBuildPanel({ label, championKey, build, note }: Champion
         </div>
       </header>
 
-      <div className="champion-build-section">
-        <div className="champion-build-section-head">
-          <h4 className="champion-build-section-heading">Runes</h4>
-          {build.runes !== null ? <GamesTag games={build.runes.games} /> : null}
-        </div>
-        <ul className="champion-build-runes" role="list">
-          <RunePageCard
+      <div className="champion-build-section champion-build-runes-row">
+        <div className="champion-build-runes-col">
+          <div className="champion-build-section-head">
+            <h4 className="champion-build-section-heading">Runes</h4>
+            {build.runes !== null ? <GamesTag games={build.runes.games} /> : null}
+          </div>
+          <RunePageDiagram
             runes={build.runes?.value ?? null}
-            championKey={championKey}
             testId="champion-build-runes"
             unavailableText="Not enough data for a rune page yet."
           />
-        </ul>
-      </div>
+        </div>
 
-      <div className="champion-build-section">
-        {build.skillOrder !== null ? (
-          <>
-            <div className="champion-build-section-head">
+        <div className="champion-build-skills-col">
+          {build.skillOrder !== null ? (
+            <>
+              <div className="champion-build-section-head">
+                <h4 className="champion-build-section-heading">Skill order</h4>
+                <GamesTag games={build.skillOrder.games} />
+              </div>
+              <SkillOrderChart
+                championKey={championKey}
+                perLevel={build.skillOrder.value.perLevel}
+                maxOrder={build.skillOrder.value.maxOrder}
+                hideHeading
+              />
+            </>
+          ) : (
+            <>
               <h4 className="champion-build-section-heading">Skill order</h4>
-              <GamesTag games={build.skillOrder.games} />
-            </div>
-            <SkillOrderChart
-              championKey={championKey}
-              perLevel={build.skillOrder.value.perLevel}
-              maxOrder={build.skillOrder.value.maxOrder}
-              hideHeading
-            />
-          </>
-        ) : (
-          <>
-            <h4 className="champion-build-section-heading">Skill order</h4>
-            <Missing />
-          </>
-        )}
+              <Missing />
+            </>
+          )}
+        </div>
       </div>
 
       <div className="champion-build-section champion-build-combo">

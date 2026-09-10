@@ -12,7 +12,15 @@ import {
 
 const CHAMPION_JSON = {
   data: {
-    MonkeyKing: { name: 'Wukong', image: { full: 'MonkeyKing.png' }, key: '62' },
+    MonkeyKing: {
+      name: 'Wukong',
+      title: 'the Monkey King',
+      image: { full: 'MonkeyKing.png' },
+      key: '62',
+      tags: ['Fighter', 'Tank'],
+      partype: 'Mana',
+      info: { attack: 8, defense: 5, magic: 2, difficulty: 3 },
+    },
     Chogath: { name: "Cho'Gath", image: { full: 'Chogath.png' }, key: '31' },
     Aatrox: { name: 'Aatrox', image: { full: 'Aatrox.png' }, key: '266' },
   },
@@ -219,6 +227,21 @@ describe('StaticDataProvider — champions', () => {
   it('returns the key unchanged before the index has loaded', () => {
     expect(versionOnly.championDisplayName('MonkeyKing')).toBe('MonkeyKing');
     expect(versionOnly.championIconUrl('MonkeyKing')).toBeNull();
+  });
+
+  it('exposes the champion profile (title, tags, resource, info)', () => {
+    expect(ready.championProfile('MonkeyKing')).toEqual({
+      title: 'the Monkey King',
+      tags: ['Fighter', 'Tank'],
+      resource: 'Mana',
+      info: { attack: 8, defense: 5, magic: 2, difficulty: 3 },
+    });
+  });
+
+  it('returns empty fields for a champion whose metadata predates them, null when unknown or not loaded', () => {
+    expect(ready.championProfile('Aatrox')).toEqual({ title: '', tags: [], resource: '', info: null });
+    expect(ready.championProfile('Nonexistent')).toBeNull();
+    expect(versionOnly.championProfile('MonkeyKing')).toBeNull();
   });
 });
 
@@ -448,6 +471,7 @@ describe('StaticDataProvider — totality (Requirements 5.3, 5.4)', () => {
       spells: {},
       runes: {},
       runeTrees: {},
+      runeTreeSlots: {},
       augments: {},
     });
     expect(traversal.championIconUrl('Evil')).not.toContain('../');
@@ -480,6 +504,7 @@ describe('StaticDataProvider — regressions found in review', () => {
       spells: {},
       runes: {},
       runeTrees: {},
+      runeTreeSlots: {},
       augments: {},
     });
     expect(() => malformed.championIconUrl('Broken')).not.toThrow();
@@ -582,6 +607,17 @@ describe('StaticDataProvider — summoner spell, rune, rune tree, stat shard res
     expect(ready.runeDisplayName(8143)).toBe('Sudden Impact'); // Domination, second slot
     expect(ready.runeDisplayName(8005)).toBe('Press the Attack'); // Precision, first slot
     expect(ready.runeTreeDisplayName(8000)).toBe('Precision');
+  });
+
+  it('exposes each tree’s slot layout as ordered rune ids', () => {
+    expect(ready.runeTreeSlots(8100)).toEqual([[8112], [8143]]);
+    expect(ready.runeTreeSlots(8000)).toEqual([[8005]]);
+  });
+
+  it('returns an empty layout for an unknown tree or an index that is not ready', () => {
+    expect(ready.runeTreeSlots(99_999)).toEqual([]);
+    expect(versionOnly.runeTreeSlots(8100)).toEqual([]);
+    expect(empty.runeTreeSlots(8100)).toEqual([]);
   });
 
   it('resolves a stat shard from the hardcoded table, unversioned, regardless of index readiness', () => {
