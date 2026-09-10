@@ -3483,6 +3483,15 @@ th[scope='row'].sb-player {
   gap: 1rem;
 }
 
+/* The primary tree's rows are drawn as a stack: the keystone row is the widest,
+   and each three-rune minor row below it sits centred on the same axis, the way
+   the in-game client lays it out. The tree column takes the keystone row's
+   width, so centring the shorter rows within it lines them up under the
+   keystone. */
+.rune-diagram-tree--primary .rune-diagram-row {
+  justify-content: center;
+}
+
 /* A hairline rule under the keystone row, as the client draws it. */
 .rune-diagram-row--keystone {
   gap: 1.15rem;
