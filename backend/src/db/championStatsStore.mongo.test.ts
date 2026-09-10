@@ -183,6 +183,21 @@ describe('MongoChampionStatsStore', () => {
     expect(result?.popular?.coreItems).toEqual([[1], [2], [3]]);
   });
 
+  it('keeps serving the previous patch while a freshly-shipped patch is still thin', async () => {
+    const prev = storedCell({ patch: '16.17', games: 800, wins: 420, paths: [{ coreItems: [1, 2, 3], games: 800, wins: 420 }] });
+    const fresh = storedCell({ patch: '16.18', games: 1, wins: 1, paths: [{ coreItems: [9, 9, 9], games: 1, wins: 1 }] });
+    const result = await new MongoChampionStatsStore(fakeDb([prev, fresh])).getBuildStats('Jinx', FILTERS);
+    expect(result?.meta.patch).toBe('16.17');
+    expect(result?.meta.overall.totalGames).toBe(800);
+  });
+
+  it('switches to the new patch once it carries a real share of the sample', async () => {
+    const prev = storedCell({ patch: '16.17', games: 200, wins: 100, paths: [{ coreItems: [1, 2, 3], games: 200, wins: 100 }] });
+    const fresh = storedCell({ patch: '16.18', games: 300, wins: 150, paths: [{ coreItems: [9, 9, 9], games: 300, wins: 150 }] });
+    const result = await new MongoChampionStatsStore(fakeDb([prev, fresh])).getBuildStats('Jinx', FILTERS);
+    expect(result?.meta.patch).toBe('16.18');
+  });
+
   it('returns null when a read throws', async () => {
     const db = {
       collection: () => ({

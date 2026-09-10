@@ -493,13 +493,50 @@ interface StoredTotalsDoc {
   matches?: number;
 }
 
-/** `["16.9", "16.17"]` -> `"16.17"` — numeric major.minor, not string order. */
-function latestPatchOf(patches: readonly string[]): string | undefined {
+/** `["16.9", "16.17"]` -> `["16.17", "16.9"]` — numeric major.minor, newest first. */
+function patchesNewestFirst(patches: readonly string[]): string[] {
   return [...new Set(patches)].sort((a, b) => {
     const [am = 0, an = 0] = a.split('.').map(Number);
     const [bm = 0, bn = 0] = b.split('.').map(Number);
     return bm - am || bn - an;
-  })[0];
+  });
+}
+
+/**
+ * Minimum share of the two newest patches' combined games the newest patch must
+ * carry before the read path switches to it.
+ */
+export const NEWEST_PATCH_MIN_SHARE = 0.25;
+
+/**
+ * Which patch the read path serves for a champion. Riot bumps `gameVersion` the
+ * instant a new patch ships, so for the first hours/days of a patch the crawler
+ * has folded only a handful of new-patch matches while the previous patch still
+ * holds thousands. Serving `latestPatchOf` blindly then collapses every champion
+ * page to "1 game".
+ *
+ * Rule: keep serving the immediately preceding patch until the newest one
+ * carries at least `NEWEST_PATCH_MIN_SHARE` of the two patches' combined games.
+ * Self-corrects as the crawl catches up; no dependence on wall-clock patch
+ * dates. The fallback only applies to an *adjacent* predecessor — a large patch
+ * gap means the older docs are just stale, so the newest wins outright.
+ */
+export function pickReadPatch(gamesByPatch: ReadonlyMap<string, number>): string | undefined {
+  const [newest, previous] = patchesNewestFirst([...gamesByPatch.keys()]);
+  if (newest === undefined) return undefined;
+  if (previous === undefined || !isAdjacentPredecessor(previous, newest)) return newest;
+  const newestGames = gamesByPatch.get(newest) ?? 0;
+  const combined = newestGames + (gamesByPatch.get(previous) ?? 0);
+  if (combined === 0) return newest;
+  return newestGames / combined >= NEWEST_PATCH_MIN_SHARE ? newest : previous;
+}
+
+/** Is `earlier` the patch right before `later` (`16.17`→`16.18`, or a `NN.1` season roll)? */
+function isAdjacentPredecessor(earlier: string, later: string): boolean {
+  const [em = 0, en = 0] = earlier.split('.').map(Number);
+  const [lm = 0, ln = 0] = later.split('.').map(Number);
+  if (lm === em && ln - en === 1) return true;
+  return lm - em === 1 && ln === 1;
 }
 
 function toCohort<T>(
@@ -561,12 +598,16 @@ export class MongoChampionStatsStore implements ChampionStatsStore {
   ): Promise<ChampionStatsResult | null> {
     const run = async (): Promise<ChampionStatsResult | null> => {
       const patchRows = await this.aggregates
-        .find({ championKey }, { projection: { patch: 1 } })
+        .find({ championKey }, { projection: { patch: 1, games: 1 } })
         .toArray();
       if (patchRows.length === 0) {
         return null;
       }
-      const latestPatch = latestPatchOf(patchRows.map((row) => row.patch));
+      const gamesByPatch = new Map<string, number>();
+      for (const row of patchRows) {
+        gamesByPatch.set(row.patch, (gamesByPatch.get(row.patch) ?? 0) + (row.games ?? 0));
+      }
+      const latestPatch = pickReadPatch(gamesByPatch);
       if (latestPatch === undefined) {
         return null;
       }
