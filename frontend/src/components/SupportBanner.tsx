@@ -22,6 +22,7 @@
  */
 
 import { donateUrl } from '../config';
+import { trackEvent } from '../analytics';
 
 export interface SupportBannerProps {
   /** Injected in tests; production reads the configured URL. */
@@ -47,6 +48,7 @@ export function SupportBanner({ url = donateUrl }: SupportBannerProps = {}) {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => trackEvent('donate_click')}
       >
         Donate
       </a>

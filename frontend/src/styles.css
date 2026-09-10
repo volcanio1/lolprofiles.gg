@@ -3743,6 +3743,20 @@ th[scope='row'].sb-player {
   width: 100%;
 }
 
+.storage-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.storage-modal-actions .btn {
+  flex: 1 1 12rem;
+}
+
+.consent-reset {
+  margin-top: 0.5rem;
+}
+
 @keyframes storage-modal-fade {
   from {
     opacity: 0;

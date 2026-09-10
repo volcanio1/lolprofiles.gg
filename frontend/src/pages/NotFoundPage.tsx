@@ -12,9 +12,11 @@
  * result — rather than a generic oversized "404".
  */
 
+import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
+import { trackEvent } from '../analytics';
 
 /** Keep a pathological address bar from stretching the card. */
 function shortenPath(pathname: string): string {
@@ -36,6 +38,10 @@ export function NotFoundPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const canGoBack = hasHistoryToReturnTo();
+
+  useEffect(() => {
+    trackEvent('page_not_found', { path: location.pathname });
+  }, [location.pathname]);
 
   return (
     <RiotDataPage title="No match" hero>

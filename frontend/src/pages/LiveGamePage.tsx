@@ -16,8 +16,9 @@
  *  - 8.3: no participant identifier beyond the Riot ID is shown (see `ParticipantCard`).
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { trackEvent } from '../analytics';
 import { LiveGameView } from '../components/LiveGameView';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { SearchForm, type SearchSubmission } from '../components/SearchForm';
@@ -41,6 +42,14 @@ export function LiveGamePage({ liveGameOptions }: LiveGamePageProps = {}) {
   }, [rawRiotId]);
 
   const { status, lobby, error, refresh } = useLiveGame(riotId, liveGameOptions);
+
+  // Analytics: record the outcome of a live-game check, once per terminal
+  // status. No Riot ID is sent.
+  useEffect(() => {
+    if (status === 'in_game' || status === 'not_in_game' || status === 'ended' || status === 'error') {
+      trackEvent('live_game_lookup', { result: status });
+    }
+  }, [status]);
 
   function handleSubmit(submission: SearchSubmission) {
     setSearchParams(new URLSearchParams({ riotId: submission.riotId }));

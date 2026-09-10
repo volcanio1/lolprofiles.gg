@@ -55,6 +55,34 @@
       }
     </script>
 
+    <!-- Google tag (gtag.js), Google Analytics 4, with Consent Mode v2.
+         The loader and the consent defaults run here, before any module JS, so
+         GA cannot write a cookie before the visitor answers the banner:
+          - every storage type defaults to "denied";
+          - `CookieNotice` (src/analytics.ts) calls gtag('consent','update',...)
+            once a choice is made or a stored one is restored;
+          - `send_page_view` is off — the SPA sends page_view itself on every
+            route change via `usePageViews`, so the first load isn't double-counted.
+         Disclosed in the Privacy Policy and Cookie Policy. -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', {
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+        analytics_storage: 'denied',
+        functionality_storage: 'granted',
+        security_storage: 'granted',
+        wait_for_update: 500,
+      });
+      gtag('config', 'G-4JNLMDBL0X', { send_page_view: false });
+    </script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-4JNLMDBL0X"></script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

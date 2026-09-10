@@ -110,9 +110,10 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
       </footer>
     </main>
 
-    {/* First-visit storage disclosure. A fixed-position modal, kept a sibling of
-        `.page` (not a child) so the hero page's `> *` positioning rule can't
-        override its `position: fixed`. Shown once, then dismissed for good. */}
+    {/* First-visit cookie / analytics consent gate. A fixed-position modal, kept
+        a sibling of `.page` (not a child) so the hero page's `> *` positioning
+        rule can't override its `position: fixed`. Shown until a choice is made,
+        then remembered. */}
     <CookieNotice />
     </>
   );

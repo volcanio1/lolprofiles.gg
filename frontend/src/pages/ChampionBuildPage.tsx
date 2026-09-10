@@ -18,8 +18,9 @@
  *    no control anywhere to trigger a crawl.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { trackEvent } from '../analytics';
 import { ChampionBuildPanel } from '../components/ChampionBuildPanel';
 import { ChampionIcon } from '../components/ChampionIcon';
 import { ChampionStatsFilters, type ChampionStatsFiltersValue } from '../components/ChampionStatsFilters';
@@ -115,6 +116,11 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
 
   const applyFilters = useCallback(
     (next: ChampionStatsFiltersValue) => {
+      trackEvent('champion_build_filter', {
+        role: next.role,
+        rank: next.rank,
+        region: next.region,
+      });
       const params = new URLSearchParams();
       if (next.role !== DEFAULT_ROLE) params.set('role', next.role);
       if (next.rank !== DEFAULT_RANK) params.set('rank', next.rank);
@@ -124,6 +130,18 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
     },
     [setSearchParams],
   );
+
+  // Analytics: one event when a champion's build report finishes loading. The
+  // champion key is already in the URL path (so it reaches GA regardless); the
+  // resolved role is the only extra field.
+  useEffect(() => {
+    if (status === 'ready' && data !== null) {
+      trackEvent('champion_build_viewed', {
+        champion_key: data.champion.key,
+        role: data.filtersApplied.role,
+      });
+    }
+  }, [status, data]);
 
   // --- states that render before (or instead of) the report -----------------
 

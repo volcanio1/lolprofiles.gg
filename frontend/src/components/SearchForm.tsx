@@ -63,6 +63,7 @@ import { RIOT_ID_ERROR_DISPLAY, validateRiotId } from '../domain/riotId';
 import { namePrefixOf } from '../domain/suggestions';
 import { matchChampions } from '../domain/championSuggestions';
 import { usePlayerSuggestions, type UsePlayerSuggestionsOptions } from '../hooks/usePlayerSuggestions';
+import { trackEvent } from '../analytics';
 import type { PlayerSuggestion } from '../api/types';
 import { useStaticData } from '../staticData';
 import { ChampionIcon } from './ChampionIcon';
@@ -141,9 +142,14 @@ export function SearchForm({
     const validation = validateRiotId(value);
     if (!validation.ok) {
       setErrorMessage(RIOT_ID_ERROR_DISPLAY[validation.errorCode].message);
+      trackEvent('player_search_rejected', { reason: validation.errorCode });
       return;
     }
     setErrorMessage(undefined);
+    // The single choke point for every page's player lookup (landing, profile,
+    // live game, champion build). No Riot ID or game name is sent — just how
+    // the search was triggered.
+    trackEvent('player_search', { method: viaSuggestion ? 'suggestion' : 'submit' });
     const submission: SearchSubmission = {
       riotId: `${validation.riotId.gameName}#${validation.riotId.tagLine}`,
     };
@@ -169,6 +175,7 @@ export function SearchForm({
   function selectRow(row: Row) {
     if (row.kind === 'champion') {
       closeDropdown();
+      trackEvent('champion_select', { champion_key: row.key, source: 'search_suggestion' });
       // Decision 4: no validation, no lookup (Requirement 2.4).
       onSelectChampion?.(row.key);
       return;

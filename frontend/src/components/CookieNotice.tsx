@@ -1,57 +1,46 @@
 /**
- * One-time storage notice, shown as a modal on first visit.
+ * Cookie / analytics consent banner, shown as a modal on first visit.
  *
- * lolprofiles.gg sets no cookies and runs no ad/tracking scripts, so this is not
- * a consent gate — nothing is withheld until you click, and there is nothing to
- * opt out of. It is a short disclosure that the site keeps a trimmed game-asset
- * index in `localStorage`, with a link to the Cookie Policy, shown once and then
- * dismissed for good.
+ * The site uses Google Analytics 4, which sets first-party `_ga` cookies once
+ * it is allowed to. Consent Mode v2 defaults every storage type to "denied" in
+ * `index.html`, so GA runs cookieless until this banner is answered:
+ *  - "Accept" persists `granted` and calls `gtag('consent','update',...)`;
+ *  - "Decline", Escape, or a backdrop click persists `denied`;
+ *  - a stored choice is re-applied on every load without showing the banner.
  *
- * It is a centered modal rather than a footer strip on purpose: the landing page
- * runs a brief GPU probe on first load (see `ShaderBackground`), and a visitor
- * reading this card is not watching the animated background settle behind it.
+ * The visitor can change their mind later from the Cookie Policy page, which
+ * clears the stored flag and reloads.
  *
- * Every `localStorage` access is wrapped: the API throws (not returns null) when
- * storage is disabled by policy or in some private-browsing modes, and a notice
- * component must never be the thing that breaks a page. If storage is
- * unavailable we simply show the notice again next load — which is also the
- * honest outcome, since a dismissal we cannot persist has not really happened.
+ * It is a centered modal rather than a footer strip on purpose: the landing
+ * page runs a brief GPU probe on first load (see `ShaderBackground`), and a
+ * visitor reading this card is not watching the animated background settle.
+ *
+ * Every `localStorage` access is wrapped (the API throws when storage is
+ * disabled by policy or in some private-browsing modes) — a dismissal we cannot
+ * persist has not really happened, so the banner simply returns next load.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-const DISMISSED_KEY = 'lp:storage-notice-dismissed';
-
-function readDismissed(): boolean {
-  try {
-    return window.localStorage.getItem(DISMISSED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function persistDismissed(): void {
-  try {
-    window.localStorage.setItem(DISMISSED_KEY, '1');
-  } catch {
-    // Nothing to do — the notice reappears next load, which is acceptable.
-  }
-}
+import { readStoredConsent, setAnalyticsConsent, type AnalyticsConsent } from '../analytics';
 
 export function CookieNotice() {
-  // Start hidden so the modal never flashes for a visitor who already dismissed
-  // it; the effect below reveals it after the client-side storage check.
+  // Start hidden so the modal never flashes for a visitor who already chose;
+  // the effect below reveals it after the client-side storage check.
   const [visible, setVisible] = useState(false);
-  const dismissRef = useRef<HTMLButtonElement>(null);
+  const acceptRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!readDismissed()) {
-      setVisible(true);
+    const stored = readStoredConsent();
+    if (stored !== undefined) {
+      // Re-apply the remembered decision to GA and stay out of the way.
+      setAnalyticsConsent(stored);
+      return;
     }
+    setVisible(true);
   }, []);
 
-  const dismiss = useCallback(() => {
-    persistDismissed();
+  const choose = useCallback((consent: AnalyticsConsent) => {
+    setAnalyticsConsent(consent, true);
     setVisible(false);
   }, []);
 
@@ -59,22 +48,24 @@ export function CookieNotice() {
     if (!visible) {
       return;
     }
-    dismissRef.current?.focus();
+    acceptRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      // Closing without an explicit choice is treated as "decline" — the safe
+      // default — but the flag is still written so we don't nag on every load.
       if (event.key === 'Escape') {
-        dismiss();
+        choose('denied');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [visible, dismiss]);
+  }, [visible, choose]);
 
   if (!visible) {
     return null;
   }
 
   return (
-    <div className="storage-modal-backdrop" onClick={dismiss}>
+    <div className="storage-modal-backdrop" onClick={() => choose('denied')}>
       <div
         className="storage-modal"
         role="dialog"
@@ -83,22 +74,28 @@ export function CookieNotice() {
         onClick={(event) => event.stopPropagation()}
       >
         <p id="storage-modal-title" className="storage-modal-title">
-          A quick note on storage
+          Cookies &amp; analytics
         </p>
         <p className="storage-modal-copy">
-          This site sets no cookies and runs no ad or tracking scripts. It keeps a small
-          game-asset index in your browser&rsquo;s local storage so pages load faster, and
-          that never leaves your device. See the <a href="/cookies">Cookie Policy</a> for the
-          details.
+          lolprofiles.gg keeps a small game-asset index in your browser&rsquo;s local storage so pages
+          load faster — that never leaves your device and is always on. Separately, we&rsquo;d like to
+          use Google Analytics, which sets cookies, to measure which pages get used. Analytics stays
+          off unless you accept. See the <a href="/cookies">Cookie Policy</a> and{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
-        <button
-          ref={dismissRef}
-          type="button"
-          className="btn btn-primary storage-modal-dismiss"
-          onClick={dismiss}
-        >
-          Got it
-        </button>
+        <div className="storage-modal-actions">
+          <button
+            ref={acceptRef}
+            type="button"
+            className="btn btn-primary"
+            onClick={() => choose('granted')}
+          >
+            Accept analytics
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => choose('denied')}>
+            Decline
+          </button>
+        </div>
       </div>
     </div>
   );

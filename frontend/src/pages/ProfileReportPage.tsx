@@ -48,6 +48,7 @@ import { SearchForm, type SearchSubmission } from '../components/SearchForm';
 import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
 import { useLookup, type UseLookupOptions } from '../hooks/useLookup';
+import { trackEvent } from '../analytics';
 
 export interface ProfileReportPageProps {
   /** Injected in tests; production uses the real client, clock and scheduler. */
@@ -132,6 +133,23 @@ export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetch
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [riotId, start, seedFromSnapshot]);
 
+  // Analytics: one event when a report finishes rendering, one when a lookup
+  // ends in an error. Both key on `status` so they fire once per outcome; no
+  // Riot ID is included.
+  useEffect(() => {
+    if (status === 'success' && report !== undefined) {
+      trackEvent('profile_report_viewed', {
+        recent_matches: report.recentMatches.length,
+      });
+    }
+  }, [status, report]);
+
+  useEffect(() => {
+    if (status === 'error' && error !== undefined) {
+      trackEvent('lookup_error', { code: error.code });
+    }
+  }, [status, error]);
+
   function handleResubmit(submission: SearchSubmission) {
     setSearchParams(new URLSearchParams({ riotId: submission.riotId }));
   }
@@ -209,7 +227,10 @@ export function ProfileReportPage({ lookupOptions, fetchCachedReport = realFetch
             fetchedAt={fetchedAt}
             disabled={refreshDisabled}
             refreshing={refreshing}
-            onRefresh={refresh}
+            onRefresh={() => {
+              trackEvent('profile_refresh');
+              refresh();
+            }}
           />
           {refreshing ? <LoadingIndicator label="Refreshing…" /> : null}
           {/* Requirement 10.5: a failed refresh leaves the report in place. */}

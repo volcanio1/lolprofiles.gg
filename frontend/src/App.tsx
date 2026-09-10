@@ -7,6 +7,7 @@ import { CookiePolicyPage, PrivacyPolicyPage } from './pages/PolicyPages';
 import { ProfileReportPage } from './pages/ProfileReportPage';
 import { SearchPage } from './pages/SearchPage';
 import { TestIconsPage } from './pages/TestIconsPage';
+import { usePageViews } from './hooks/usePageViews';
 import { StaticDataContextProvider } from './staticData';
 
 /**
@@ -19,6 +20,10 @@ import { StaticDataContextProvider } from './staticData';
  * render instead of racing it against navigation.
  */
 export function App() {
+  // GA4 page views on every route change (the automatic one is disabled in
+  // index.html because it doesn't fire on SPA navigation).
+  usePageViews();
+
   return (
     <StaticDataContextProvider>
       <Routes>
