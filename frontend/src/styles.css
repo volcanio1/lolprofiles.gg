@@ -3679,43 +3679,86 @@ th[scope='row'].sb-player {
 
 /*
  * Not a consent gate — the site sets no cookies and blocks nothing pending a
- * click. A short disclosure that sits in the footer flow (see RiotDataPage),
- * below the legal bar, dismissed for good once acknowledged. Being in flow
- * rather than fixed means it never covers the footer and the page grows to
- * fit it.
+ * click. A first-visit modal (see CookieNotice.tsx), dismissed for good once
+ * acknowledged. It is centred over the page on purpose: the landing page's
+ * one-off GPU probe settles behind it while the visitor reads.
  */
-.cookie-notice {
+.storage-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.6rem 1.2rem;
-  margin-top: 1.25rem;
-  padding: 0.7rem 0.9rem;
-  background: var(--surface-2);
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(11, 9, 8, 0.74);
+  animation: storage-modal-fade 160ms ease-out;
+}
+
+.storage-modal {
+  width: 100%;
+  max-width: 30rem;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  padding: 1.4rem 1.5rem 1.5rem;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  animation: storage-modal-rise 200ms ease-out;
 }
 
-.cookie-notice-copy {
-  margin: 0;
-  color: var(--dim);
-  font-size: 0.8rem;
-  max-width: 68ch;
-}
-
-.cookie-notice-copy a {
+/* The gold tick, same dash that opens every section label. */
+.storage-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--gold);
 }
 
-.cookie-notice-dismiss {
+.storage-modal-title::before {
+  content: '';
+  width: 1.4rem;
+  height: 3px;
+  background: var(--gold);
   flex: none;
-  padding: 0.35rem 1rem;
-  font-size: 0.8rem;
 }
 
-.cookie-notice-dismiss:hover,
-.cookie-notice-dismiss:focus-visible {
-  border-color: var(--gold);
-  background: rgba(232, 181, 74, 0.08);
+.storage-modal-copy {
+  margin-bottom: 1.25rem;
+  color: var(--dim);
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
+.storage-modal-copy a {
+  color: var(--gold);
+}
+
+.storage-modal-dismiss {
+  width: 100%;
+}
+
+@keyframes storage-modal-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes storage-modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storage-modal-backdrop,
+  .storage-modal {
+    animation: none;
+  }
 }

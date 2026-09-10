@@ -328,12 +328,59 @@ const UNIFORMS = {
 
 const pendingContextReleases = new WeakMap<HTMLCanvasElement, number>()
 
+/**
+ * FPS watchdog. The shader is pure ambience, so on a device that can't drive it
+ * smoothly — no GPU acceleration, weak integrated graphics, a throttled tab on a
+ * cheap laptop — it should get out of the way rather than burn battery for a
+ * juddering background. `render` measures its own frame rate over a continuous
+ * window; a sustained average below the floor tears the effect down and leaves
+ * the static hero scrim in place. The verdict is remembered for the page's
+ * lifetime so navigating back to the landing page doesn't re-run the probe.
+ */
+const FPS_WARMUP_MS = 600 // ignore shader compile, first resize, cold JIT
+const FPS_SAMPLE_MS = 2000 // measure over this long a continuous run
+const FPS_FLOOR = 24 // sustained average below this ⇒ give up
+
+// The verdict is persisted so a reload doesn't repeat the probe — otherwise the
+// shader visibly runs for a couple of seconds and then cuts out on every visit.
+// Re-checked monthly, in case the machine or its driver settings changed.
+const GPU_VERDICT_KEY = 'lp:shader-gpu-too-slow'
+const GPU_VERDICT_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+function readGpuTooSlow(): boolean {
+  try {
+    const decidedAt = Number(window.localStorage.getItem(GPU_VERDICT_KEY))
+    if (!Number.isFinite(decidedAt) || decidedAt <= 0) return false
+    if (Date.now() - decidedAt > GPU_VERDICT_TTL_MS) {
+      window.localStorage.removeItem(GPU_VERDICT_KEY)
+      return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function persistGpuTooSlow(): void {
+  try {
+    window.localStorage.setItem(GPU_VERDICT_KEY, String(Date.now()))
+  } catch {
+    // The in-memory flag still holds for this page load.
+  }
+}
+
+// Mirrors the stored verdict once read, so repeat mounts short-circuit cheaply.
+let gpuTooSlow = false
+
 export function ShaderBackground({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    // A previous run's watchdog already ruled this device out — stay static.
+    if (!gpuTooSlow && readGpuTooSlow()) gpuTooSlow = true
+    if (gpuTooSlow) return
     const pendingRelease = pendingContextReleases.get(canvas)
     if (pendingRelease !== undefined) window.clearTimeout(pendingRelease)
     pendingContextReleases.delete(canvas)
@@ -435,6 +482,12 @@ export function ShaderBackground({ className }: { className?: string }) {
     let bounds = canvas.getBoundingClientRect()
     let raf = 0
     let lastNow: number | null = null
+    // FPS watchdog state (see FPS_* above). `fpsRunStart` marks the start of the
+    // current uninterrupted run; `fpsWindowStart` / `fpsWindowFrames` accumulate
+    // one measurement window inside it. All reset whenever rendering resumes.
+    let fpsRunStart = 0
+    let fpsWindowStart = 0
+    let fpsWindowFrames = 0
     let visible = document.visibilityState === "visible"
     let inView = true
     let disposed = false
@@ -543,8 +596,14 @@ export function ShaderBackground({ className }: { className?: string }) {
     const render = (now: number) => {
       raf = 0
       if (disposed || !visible || !inView) return
+      const resumed = lastNow === null
       const dt = lastNow === null ? 0 : Math.min((now - lastNow) / 1000, 0.1)
       lastNow = now
+      if (resumed) {
+        fpsRunStart = now
+        fpsWindowStart = 0
+        fpsWindowFrames = 0
+      }
       const follow = 1 - Math.exp(-12 * dt)
       mouseX += (targetX - mouseX) * follow
       mouseY += (targetY - mouseY) * follow
@@ -574,6 +633,31 @@ export function ShaderBackground({ className }: { className?: string }) {
         UNIFORMS.cursorRadius,
       )
       gl.drawArrays(gl.TRIANGLES, 0, 3)
+
+      // FPS watchdog: only meaningful while the loop is self-driving (an
+      // animated timeScale). Skip a warm-up, then count frames over one
+      // sample window; a low sustained average tears the effect down.
+      if (timeAnimated && now - fpsRunStart >= FPS_WARMUP_MS) {
+        if (fpsWindowStart === 0) {
+          fpsWindowStart = now
+          fpsWindowFrames = 0
+        } else {
+          fpsWindowFrames++
+          const span = now - fpsWindowStart
+          if (span >= FPS_SAMPLE_MS) {
+            if ((fpsWindowFrames * 1000) / span < FPS_FLOOR) {
+              gpuTooSlow = true
+              persistGpuTooSlow()
+              canvas.style.display = "none"
+              dispose()
+              return
+            }
+            fpsWindowStart = now
+            fpsWindowFrames = 0
+          }
+        }
+      }
+
       const pointerSettling =
         Math.abs(targetX - mouseX) > 0.001 ||
         Math.abs(targetY - mouseY) > 0.001 ||
@@ -582,7 +666,11 @@ export function ShaderBackground({ className }: { className?: string }) {
       else lastNow = null
     }
     requestRender()
-    return () => {
+
+    // Also called by the FPS watchdog above, so it is idempotent — a later
+    // React unmount runs it again and must be a no-op the second time.
+    const dispose = () => {
+      if (disposed) return
       disposed = true
       cancelAnimationFrame(raf)
       resizeObserver.disconnect()
@@ -610,6 +698,7 @@ export function ShaderBackground({ className }: { className?: string }) {
       }, 0)
       pendingContextReleases.set(canvas, releaseTimer)
     }
+    return dispose
   }, [])
 
   return (

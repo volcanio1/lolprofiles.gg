@@ -163,6 +163,14 @@ export function CookiePolicyPage() {
               <td>Records that you dismissed the one-time notice about local storage.</td>
               <td>Until you clear it.</td>
             </tr>
+            <tr>
+              <td>Graphics-check result</td>
+              <td>
+                Records that the animated landing-page background ran too slowly on this device,
+                so it stays off and the static background is used instead.
+              </td>
+              <td>Re-checked after 30 days.</td>
+            </tr>
           </tbody>
         </table>
 

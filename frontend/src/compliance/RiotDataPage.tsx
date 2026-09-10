@@ -52,6 +52,7 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
   const adsAllowed = advertisingPermitted(agreement);
 
   return (
+    <>
     <main className={hero ? 'page page--hero' : 'page'}>
       {hero ? (
         <div className="hero-bg" aria-hidden="true">
@@ -106,11 +107,13 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
             {RIOT_ATTRIBUTION_TEXT}
           </p>
         </div>
-
-        {/* In the footer flow (not fixed) so it never covers the legal bar, and
-            so dismissing it lets the footer settle lower on the page. */}
-        <CookieNotice />
       </footer>
     </main>
+
+    {/* First-visit storage disclosure. A fixed-position modal, kept a sibling of
+        `.page` (not a child) so the hero page's `> *` positioning rule can't
+        override its `position: fixed`. Shown once, then dismissed for good. */}
+    <CookieNotice />
+    </>
   );
 }
