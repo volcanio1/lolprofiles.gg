@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { ShaderBackground } from '../components/ShaderBackground';
 import { SupportBanner } from '../components/SupportBanner';
 import {
   advertisingPermitted,
@@ -51,6 +52,13 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
 
   return (
     <main className={hero ? 'page page--hero' : 'page'}>
+      {hero ? (
+        <div className="hero-bg" aria-hidden="true">
+          <ShaderBackground className="hero-bg-canvas" />
+          <div className="hero-bg-scrim" />
+        </div>
+      ) : null}
+
       <header className="masthead">
         {/* Plain anchor rather than a router Link so this template stays usable
             outside a Router (it is rendered standalone in tests). */}

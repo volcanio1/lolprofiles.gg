@@ -177,10 +177,50 @@ figure {
 
 /* Hero variant: the search landing page. */
 .page--hero {
+  position: relative;
   justify-content: center;
   text-align: center;
   gap: 1.1rem;
   padding-bottom: 14vh;
+}
+
+/*
+ * Animated "Silk" shader behind the landing page — see ShaderBackground.tsx.
+ * It fills the viewport (not just the centred column) and sits above the opaque
+ * body background; every real hero element is lifted onto z-index 1 so the
+ * wordmark, lede and search field render over it.
+ */
+.hero-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero-bg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Contrast scrim. Warm-black wash, heaviest through the vertical band the
+ * content occupies and at the very top/bottom edges, so the gold silk stays
+ * legible in the margins while text keeps full contrast.
+ */
+.hero-bg-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(11, 9, 8, 0.15) 0%, rgba(11, 9, 8, 0.72) 34%, rgba(11, 9, 8, 0.72) 66%, rgba(11, 9, 8, 0.15) 100%),
+    linear-gradient(180deg, rgba(11, 9, 8, 0.82) 0%, rgba(11, 9, 8, 0.52) 20%, rgba(11, 9, 8, 0.5) 50%, rgba(11, 9, 8, 0.5) 74%, rgba(11, 9, 8, 0.9) 100%);
+}
+
+.page--hero > *:not(.hero-bg) {
+  position: relative;
+  z-index: 1;
 }
 
 .page--hero .masthead {
