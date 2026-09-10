@@ -19,13 +19,15 @@
  */
 
 import { useCallback } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChampionBuildPanel } from '../components/ChampionBuildPanel';
 import { ChampionIcon } from '../components/ChampionIcon';
 import { ChampionStatsFilters, type ChampionStatsFiltersValue } from '../components/ChampionStatsFilters';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { SearchForm, type SearchSubmission } from '../components/SearchForm';
 import { SEO } from '../components/SEO';
 import { RiotDataPage } from '../compliance/RiotDataPage';
+import { championPathFor } from '../domain/championSuggestions';
 import {
   DEFAULT_RANK,
   DEFAULT_REGION,
@@ -67,7 +69,25 @@ function isRank(value: string | null): value is RankBucket {
 export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }: ChampionBuildPageProps = {}) {
   const { championKey = '' } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const catalog = useStaticData().championCatalog();
+
+  // The same search bar the other Riot-data pages carry (profile, live game), so
+  // a visitor can look up a player — or jump to another champion — without going
+  // back to the landing page first. Shown in every state below.
+  const searchForm = (
+    <SearchForm
+      onSubmit={(submission: SearchSubmission) => {
+        navigate(`/profile?${new URLSearchParams({ riotId: submission.riotId }).toString()}`);
+      }}
+      onSelectSuggestion={(submission: SearchSubmission) => {
+        navigate(`/profile?${new URLSearchParams({ riotId: submission.riotId, src: 'suggest' }).toString()}`);
+      }}
+      onSelectChampion={(key: string) => {
+        navigate(championPathFor(key));
+      }}
+    />
+  );
 
   const indexReady = catalog !== null;
   const known = catalog !== null && Object.prototype.hasOwnProperty.call(catalog, championKey);
@@ -108,6 +128,7 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
     return (
       <RiotDataPage title="Champion build">
         <SEO title="Champion Builds" description="Champion build stats from this site's own sample of ranked games." noindex />
+        {searchForm}
         <LoadingIndicator label="Loading…" />
       </RiotDataPage>
     );
@@ -117,6 +138,7 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
     return (
       <RiotDataPage title="Champion build">
         <SEO title="Unknown champion" description="No champion is known by that name." noindex />
+        {searchForm}
         <p data-testid="unknown-champion" className="prompt">
           We don&rsquo;t recognise a champion called &ldquo;{championKey}&rdquo;.
         </p>
@@ -137,6 +159,8 @@ export function ChampionBuildPage({ championBuildStatsOptions, now = Date.now }:
         description={`How ${championName} is built and how it performs — win rate, pick rate and two headline builds from this site's own sample of ranked games.`}
         noindex={!enoughData}
       />
+
+      {searchForm}
 
       {status === 'loading' ? <LoadingIndicator label={`Loading ${championName} builds…`} /> : null}
 
