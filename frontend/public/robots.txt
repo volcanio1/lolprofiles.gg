@@ -1,3 +1,15 @@
+# lolprofiles.gg — crawler policy
+#
+# Player reports (/profile) and live games (/live) are per-visitor lookups keyed
+# by query string: thin, unbounded, and rate-limited against a shared Riot key,
+# so they are kept out of the index. `/test` is an internal asset-inspection
+# page. Everything else — the landing page, champion builds, the policy pages —
+# is fair game.
+
 User-agent: *
 Allow: /
 Disallow: /test
+Disallow: /profile
+Disallow: /live
+
+Sitemap: https://lolprofiles.gg/sitemap.xml

@@ -90,6 +90,13 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
         */}
         <SupportBanner />
 
+        {/* Plain anchors rather than router Links so this template stays usable
+            outside a Router (it is rendered standalone in tests). */}
+        <nav className="foot-nav" aria-label="Site policies">
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/cookies">Cookie Policy</a>
+        </nav>
+
         {/* Requirement 12.1 */}
         <p data-testid="riot-attribution" className="attribution">
           {RIOT_ATTRIBUTION_TEXT}

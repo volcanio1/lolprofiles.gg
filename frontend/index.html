@@ -10,7 +10,10 @@
       content="Look up League of Legends ranked stats, match history, live games and player habits by Riot ID."
     />
     <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://lolprofiles.gg/" />
     <link rel="icon" type="image/png" href="/lp_logo.png" />
+    <link rel="apple-touch-icon" href="/lp_logo.png" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 
     <!-- Default Open Graph / Twitter Card tags — react-helmet-async overwrites
          these per-page once the app mounts; a crawler that never runs JS still
@@ -21,7 +24,8 @@
       property="og:description"
       content="Look up League of Legends ranked stats, match history, live games and player habits by Riot ID."
     />
-    <meta property="og:image" content="/lp_logo.png" />
+    <meta property="og:image" content="https://lolprofiles.gg/lp_logo.png" />
+    <meta property="og:url" content="https://lolprofiles.gg/" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="lolprofiles.gg" />
@@ -29,7 +33,28 @@
       name="twitter:description"
       content="Look up League of Legends ranked stats, match history, live games and player habits by Riot ID."
     />
-    <meta name="twitter:image" content="/lp_logo.png" />
+    <meta name="twitter:image" content="https://lolprofiles.gg/lp_logo.png" />
+
+    <!-- Structured data: names the site and exposes the player search to
+         engines that render a sitelinks search box. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "lolprofiles.gg",
+        "url": "https://lolprofiles.gg/",
+        "description": "Look up League of Legends ranked stats, match history, live games and player habits by Riot ID.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": {
+            "@type": "EntryPoint",
+            "urlTemplate": "https://lolprofiles.gg/profile?riotId={riot_id}"
+          },
+          "query-input": "required name=riot_id"
+        }
+      }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

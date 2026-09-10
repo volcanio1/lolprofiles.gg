@@ -3538,3 +3538,134 @@ th[scope='row'].sb-player {
 .core-items-icon {
   border-radius: var(--radius);
 }
+
+/* ------------------------------------------------- footer policy nav */
+
+/*
+ * Privacy / Cookie policy links, sitting between the support banner and the
+ * Riot attribution. Quiet by default — dim, small caps-ish — so the footer
+ * still reads attribution-first.
+ */
+.foot-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.foot-nav a {
+  color: var(--dim);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+}
+
+.foot-nav a:hover,
+.foot-nav a:focus-visible {
+  color: var(--gold);
+}
+
+/* --------------------------------------------------------- policy pages */
+
+.policy {
+  max-width: 70ch;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.policy-updated {
+  color: var(--loss);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 1.4rem;
+}
+
+.policy h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 2rem 0 0.6rem;
+}
+
+.policy ul {
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.policy a {
+  color: var(--gold);
+}
+
+.policy-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.policy-table th,
+.policy-table td {
+  border: 1px solid var(--line);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.policy-table th {
+  background: var(--surface);
+  color: var(--dim);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------- storage notice */
+
+/*
+ * Not a consent gate — the site sets no cookies and blocks nothing pending a
+ * click. A one-line disclosure pinned to the bottom of the viewport, dismissed
+ * for good once acknowledged (see CookieNotice.tsx).
+ */
+.cookie-notice {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  padding: 0.7rem 1.1rem;
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
+}
+
+.cookie-notice-copy {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.8rem;
+  max-width: 68ch;
+}
+
+.cookie-notice-copy a {
+  color: var(--gold);
+}
+
+.cookie-notice-dismiss {
+  flex: none;
+  padding: 0.35rem 1rem;
+  font-size: 0.8rem;
+}
+
+.cookie-notice-dismiss:hover,
+.cookie-notice-dismiss:focus-visible {
+  border-color: var(--gold);
+  background: rgba(232, 181, 74, 0.08);
+}

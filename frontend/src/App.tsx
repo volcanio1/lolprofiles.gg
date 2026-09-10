@@ -1,8 +1,10 @@
 import { Analytics } from '@vercel/analytics/react';
 import { Route, Routes } from 'react-router-dom';
+import { CookieNotice } from './components/CookieNotice';
 import { ChampionBuildPage } from './pages/ChampionBuildPage';
 import { LiveGamePage } from './pages/LiveGamePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { CookiePolicyPage, PrivacyPolicyPage } from './pages/PolicyPages';
 import { ProfileReportPage } from './pages/ProfileReportPage';
 import { SearchPage } from './pages/SearchPage';
 import { TestIconsPage } from './pages/TestIconsPage';
@@ -25,9 +27,12 @@ export function App() {
         <Route path="/profile" element={<ProfileReportPage />} />
         <Route path="/live" element={<LiveGamePage />} />
         <Route path="/champion/:championKey" element={<ChampionBuildPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/cookies" element={<CookiePolicyPage />} />
         <Route path="/test" element={<TestIconsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      <CookieNotice />
       <Analytics />
     </StaticDataContextProvider>
   );

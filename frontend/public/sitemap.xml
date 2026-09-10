@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static routes only. Player reports (/profile) and live games (/live) are
+  per-visitor lookups and are excluded here and in robots.txt. Champion build
+  pages (/champion/<key>) are generated from Data Dragon at runtime rather than
+  from a build-time manifest, so they are not enumerated here; crawlers reach
+  them by following links from the landing page.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://lolprofiles.gg/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://lolprofiles.gg/privacy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://lolprofiles.gg/cookies</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>
