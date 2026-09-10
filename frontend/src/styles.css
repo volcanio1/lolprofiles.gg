@@ -50,6 +50,11 @@
 
 html {
   color-scheme: dark;
+  /* Guards the full-bleed footer (see `.site-foot`): `50vw` counts the
+     scrollbar gutter, which can push its band a few pixels past the content
+     and raise a stray horizontal scrollbar. `clip` trims that without creating
+     a scroll container, so `position: fixed` (the hero shader) is unaffected. */
+  overflow-x: clip;
 }
 
 body {
@@ -1640,17 +1645,63 @@ figure {
 
 /* --------------------------------------------------------------- footer */
 
+/*
+ * The whole footer group — support banner, legal bar, then the storage notice
+ * while it is showing — is pushed to the foot of the page. `margin-top: auto`
+ * drops it against the bottom on a short page; the top padding keeps a clear
+ * break from the content on a long one, so the donation strip never sits
+ * directly under the last panel. Dismissing the storage notice removes it from
+ * this group, so the footer settles a little lower.
+ *
+ * FULL-BLEED. `.page` is a centred 1240px column, but the footer's rule and
+ * band span the whole viewport: `margin-inline: calc(50% - 50vw)` widens it to
+ * the window edges, then the matching inline padding pulls its content back
+ * onto the same left/right edge as the rest of the page.
+ */
 .site-foot {
   margin-top: auto;
+  margin-inline: calc(50% - 50vw);
+  /* `margin-bottom` cancels `.page`'s 2rem bottom padding so the band reaches
+     the very bottom edge of the page; the padding puts that 2rem back inside,
+     as breathing room under the text. */
+  margin-bottom: -2rem;
+  padding: 5rem calc(50vw - 50%) 2rem;
   border-top: 1px solid var(--line);
-  padding-top: 1.1rem;
+}
+
+/*
+ * Bottom legal bar — policy links above, Riot attribution below, both flush
+ * left and spanning the full page width, a quiet colophon under the support
+ * banner. `align-items: stretch` (the default) is deliberate: with a column
+ * flex, `flex-start` would shrink each row to its content width and leave the
+ * attribution as a narrow block in the corner.
+ */
+.foot-legal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+/* The homepage (hero) is a single centred field, not a stack of sections —
+   the footer's divider rules only add clutter there, so drop them. */
+.page--hero .site-foot,
+.page--hero .foot-legal {
+  border-top: none;
+}
+
+.page--hero .foot-legal {
+  padding-top: 0;
 }
 
 .attribution {
   color: var(--loss);
-  font-size: 0.72rem;
-  line-height: 1.6;
-  max-width: 62ch;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  margin: 0;
+  text-align: left;
 }
 
 /*
@@ -3542,15 +3593,15 @@ th[scope='row'].sb-player {
 /* ------------------------------------------------- footer policy nav */
 
 /*
- * Privacy / Cookie policy links, sitting between the support banner and the
- * Riot attribution. Quiet by default — dim, small caps-ish — so the footer
- * still reads attribution-first.
+ * Privacy / Cookie policy links — the left half of the bottom legal bar,
+ * opposite the Riot attribution. Quiet: dim, small, so the bar reads as a
+ * colophon.
  */
 .foot-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1.4rem;
-  margin-bottom: 0.9rem;
+  flex: none;
 }
 
 .foot-nav a {
@@ -3628,23 +3679,22 @@ th[scope='row'].sb-player {
 
 /*
  * Not a consent gate — the site sets no cookies and blocks nothing pending a
- * click. A one-line disclosure pinned to the bottom of the viewport, dismissed
- * for good once acknowledged (see CookieNotice.tsx).
+ * click. A short disclosure that sits in the footer flow (see RiotDataPage),
+ * below the legal bar, dismissed for good once acknowledged. Being in flow
+ * rather than fixed means it never covers the footer and the page grows to
+ * fit it.
  */
 .cookie-notice {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.6rem 1.2rem;
-  padding: 0.7rem 1.1rem;
+  margin-top: 1.25rem;
+  padding: 0.7rem 0.9rem;
   background: var(--surface-2);
-  border-top: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
 .cookie-notice-copy {

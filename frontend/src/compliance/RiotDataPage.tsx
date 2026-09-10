@@ -15,6 +15,7 @@
 
 import type { ReactNode } from 'react';
 import { ShaderBackground } from '../components/ShaderBackground';
+import { CookieNotice } from '../components/CookieNotice';
 import { SupportBanner } from '../components/SupportBanner';
 import {
   advertisingPermitted,
@@ -90,17 +91,25 @@ export function RiotDataPage({ title, children, hero = false, advertisingAgreeme
         */}
         <SupportBanner />
 
-        {/* Plain anchors rather than router Links so this template stays usable
-            outside a Router (it is rendered standalone in tests). */}
-        <nav className="foot-nav" aria-label="Site policies">
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/cookies">Cookie Policy</a>
-        </nav>
+        {/* Bottom bar: policy links and the Riot attribution share one row,
+            pushed to the foot of the page. Plain anchors rather than router
+            Links so this template stays usable outside a Router (it is
+            rendered standalone in tests). */}
+        <div className="foot-legal">
+          <nav className="foot-nav" aria-label="Site policies">
+            <a href="/privacy">Privacy Policy</a>
+            <a href="/cookies">Cookie Policy</a>
+          </nav>
 
-        {/* Requirement 12.1 */}
-        <p data-testid="riot-attribution" className="attribution">
-          {RIOT_ATTRIBUTION_TEXT}
-        </p>
+          {/* Requirement 12.1 */}
+          <p data-testid="riot-attribution" className="attribution">
+            {RIOT_ATTRIBUTION_TEXT}
+          </p>
+        </div>
+
+        {/* In the footer flow (not fixed) so it never covers the legal bar, and
+            so dismissing it lets the footer settle lower on the page. */}
+        <CookieNotice />
       </footer>
     </main>
   );
